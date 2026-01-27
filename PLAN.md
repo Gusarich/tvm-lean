@@ -16,6 +16,7 @@ Build a Lean implementation in three layers, so you can ship an MVP interpreter 
 3. **Proof layer**: invariants, determinism, gas termination, and refinement theorems.
 
 The key idea is: start by interpreting a typed instruction AST, then later prove that the decoder produces the same AST as the spec, and that stepping that AST matches the intended semantics.
+Even if most proofs are “later”, it’s worth writing the *proof scaffolding* (WF predicates + theorem statements) in Milestone 1 with `sorry`s, so the executable model is forced into a proof-friendly shape from day one.
 
 ## Milestone 1, MVP executable semantics that can run a real toy contract
 
@@ -68,9 +69,19 @@ Keep it executable first, with “well formed” as predicates, not dependent ty
 
 Design choice that pays off later: put *all failure modes* through a single mechanism “throw exception code and jump to `c2`”, because that is how TVM actually behaves. That avoids a split between “errors” and “control flow”.
 
+#### Proof scaffolding (start now, fill in later)
+
+Alongside the executable definitions, add:
+
+* `WF_Int`, `WF_Cell`, `WF_Slice`, `WF_Builder`, `WF_Tuple`, `WF_Value`, `WF_Regs`, `WF_State` predicates (as `Prop`s).
+* Theorems stated early (prove later): preservation for `step`, progress-style (“either continue WF or go through exception handler or halt”), and a gas/termination statement once gas is modeled precisely.
+
+It’s okay if all of these are `by sorry` initially; the goal is to pin down interfaces and invariants so you don’t have to retrofit proof structure later.
+
 ### 2. Instruction AST for the MVP subset
 
 Define an `Instr` inductive type for the subset needed to run a minimal contract.
+Use `docs/progress/instructions.csv` as the initial opcode backlog and priority list (top-100 most common opcodes in real contracts), and keep its `implemented/tested` columns in sync with the Lean code/tests.
 
 For the counter example from your docs, you need roughly:
 
@@ -95,6 +106,8 @@ Where `StepResult` is something like:
 * `halt exitCode st`
 
 In TVM terms, “halt” happens by invoking `Quit`, and “exceptions” happen by switching `cc` to `c2` after pushing an exception code on the stack and charging exception gas. In MVP you can implement `ExcQuit` as a special continuation that pops the code and halts.
+To match the C++ VM’s observable behavior, keep the same “exit code encoding”: `Quit`/`ExcQuit` terminate with bitwise-complemented codes (`exitcode = ~n`), so “success 0” shows up as `-1`.
+Also mirror the C++ `run` wrapper behavior: when exiting with `~0` or `~1`, it tries an automatic “commit” of `c4/c5` (subject to depth/level limits); if commit fails it clears the stack, pushes `0`, and returns `~cell_ov`.
 
 Important helpers:
 
