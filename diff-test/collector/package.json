@@ -1,0 +1,17 @@
+{
+  "name": "tvm-lean-diff-collector",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "collect": "node dist/collect.js",
+    "sweep": "node dist/sweep.js"
+  },
+  "dependencies": {
+    "txtracer-core": "^0.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.6.3"
+  }
+}

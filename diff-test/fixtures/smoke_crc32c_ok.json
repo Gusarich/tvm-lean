@@ -1,0 +1,15 @@
+{
+  "tx_hash": "smoke_crc32c_ok",
+  "code_boc": "hex:B5EE9C724101010100060000087A801401C8DE68DB",
+  "data_boc": "hex:b5ee9c7201010101000f00001aed44d0d31fd1a4c8cb1fc9ed54",
+  "stack_init": {
+    "balance_grams": "0",
+    "msg_balance_grams": "0",
+    "in_msg_boc": "hex:b5ee9c7201010101000f00001aed44d0d31fd1a4c8cb1fc9ed54",
+    "in_msg_body_boc": "hex:b5ee9c7201010101000f00001aed44d0d31fd1a4c8cb1fc9ed54",
+    "in_msg_extern": false
+  },
+  "expected": {
+    "exit_code": 0
+  }
+}

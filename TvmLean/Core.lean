@@ -47,6 +47,23 @@ def Excno.toInt : Excno → Int
   | .outOfGas => 13
   | .virtErr => 14
 
+instance : ToString Excno := ⟨fun
+  | .none => "none"
+  | .alt => "alt"
+  | .stkUnd => "stkUnd"
+  | .stkOv => "stkOv"
+  | .intOv => "intOv"
+  | .rangeChk => "rangeChk"
+  | .invOpcode => "invOpcode"
+  | .typeChk => "typeChk"
+  | .cellOv => "cellOv"
+  | .cellUnd => "cellUnd"
+  | .dictErr => "dictErr"
+  | .unknown => "unknown"
+  | .fatal => "fatal"
+  | .outOfGas => "outOfGas"
+  | .virtErr => "virtErr"⟩
+
 inductive IntVal : Type
   | nan
   | num (n : Int)
@@ -104,6 +121,18 @@ def Cell.empty : Cell :=
   { bits := #[], refs := #[] }
 
 instance : Inhabited Cell := ⟨Cell.empty⟩
+
+partial def Cell.beq (a b : Cell) : Bool :=
+  a.bits == b.bits &&
+    a.refs.size == b.refs.size &&
+      Id.run do
+        let mut ok := true
+        for i in [0:a.refs.size] do
+          if !(Cell.beq a.refs[i]! b.refs[i]!) then
+            ok := false
+        return ok
+
+instance : BEq Cell := ⟨Cell.beq⟩
 
 def Cell.ofUInt (bits : Nat) (n : Nat) : Cell :=
   { bits := natToBits n bits, refs := #[] }
@@ -209,6 +238,46 @@ def Value.pretty : Value → String
       | .excQuit => "<cont:excquit>"
 
 instance : ToString Value := ⟨Value.pretty⟩
+
+def arrayBeqBy {α : Type} (a b : Array α) (beq : α → α → Bool) : Bool :=
+  if a.size != b.size then
+    false
+  else
+    Id.run do
+      let mut ok := true
+      for i in [0:a.size] do
+        match a.get? i, b.get? i with
+        | some x, some y =>
+            if !(beq x y) then
+              ok := false
+        | _, _ =>
+            ok := false
+      return ok
+
+def arrayBeq {α : Type} [BEq α] (a b : Array α) : Bool :=
+  arrayBeqBy a b (fun x y => x == y)
+
+instance : BEq Slice := ⟨fun a b => a.bitPos == b.bitPos && a.refPos == b.refPos && a.cell == b.cell⟩
+instance : BEq Builder := ⟨fun a b => a.bits == b.bits && arrayBeq a.refs b.refs⟩
+
+instance : BEq Continuation := ⟨fun a b =>
+  match a, b with
+  | .quit x, .quit y => x == y
+  | .excQuit, .excQuit => true
+  | .ordinary x, .ordinary y => x == y
+  | _, _ => false⟩
+
+partial def Value.beq : Value → Value → Bool
+  | .null, .null => true
+  | .int x, .int y => x == y
+  | .cell x, .cell y => x == y
+  | .slice x, .slice y => x == y
+  | .builder x, .builder y => x == y
+  | .tuple x, .tuple y => arrayBeqBy x y Value.beq
+  | .cont x, .cont y => x == y
+  | _, _ => false
+
+instance : BEq Value := ⟨Value.beq⟩
 
 abbrev Stack := Array Value
 
@@ -838,6 +907,53 @@ inductive StepResult : Type
   | halt (exitCode : Int) (st : VmState)
   deriving Repr
 
+structure TraceEntry where
+  step : Nat
+  event : String
+  cp : Int
+  cc_before : String
+  cc_after : String
+  gas_before : Int
+  gas_after : Int
+  stack_before : String
+  stack_after : String
+  deriving Repr
+
+instance : Inhabited TraceEntry where
+  default :=
+    { step := 0
+      event := ""
+      cp := 0
+      cc_before := ""
+      cc_after := ""
+      gas_before := 0
+      gas_after := 0
+      stack_before := ""
+      stack_after := "" }
+
+def stackStr (s : Stack) : String :=
+  let elems := s.toList.map (fun v => v.pretty)
+  "[" ++ String.intercalate ", " elems ++ "]"
+
+def Stack.pretty (s : Stack) : String :=
+  stackStr s
+
+def Slice.peekByteHex (s : Slice) : String :=
+  if s.haveBits 8 then
+    let b := bitsToNat (s.readBits 8)
+    let hex := String.mk (Nat.toDigits 16 b)
+    let hex := if b < 16 then "0" ++ hex else hex
+    s!"0x{hex}"
+  else
+    "<eof>"
+
+def VmState.ccSummary (cc : Continuation) : String :=
+  match cc with
+  | .quit n => s!"quit {n}"
+  | .excQuit => "excquit"
+  | .ordinary code =>
+      s!"ord(bitPos={code.bitPos},refPos={code.refPos},bitsRem={code.bitsRemaining},refsRem={code.refsRemaining},next8={code.peekByteHex})"
+
 def VmState.outOfGasHalt (st : VmState) : StepResult :=
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
@@ -923,7 +1039,123 @@ def VmState.step (st : VmState) : StepResult :=
                   if decide (stExcGas.gas.gasRemaining < 0) then
                     stExcGas.outOfGasHalt
                   else
-                    .continue stExcGas
+                .continue stExcGas
+
+def VmState.stepTrace (st : VmState) (step : Nat) : TraceEntry × StepResult :=
+  let mk (event : String) (stAfter : VmState) (res : StepResult) : TraceEntry × StepResult :=
+    ({ step
+       event
+       cp := st.cp
+       cc_before := VmState.ccSummary st.cc
+       cc_after := VmState.ccSummary stAfter.cc
+       gas_before := st.gas.gasRemaining
+       gas_after := stAfter.gas.gasRemaining
+       stack_before := stackStr st.stack
+       stack_after := stackStr stAfter.stack },
+     res)
+
+  match st.cc with
+  | .quit n =>
+      let res := StepResult.halt (~~~ n) st
+      mk s!"quit({n})" st res
+  | .excQuit =>
+      let action : VM Int := do
+        let v ← VM.popInt
+        match v with
+        | .nan => throw .rangeChk
+        | .num n =>
+            if n < 0 ∨ n > 0xffff then
+              throw .rangeChk
+            else
+              return n
+      let (res0, st') := (action.run st)
+      let n : Int :=
+        match res0 with
+        | .ok n => n
+        | .error e => e.toInt
+      let res := StepResult.halt (~~~ n) st'
+      mk s!"excquit({n})" st' res
+  | .ordinary code =>
+      if code.bitsRemaining == 0 then
+        if code.refsRemaining == 0 then
+          let st0 := st.consumeGas implicitRetGasPrice
+          let res :=
+            if decide (st0.gas.gasRemaining < 0) then
+              st0.outOfGasHalt
+            else
+              .continue (st0.ret)
+          let stAfter :=
+            match res with
+            | .continue st' => st'
+            | .halt _ st' => st'
+          mk "implicit_ret" stAfter res
+        else
+          let st0 := st.consumeGas implicitJmpRefGasPrice
+          let res :=
+            if decide (st0.gas.gasRemaining < 0) then
+              st0.outOfGasHalt
+            else
+              if code.refPos < code.cell.refs.size then
+                let refCell := code.cell.refs[code.refPos]!
+                .continue { st0 with cc := .ordinary (Slice.ofCell refCell) }
+              else
+                let stExc := st0.throwException Excno.cellUnd.toInt
+                let stExcGas := stExc.consumeGas exceptionGasPrice
+                if decide (stExcGas.gas.gasRemaining < 0) then
+                  stExcGas.outOfGasHalt
+                else
+                  .continue stExcGas
+          let stAfter :=
+            match res with
+            | .continue st' => st'
+            | .halt _ st' => st'
+          mk "implicit_jmpref" stAfter res
+      else
+        let decoded : Except Excno (Instr × Slice) :=
+          if st.cp = 0 then
+            decodeCp0 code
+          else
+            .error .invOpcode
+        match decoded with
+        | .error e =>
+            let st0 := st.throwException e.toInt
+            let st0 := st0.consumeGas exceptionGasPrice
+            let res :=
+              if decide (st0.gas.gasRemaining < 0) then
+                st0.outOfGasHalt
+              else
+                .continue st0
+            let stAfter :=
+              match res with
+              | .continue st' => st'
+              | .halt _ st' => st'
+            mk s!"decode_error({e})" stAfter res
+        | .ok (instr, rest) =>
+            let st0 := { st with cc := .ordinary rest }
+            let stGas := st0.consumeGas (instrGas instr)
+            let (event, res) :=
+              if decide (stGas.gas.gasRemaining < 0) then
+                (s!"exec({reprStr instr}) out_of_gas", stGas.outOfGasHalt)
+              else
+                let (res1, st1) := (execInstr instr).run stGas
+                match res1 with
+                | .ok _ =>
+                    if decide (st1.gas.gasRemaining < 0) then
+                      (s!"exec({reprStr instr}) out_of_gas", st1.outOfGasHalt)
+                    else
+                      (s!"exec({reprStr instr})", .continue st1)
+                | .error e =>
+                    let stExc := st1.throwException e.toInt
+                    let stExcGas := stExc.consumeGas exceptionGasPrice
+                    if decide (stExcGas.gas.gasRemaining < 0) then
+                      (s!"exec_error({reprStr instr},{reprStr e}) out_of_gas", stExcGas.outOfGasHalt)
+                    else
+                      (s!"exec_error({reprStr instr},{reprStr e})", .continue stExcGas)
+            let stAfter :=
+              match res with
+              | .continue st' => st'
+              | .halt _ st' => st'
+            mk event stAfter res
 
 def VmState.tryCommit (st : VmState) : Bool × VmState :=
   -- C++ also checks `level == 0`; our MVP has only ordinary cells (level 0).
@@ -931,6 +1163,69 @@ def VmState.tryCommit (st : VmState) : Bool × VmState :=
     (true, { st with cstate := { c4 := st.regs.c4, c5 := st.regs.c5, committed := true } })
   else
     (false, st)
+
+def VmState.runTrace (fuel : Nat) (st : VmState) (maxTrace : Nat := 200) :
+    StepResult × Array TraceEntry × Bool :=
+  Id.run do
+    let mut stCur := st
+    let mut fuelCur := fuel
+    let mut step : Nat := 0
+    let mut trace : Array TraceEntry := #[]
+    let mut pos : Nat := 0
+    let mut wrapped : Bool := false
+    let mut res : StepResult := .continue stCur
+
+    while fuelCur > 0 do
+      let (entry, stepRes) := stCur.stepTrace step
+      if maxTrace > 0 then
+        if trace.size < maxTrace then
+          trace := trace.push entry
+        else
+          trace := trace.set! pos entry
+          pos := (pos + 1) % maxTrace
+          wrapped := true
+
+      match stepRes with
+      | .continue st' =>
+          stCur := st'
+          res := .continue st'
+          fuelCur := fuelCur - 1
+          step := step + 1
+      | .halt exitCode st' =>
+          res := .halt exitCode st'
+          stCur := st'
+          fuelCur := 0
+
+    match res with
+    | .continue st' =>
+        res := .halt (Excno.fatal.toInt) st'
+    | .halt _ _ => pure ()
+
+    -- Mirror the C++ commit wrapper shape; precise commit checks come later.
+    let res' :=
+      match res with
+      | .continue st' => .halt (Excno.fatal.toInt) st'
+      | .halt exitCode st' =>
+          if exitCode = -1 ∨ exitCode = -2 then
+            let (ok, st'') := st'.tryCommit
+            if ok then
+              .halt exitCode st''
+            else
+              let stFail := { st'' with stack := #[.int (.num 0)] }
+              .halt (~~~ Excno.cellOv.toInt) stFail
+          else
+            .halt exitCode st'
+
+    let traceOut :=
+      if wrapped && trace.size > 0 then
+        let n := trace.size
+        Array.ofFn (n := n) fun i =>
+          let idx := (pos + i.1) % n
+          trace[idx]!
+      else
+        trace
+
+    return (res', traceOut, wrapped)
 
 def VmState.run (fuel : Nat) (st : VmState) : StepResult :=
   match fuel with
@@ -950,10 +1245,6 @@ def VmState.run (fuel : Nat) (st : VmState) : StepResult :=
               .halt (~~~ Excno.cellOv.toInt) stFail
           else
             .halt exitCode st'
-
-def Stack.pretty (s : Stack) : String :=
-  let elems := s.toList.map (fun v => v.pretty)
-  "[" ++ String.intercalate ", " elems ++ "]"
 
 /-! ### Proof scaffolding (Milestone 1, mostly `sorry`) -/
 

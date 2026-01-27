@@ -132,6 +132,19 @@ def testBocCrc32cOk : IO Unit := do
       | _, _ =>
           throw (IO.userError s!"boc crc32c_ok: unexpected stack {Stack.pretty st.stack}")
 
+def testBocParseSamples : IO Unit := do
+  let samples : List String :=
+    [ "B5EE9C7201010101000800000C7A801401A5A1"
+    , "B5EE9C724101010100060000087A801401C8DE68DB"
+    ]
+  for hex in samples do
+    match byteArrayOfHex? hex with
+    | .error e => throw (IO.userError s!"boc sample hex parse failed: {e}")
+    | .ok bytes =>
+        match stdBocDeserialize bytes with
+        | .ok _ => pure ()
+        | .error e => throw (IO.userError s!"boc sample failed to parse: {e}")
+
 def runProg (prog : List Instr) (fuel : Nat := 200) : IO StepResult := do
   let codeCell ←
     match assembleCp0 prog with
@@ -202,6 +215,7 @@ def main (_args : List String) : IO Unit := do
   testBocCounter
   testBocInvOpcode
   testBocCrc32cOk
+  testBocParseSamples
   testEqual
   testIfNotRet
   testSetCp

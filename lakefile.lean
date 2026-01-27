@@ -13,3 +13,6 @@ lean_exe "tvm-lean" where
 
 lean_exe "tvm-lean-tests" where
   root := `Tests
+
+lean_exe "tvm-lean-diff-test" where
+  root := `DiffTestMain

@@ -2,3 +2,14 @@
 /lake-packages
 /build
 
+# Diff testing (generated fixtures/results; keep smoke fixtures checked in)
+/diff-test/fixtures/*.json
+!/diff-test/fixtures/smoke_*.json
+/diff-test/fixtures/_batch/
+/diff-test/results*.json
+/diff-test/*.jsonl
+/diff-test/_report*.json
+/diff-test/fixtures_sweep_tmp/
+/diff-test/fixtures-local/
+/diff-test/collector/node_modules/
+/diff-test/collector/dist/
