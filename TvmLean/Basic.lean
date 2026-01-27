@@ -1,0 +1,2 @@
+def hello : String := "world"
+
