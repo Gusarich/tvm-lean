@@ -6,6 +6,7 @@ namespace TvmLean
 
 - Core datatypes (`IntVal`, `Value`, `Continuation`, `VmState`)
 - A tiny instruction AST and an executable `step`
+- Minimal cp0 decode/encode utilities (Milestone 2)
 - WF predicates + theorem statements (mostly `sorry` for now)
 
 This is intentionally minimal and designed to be refactored as we add decoding/cells/dicts/opcodes.
@@ -102,6 +103,8 @@ structure Cell where
 def Cell.empty : Cell :=
   { bits := #[], refs := #[] }
 
+instance : Inhabited Cell := ⟨Cell.empty⟩
+
 def Cell.ofUInt (bits : Nat) (n : Nat) : Cell :=
   { bits := natToBits n bits, refs := #[] }
 
@@ -174,10 +177,10 @@ inductive Instr : Type
   deriving DecidableEq, Repr
 
 inductive Continuation : Type
-  | ordinary (code : List Instr)
+  | ordinary (code : Slice)
   | quit (exitCode : Int)
   | excQuit
-  deriving DecidableEq, Repr
+  deriving Repr
 
 inductive Value : Type
   | int (i : IntVal)
@@ -250,6 +253,7 @@ def CommittedState.empty : CommittedState :=
 
 def gasPerInstr : Int := 10
 def exceptionGasPrice : Int := 50
+def implicitJmpRefGasPrice : Int := 10
 def implicitRetGasPrice : Int := 5
 def cellCreateGasPrice : Int := 500
 
@@ -257,6 +261,324 @@ def instrGas (i : Instr) : Int :=
   match i with
   | .endc => gasPerInstr + cellCreateGasPrice
   | _ => gasPerInstr
+
+/-! ### Minimal cp0 decoding (Milestone 2) -/
+
+def Slice.takeBitsAsNat (s : Slice) (n : Nat) : Except Excno (Nat × Slice) := do
+  if s.haveBits n then
+    let bs := s.readBits n
+    return (bitsToNat bs, s.advanceBits n)
+  else
+    throw .invOpcode
+
+def Slice.peekBitsAsNat (s : Slice) (n : Nat) : Except Excno Nat := do
+  if s.haveBits n then
+    return bitsToNat (s.readBits n)
+  else
+    throw .invOpcode
+
+def natToIntSignedTwos (n bits : Nat) : Int :=
+  let half : Nat := 1 <<< (bits - 1)
+  if n < half then
+    Int.ofNat n
+  else
+    Int.ofNat n - Int.ofNat (1 <<< bits)
+
+def bitsToIntSignedTwos (bs : BitString) : Int :=
+  match bs.size with
+  | 0 => 0
+  | bits + 1 =>
+      let u : Nat := bitsToNat bs
+      if bs[0]! then
+        Int.ofNat u - Int.ofNat (1 <<< (bits + 1))
+      else
+        Int.ofNat u
+
+def decodeCp0 (s : Slice) : Except Excno (Instr × Slice) := do
+  -- PUSHINT (tinyint4): 4-bit prefix 0x7, 4-bit immediate.
+  let p4 ← s.peekBitsAsNat 4
+  if p4 = 0x7 then
+    let (b8, s') ← s.takeBitsAsNat 8
+    let imm4 : Nat := b8 &&& 0xf
+    let x : Int := Int.ofNat ((imm4 + 5) &&& 0xf) - 5
+    return (.pushInt (.num x), s')
+
+  -- Exception opcodes: THROWIFNOT short/long.
+  -- Short: 10-bit prefix (0xf280 >> 6), 6-bit excno.
+  if s.haveBits 10 then
+    let p10 := bitsToNat (s.readBits 10)
+    if p10 = (0xf280 >>> 6) then
+      let (_, s10) ← s.takeBitsAsNat 10
+      let (exc, s16) ← s10.takeBitsAsNat 6
+      return (.throwIfNot (Int.ofNat exc), s16)
+  -- Long: 13-bit prefix (0xf2e0 >> 3), 11-bit excno.
+  if s.haveBits 13 then
+    let p13 := bitsToNat (s.readBits 13)
+    if p13 = (0xf2e0 >>> 3) then
+      let (_, s13) ← s.takeBitsAsNat 13
+      let (exc, s24) ← s13.takeBitsAsNat 11
+      return (.throwIfNot (Int.ofNat exc), s24)
+
+  -- PUSHINT (8/16/long)
+  let b8 ← s.peekBitsAsNat 8
+  if b8 = 0x80 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (arg, s16) ← s8.takeBitsAsNat 8
+    return (.pushInt (.num (natToIntSignedTwos arg 8)), s16)
+  if b8 = 0x81 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (arg, s24) ← s8.takeBitsAsNat 16
+    return (.pushInt (.num (natToIntSignedTwos arg 16)), s24)
+  if b8 = 0x82 then
+    -- Extended constant: 0x82 (8) + len (5) + value (3 + 8*(len+2)).
+    if !s.haveBits 13 then
+      throw .invOpcode
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (len5, s13) ← s8.takeBitsAsNat 5
+    let l : Nat := len5 + 2
+    let width : Nat := 3 + l * 8
+    if !s13.haveBits width then
+      throw .invOpcode
+    let bs := s13.readBits width
+    let s' := s13.advanceBits width
+    return (.pushInt (.num (bitsToIntSignedTwos bs)), s')
+
+  -- 16-bit control register ops: PUSH c<i>, POP c<i>.
+  if s.haveBits 16 then
+    let w16 := bitsToNat (s.readBits 16)
+    if w16 &&& 0xfff8 = 0xed40 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.pushCtr idx, s16)
+    if w16 &&& 0xfff8 = 0xed50 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.popCtr idx, s16)
+    if w16 &&& 0xff00 = 0xff00 then
+      let b : Nat := w16 &&& 0xff
+      if b = 0xf0 then
+        throw .invOpcode
+      -- Match `exec_set_cp`: cp = ((b + 0x10) & 0xff) - 0x10.
+      let cp : Int := Int.ofNat ((b + 0x10) &&& 0xff) - 0x10
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.setcp cp, s16)
+
+  -- 8-bit opcodes / fixed+arg opcodes
+  if b8 = 0x00 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.nop, s')
+  if b8 = 0x01 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.xchg0 1, s')
+  if 0x02 ≤ b8 ∧ b8 ≤ 0x0f then
+    let idx : Nat := b8 &&& 0xf
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.xchg0 idx, s')
+  if b8 = 0x11 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (idx, s16) ← s8.takeBitsAsNat 8
+    return (.xchg0 idx, s16)
+  if b8 = 0x20 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.push 0, s')
+  if b8 = 0x21 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.push 1, s')
+  if 0x22 ≤ b8 ∧ b8 ≤ 0x2f then
+    let idx : Nat := b8 &&& 0xf
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.push idx, s')
+  if b8 = 0x30 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.pop 0, s')
+  if b8 = 0x31 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.pop 1, s')
+  if 0x32 ≤ b8 ∧ b8 ≤ 0x3f then
+    let idx : Nat := b8 &&& 0xf
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.pop idx, s')
+  if b8 = 0x56 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (idx, s16) ← s8.takeBitsAsNat 8
+    return (.push idx, s16)
+  if b8 = 0x57 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (idx, s16) ← s8.takeBitsAsNat 8
+    return (.pop idx, s16)
+  if b8 = 0xa4 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.inc, s')
+  if b8 = 0xba then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.equal, s')
+  if b8 = 0xc8 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.newc, s')
+  if b8 = 0xc9 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.endc, s')
+  if b8 = 0xcb then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (arg, s16) ← s8.takeBitsAsNat 8
+    return (.stu (arg + 1), s16)
+  if b8 = 0xd0 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.ctos, s')
+  if b8 = 0xd1 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.ends, s')
+  if b8 = 0xd3 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (arg, s16) ← s8.takeBitsAsNat 8
+    return (.ldu (arg + 1), s16)
+  if b8 = 0xdc then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.ifret, s')
+  if b8 = 0xdd then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.ifnotret, s')
+
+  throw .invOpcode
+
+def intToBitsTwos (n : Int) (bits : Nat) : Except Excno BitString := do
+  if bits = 0 then
+    return #[]
+  let modulus : Nat := 1 <<< bits
+  if n ≥ 0 then
+    let u := n.toNat
+    if u ≥ modulus then
+      throw .rangeChk
+    return natToBits u bits
+  else
+    -- two's complement: 2^bits - |n|
+    let abs : Nat := (-n).toNat
+    if abs = 0 ∨ abs ≥ modulus then
+      throw .rangeChk
+    return natToBits (modulus - abs) bits
+
+def encodeCp0 (i : Instr) : Except Excno BitString := do
+  match i with
+  | .nop =>
+      return natToBits 0x00 8
+  | .pushInt .nan =>
+      throw .invOpcode
+  | .pushInt (.num n) =>
+      if (-5 ≤ n ∧ n ≤ 10) then
+        let imm : Nat :=
+          if n ≥ 0 then
+            n.toNat
+          else
+            (16 + n).toNat
+        return natToBits (0x70 + imm) 8
+      else if (-128 ≤ n ∧ n ≤ 127) then
+        let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
+        return natToBits 0x80 8 ++ natToBits imm 8
+      else if (-32768 ≤ n ∧ n ≤ 32767) then
+        let imm : Nat := if n ≥ 0 then n.toNat else (65536 - (-n).toNat)
+        return natToBits 0x81 8 ++ natToBits imm 16
+      else
+        -- PUSHINT_LONG encoding (0x82 + len5 + value bits).
+        -- For MVP assembly, pick the max width; it always decodes correctly and stays within 257-bit range checks.
+        let len5 : Nat := 31
+        let l := len5 + 2
+        let width := 3 + l * 8
+        let prefix13 : Nat := (0x82 <<< 5) + len5
+        let valBits ← intToBitsTwos n width
+        return natToBits prefix13 13 ++ valBits
+  | .push idx =>
+      if idx = 0 then
+        return natToBits 0x20 8
+      else if idx = 1 then
+        return natToBits 0x21 8
+      else if idx ≤ 15 then
+        return natToBits (0x20 + idx) 8
+      else if idx ≤ 255 then
+        return natToBits 0x56 8 ++ natToBits idx 8
+      else
+        throw .rangeChk
+  | .pop idx =>
+      if idx = 0 then
+        return natToBits 0x30 8
+      else if idx = 1 then
+        return natToBits 0x31 8
+      else if idx ≤ 15 then
+        return natToBits (0x30 + idx) 8
+      else if idx ≤ 255 then
+        return natToBits 0x57 8 ++ natToBits idx 8
+      else
+        throw .rangeChk
+  | .xchg0 idx =>
+      if idx = 0 then
+        return natToBits 0x00 8
+      else if idx = 1 then
+        return natToBits 0x01 8
+      else if idx ≤ 15 then
+        return natToBits idx 8
+      else if idx ≤ 255 then
+        return natToBits 0x11 8 ++ natToBits idx 8
+      else
+        throw .rangeChk
+  | .pushCtr idx =>
+      if idx = 6 ∨ idx > 7 then throw .rangeChk
+      return natToBits (0xed40 + idx) 16
+  | .popCtr idx =>
+      if idx = 6 ∨ idx > 7 then throw .rangeChk
+      return natToBits (0xed50 + idx) 16
+  | .ctos =>
+      return natToBits 0xd0 8
+  | .newc =>
+      return natToBits 0xc8 8
+  | .endc =>
+      return natToBits 0xc9 8
+  | .ends =>
+      return natToBits 0xd1 8
+  | .ldu bits =>
+      if bits = 0 ∨ bits > 256 then throw .rangeChk
+      return natToBits 0xd3 8 ++ natToBits (bits - 1) 8
+  | .stu bits =>
+      if bits = 0 ∨ bits > 256 then throw .rangeChk
+      return natToBits 0xcb 8 ++ natToBits (bits - 1) 8
+  | .setcp cp =>
+      -- Encode only the immediate SETCP form (no SETCPX), matching C++ `exec_set_cp`.
+      if cp = -16 then throw .invOpcode
+      if decide (-15 ≤ cp ∧ cp ≤ 239) then
+        let b : Nat :=
+          if cp ≥ 0 then
+            cp.toNat
+          else
+            (256 + cp).toNat
+        return natToBits 0xff 8 ++ natToBits b 8
+      else
+        throw .invOpcode
+  | .ifret =>
+      return natToBits 0xdc 8
+  | .ifnotret =>
+      return natToBits 0xdd 8
+  | .inc =>
+      return natToBits 0xa4 8
+  | .equal =>
+      return natToBits 0xba 8
+  | .throwIfNot exc =>
+      if exc < 0 then throw .rangeChk
+      if exc ≤ 63 then
+        let prefix10 : Nat := 0xf280 >>> 6
+        let word16 : Nat := (prefix10 <<< 6) + exc.toNat
+        return natToBits word16 16
+      else if exc ≤ 0x7ff then
+        let prefix13 : Nat := 0xf2e0 >>> 3
+        let word24 : Nat := (prefix13 <<< 11) + exc.toNat
+        return natToBits word24 24
+      else
+        throw .rangeChk
+
+def assembleCp0 (code : List Instr) : Except Excno Cell := do
+  let mut bits : BitString := #[]
+  for i in code do
+    bits := bits ++ (← encodeCp0 i)
+  return { bits, refs := #[] }
 
 structure Regs where
   c0 : Continuation
@@ -287,10 +609,10 @@ structure VmState where
   maxDataDepth : Nat
   deriving Repr
 
-def VmState.initial (code : List Instr) (gasLimit : Int := 1_000_000) : VmState :=
+def VmState.initial (code : Cell) (gasLimit : Int := 1_000_000) : VmState :=
   { stack := #[]
     regs := Regs.initial
-    cc := .ordinary code
+    cc := .ordinary (Slice.ofCell code)
     cp := 0
     gas := GasLimits.ofLimit gasLimit
     cstate := CommittedState.empty
@@ -543,34 +865,65 @@ def VmState.step (st : VmState) : StepResult :=
         | .error e => e.toInt
       .halt (~~~ n) st'
   | .ordinary code =>
-      match code with
-      | [] =>
+      if code.bitsRemaining == 0 then
+        if code.refsRemaining == 0 then
+          -- Implicit RET.
           let st0 := st.consumeGas implicitRetGasPrice
           if decide (st0.gas.gasRemaining < 0) then
             st0.outOfGasHalt
           else
             .continue (st0.ret)
-      | instr :: rest =>
-          let st0 := { st with cc := .ordinary rest }
-          let stGas := st0.consumeGas (instrGas instr)
-          if decide (stGas.gas.gasRemaining < 0) then
-            stGas.outOfGasHalt
+        else
+          -- Implicit JMPREF to the first reference.
+          let st0 := st.consumeGas implicitJmpRefGasPrice
+          if decide (st0.gas.gasRemaining < 0) then
+            st0.outOfGasHalt
           else
-            let (res, st1) := (execInstr instr).run stGas
-            match res with
-            | .ok _ =>
-                if decide (st1.gas.gasRemaining < 0) then
-                  st1.outOfGasHalt
-                else
-                  .continue st1
-            | .error e =>
-                -- TVM behavior: convert VM errors into an exception jump to c2.
-                let stExc := st1.throwException e.toInt
-                let stExcGas := stExc.consumeGas exceptionGasPrice
-                if decide (stExcGas.gas.gasRemaining < 0) then
-                  stExcGas.outOfGasHalt
-                else
-                  .continue stExcGas
+            if code.refPos < code.cell.refs.size then
+              let refCell := code.cell.refs[code.refPos]!
+              .continue { st0 with cc := .ordinary (Slice.ofCell refCell) }
+            else
+              let stExc := st0.throwException Excno.cellUnd.toInt
+              let stExcGas := stExc.consumeGas exceptionGasPrice
+              if decide (stExcGas.gas.gasRemaining < 0) then
+                stExcGas.outOfGasHalt
+              else
+                .continue stExcGas
+      else
+        let decoded : Except Excno (Instr × Slice) :=
+          if st.cp = 0 then
+            decodeCp0 code
+          else
+            .error .invOpcode
+        match decoded with
+        | .error e =>
+            let st0 := st.throwException e.toInt
+            let st0 := st0.consumeGas exceptionGasPrice
+            if decide (st0.gas.gasRemaining < 0) then
+              st0.outOfGasHalt
+            else
+              .continue st0
+        | .ok (instr, rest) =>
+            let st0 := { st with cc := .ordinary rest }
+            let stGas := st0.consumeGas (instrGas instr)
+            if decide (stGas.gas.gasRemaining < 0) then
+              stGas.outOfGasHalt
+            else
+              let (res, st1) := (execInstr instr).run stGas
+              match res with
+              | .ok _ =>
+                  if decide (st1.gas.gasRemaining < 0) then
+                    st1.outOfGasHalt
+                  else
+                    .continue st1
+              | .error e =>
+                  -- TVM behavior: convert VM errors into an exception jump to c2.
+                  let stExc := st1.throwException e.toInt
+                  let stExcGas := stExc.consumeGas exceptionGasPrice
+                  if decide (stExcGas.gas.gasRemaining < 0) then
+                    stExcGas.outOfGasHalt
+                  else
+                    .continue stExcGas
 
 def VmState.tryCommit (st : VmState) : Bool × VmState :=
   -- C++ also checks `level == 0`; our MVP has only ordinary cells (level 0).

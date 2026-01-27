@@ -11,3 +11,5 @@ lean_lib «TvmLean» where
 lean_exe "tvm-lean" where
   root := `Main
 
+lean_exe "tvm-lean-tests" where
+  root := `Tests

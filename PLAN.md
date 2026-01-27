@@ -116,7 +116,8 @@ Important helpers:
 * `checkNaN` behavior for the specific instruction. Example: `IFRET` must throw integer overflow if the flag is `NaN` as described in `tvm.tex`.
 * `rangeCheck` for serialization instructions like `STU n`, that is exit code 5 if the integer does not fit, matching `tvm.tex` for `STU` and friends.
 
-For the MVP, you can model `cc` as “current list of Instr” rather than a slice, to avoid decoding. You still keep the `Continuation` type, but `Ordinary` holds `List Instr` for now.
+For the MVP, you *can* start by modeling `cc` as a `List Instr` (so you can run semantics before you have any decoding).
+But if you expect to reach Milestone 2 quickly, it can be worth using `Slice` for ordinary continuations from day one (and then adding `decodeCp0`) to avoid a big refactor later.
 
 That gives you a runnable interpreter quickly and you can already validate tricky behaviors: NaN handling, exit codes, stack discipline, slice bounds.
 
@@ -138,7 +139,7 @@ Goal: feed it real code cells produced by existing tooling, without changing the
 
 Keep the semantic evaluator working over `Instr`. Add:
 
-* `decodeCp0 : Slice → Except DecodeError (Instr × Slice)`
+* `decodeCp0 : Slice → Except Excno (Instr × Slice)`
 * `fetch : VmState → Except Error (Instr × VmState)`
 
   * reads next instruction from `cc` which is now a slice
