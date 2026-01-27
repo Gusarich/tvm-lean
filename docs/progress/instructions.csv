@@ -22,9 +22,9 @@ POPCTR,true,false
 STSLICER,false,false
 GETPARAM,false,false
 SETGLOB,false,false
-XCHG_0I_LONG,false,false
+XCHG_0I_LONG,true,false
 LDREF,false,false
-THROWIFNOT_SHORT,false,false
+THROWIFNOT_SHORT,true,false
 ROTREV,false,false
 INC,true,false
 THROWIF_SHORT,false,false
@@ -35,8 +35,8 @@ ACCEPT,false,false
 CHKSIGNU,false,false
 XCHG2,false,false
 PLDREFIDX,false,false
-SETCP,false,false
-IFNOTRET,false,false
+SETCP,true,false
+IFNOTRET,true,false
 LDGRAMS,false,false
 PUSHCTR,true,false
 STREF,false,false
@@ -46,7 +46,7 @@ XCHG_IJ,false,false
 PUSHCONT,false,false
 BLKDROP2,false,false
 PUSHPOW2,false,false
-PUSHINT_8,false,false
+PUSHINT_8,true,false
 STDICT,false,false
 EQINT,false,false
 BLKDROP,false,false
@@ -69,7 +69,7 @@ SENDRAWMSG,false,false
 SDEQ,false,false
 PUSH2,false,false
 ENDS,true,false
-POP_LONG,false,false
+POP_LONG,true,false
 XCPU,false,false
 GTINT,false,false
 SEMPTY,false,false
@@ -95,7 +95,7 @@ DROP2,false,false
 XCPUXC,false,false
 IFREFELSE,false,false
 DIV,false,false
-PUSH_LONG,false,false
+PUSH_LONG,true,false
 PUSHSLICE,false,false
 LESS,false,false
 PUSH3,false,false

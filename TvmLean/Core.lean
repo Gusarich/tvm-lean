@@ -105,6 +105,11 @@ def Cell.empty : Cell :=
 def Cell.ofUInt (bits : Nat) (n : Nat) : Cell :=
   { bits := natToBits n bits, refs := #[] }
 
+def Cell.depthLe (c : Cell) : Nat → Bool
+  | 0 => false
+  | limit + 1 =>
+      c.refs.all (fun r => r.depthLe limit)
+
 structure Slice where
   cell : Cell
   bitPos : Nat
@@ -160,6 +165,9 @@ inductive Instr : Type
   | ends
   | ldu (bits : Nat)
   | stu (bits : Nat)
+  | setcp (cp : Int)
+  | ifret
+  | ifnotret
   | inc
   | equal
   | throwIfNot (exc : Int) -- THROWIFNOT <exc>
@@ -218,6 +226,38 @@ def GasLimits.default : GasLimits :=
     gasRemaining := GasLimits.infty
     gasBase := GasLimits.infty }
 
+def GasLimits.ofLimit (limit : Int) : GasLimits :=
+  { gasMax := GasLimits.infty
+    gasLimit := limit
+    gasCredit := 0
+    gasRemaining := limit
+    gasBase := limit }
+
+def GasLimits.gasConsumed (g : GasLimits) : Int :=
+  g.gasBase - g.gasRemaining
+
+def GasLimits.consume (g : GasLimits) (amount : Int) : GasLimits :=
+  { g with gasRemaining := g.gasRemaining - amount }
+
+structure CommittedState where
+  c4 : Cell
+  c5 : Cell
+  committed : Bool
+  deriving Repr
+
+def CommittedState.empty : CommittedState :=
+  { c4 := Cell.empty, c5 := Cell.empty, committed := false }
+
+def gasPerInstr : Int := 10
+def exceptionGasPrice : Int := 50
+def implicitRetGasPrice : Int := 5
+def cellCreateGasPrice : Int := 500
+
+def instrGas (i : Instr) : Int :=
+  match i with
+  | .endc => gasPerInstr + cellCreateGasPrice
+  | _ => gasPerInstr
+
 structure Regs where
   c0 : Continuation
   c1 : Continuation
@@ -243,14 +283,18 @@ structure VmState where
   cc : Continuation
   cp : Int
   gas : GasLimits
+  cstate : CommittedState
+  maxDataDepth : Nat
   deriving Repr
 
-def VmState.initial (code : List Instr) : VmState :=
+def VmState.initial (code : List Instr) (gasLimit : Int := 1_000_000) : VmState :=
   { stack := #[]
     regs := Regs.initial
     cc := .ordinary code
     cp := 0
-    gas := GasLimits.default }
+    gas := GasLimits.ofLimit gasLimit
+    cstate := CommittedState.empty
+    maxDataDepth := 512 }
 
 abbrev VM := ExceptT Excno (StateM VmState)
 
@@ -331,11 +375,22 @@ def VM.pushSmallInt (n : Int) : VM Unit := do
   -- Always fits 257-bit in practice for our uses.
   VM.push (.int (.num n))
 
+def VmState.consumeGas (st : VmState) (amount : Int) : VmState :=
+  { st with gas := st.gas.consume amount }
+
 def VmState.throwException (st : VmState) (exc : Int) : VmState :=
   let stack : Stack := #[.int (.num 0), .int (.num exc)]
   { st with
     stack := stack
     cc := st.regs.c2 }
+
+def VmState.ret (st : VmState) : VmState :=
+  let old := st.regs.c0
+  { st with regs := { st.regs with c0 := .quit 0 }, cc := old }
+
+def VmState.retAlt (st : VmState) : VmState :=
+  let old := st.regs.c1
+  { st with regs := { st.regs with c1 := .quit 1 }, cc := old }
 
 def VmState.getCtr (st : VmState) (idx : Nat) : Except Excno Value :=
   match idx with
@@ -427,6 +482,21 @@ def execInstr (i : Instr) : VM Unit := do
             throw .rangeChk
           let bs := natToBits n.toNat bits
           VM.push (.builder (b.storeBits bs))
+  | .setcp cp =>
+      if cp = 0 then
+        modify fun st => { st with cp := 0 }
+      else
+        throw .invOpcode
+  | .ifret =>
+      if (← VM.popBool) then
+        modify fun st => st.ret
+      else
+        pure ()
+  | .ifnotret =>
+      if !(← VM.popBool) then
+        modify fun st => st.ret
+      else
+        pure ()
   | .inc =>
       let x ← VM.popInt
       VM.pushIntQuiet (x.inc) false
@@ -439,12 +509,17 @@ def execInstr (i : Instr) : VM Unit := do
       if flag then
         pure ()
       else
-        modify fun st => st.throwException exc
+        modify fun st => (st.throwException exc).consumeGas exceptionGasPrice
 
 inductive StepResult : Type
   | continue (st : VmState)
   | halt (exitCode : Int) (st : VmState)
   deriving Repr
+
+def VmState.outOfGasHalt (st : VmState) : StepResult :=
+  let consumed := st.gas.gasConsumed
+  let st' := { st with stack := #[.int (.num consumed)] }
+  StepResult.halt Excno.outOfGas.toInt st'
 
 def VmState.step (st : VmState) : StepResult :=
   match st.cc with
@@ -470,20 +545,39 @@ def VmState.step (st : VmState) : StepResult :=
   | .ordinary code =>
       match code with
       | [] =>
-          -- MVP model: implicit RET jumps to c0.
-          .continue { st with cc := st.regs.c0 }
+          let st0 := st.consumeGas implicitRetGasPrice
+          if decide (st0.gas.gasRemaining < 0) then
+            st0.outOfGasHalt
+          else
+            .continue (st0.ret)
       | instr :: rest =>
           let st0 := { st with cc := .ordinary rest }
-          let (res, st1) := (execInstr instr).run st0
-          match res with
-          | .ok _ => .continue st1
-          | .error e =>
-              -- Unhandled VM error: “throw exception code and jump to c2”.
-              .continue (st1.throwException e.toInt)
+          let stGas := st0.consumeGas (instrGas instr)
+          if decide (stGas.gas.gasRemaining < 0) then
+            stGas.outOfGasHalt
+          else
+            let (res, st1) := (execInstr instr).run stGas
+            match res with
+            | .ok _ =>
+                if decide (st1.gas.gasRemaining < 0) then
+                  st1.outOfGasHalt
+                else
+                  .continue st1
+            | .error e =>
+                -- TVM behavior: convert VM errors into an exception jump to c2.
+                let stExc := st1.throwException e.toInt
+                let stExcGas := stExc.consumeGas exceptionGasPrice
+                if decide (stExcGas.gas.gasRemaining < 0) then
+                  stExcGas.outOfGasHalt
+                else
+                  .continue stExcGas
 
-def VmState.tryCommit (_st : VmState) : Bool :=
-  -- Milestone 1: keep the hook (C++ has depth/level checks); always succeed for now.
-  true
+def VmState.tryCommit (st : VmState) : Bool × VmState :=
+  -- C++ also checks `level == 0`; our MVP has only ordinary cells (level 0).
+  if st.regs.c4.depthLe st.maxDataDepth && st.regs.c5.depthLe st.maxDataDepth then
+    (true, { st with cstate := { c4 := st.regs.c4, c5 := st.regs.c5, committed := true } })
+  else
+    (false, st)
 
 def VmState.run (fuel : Nat) (st : VmState) : StepResult :=
   match fuel with
@@ -494,12 +588,13 @@ def VmState.run (fuel : Nat) (st : VmState) : StepResult :=
       | .halt exitCode st' =>
           -- Mirror the C++ commit wrapper shape; precise commit checks come later.
           if exitCode = -1 ∨ exitCode = -2 then
-            if st'.tryCommit then
-              .halt exitCode st'
+            let (ok, st'') := st'.tryCommit
+            if ok then
+              .halt exitCode st''
             else
               -- C++: clear stack, push 0, return ~cell_ov on commit failure.
-              let st'' := { st' with stack := #[.int (.num 0)] }
-              .halt (~~~ Excno.cellOv.toInt) st''
+              let stFail := { st'' with stack := #[.int (.num 0)] }
+              .halt (~~~ Excno.cellOv.toInt) stFail
           else
             .halt exitCode st'
 
@@ -516,23 +611,35 @@ def WF_Int : IntVal → Prop
       let hi : Int := (2 : Int) ^ (256 : Nat)
       lo ≤ n ∧ n < hi
 
-def WF_Cell (_c : Cell) : Prop := True
-def WF_Slice (_s : Slice) : Prop := True
-def WF_Builder (_b : Builder) : Prop := True
+def WF_Cell (c : Cell) : Prop :=
+  c.bits.size ≤ 1023 ∧ c.refs.size ≤ 4
+
+def WF_Slice (s : Slice) : Prop :=
+  WF_Cell s.cell ∧ s.bitPos ≤ s.cell.bits.size ∧ s.refPos ≤ s.cell.refs.size
+
+def WF_Builder (b : Builder) : Prop :=
+  b.bits.size ≤ 1023 ∧ b.refs.size ≤ 4
+
+def WF_Tuple (t : Array Value) : Prop :=
+  t.size ≤ 255
 
 def WF_Value : Value → Prop
   | .int i => WF_Int i
   | .cell c => WF_Cell c
   | .slice s => WF_Slice s
   | .builder b => WF_Builder b
-  | .tuple _ => True
+  | .tuple t => WF_Tuple t
   | .cont _ => True
   | .null => True
 
-def WF_Regs (_r : Regs) : Prop := True
+def WF_Gas (g : GasLimits) : Prop :=
+  g.gasLimit ≤ g.gasMax ∧ g.gasBase = g.gasLimit + g.gasCredit ∧ g.gasRemaining ≤ g.gasBase
+
+def WF_Regs (r : Regs) : Prop :=
+  WF_Cell r.c4 ∧ WF_Cell r.c5 ∧ WF_Tuple r.c7
 
 def WF_State (st : VmState) : Prop :=
-  (∀ v ∈ st.stack.toList, WF_Value v) ∧ WF_Regs st.regs
+  (∀ v ∈ st.stack.toList, WF_Value v) ∧ WF_Regs st.regs ∧ WF_Gas st.gas
 
 theorem step_preserves_wf {st : VmState} :
     WF_State st →
@@ -546,6 +653,20 @@ theorem run_preserves_wf {fuel : Nat} {st : VmState} :
       match VmState.run fuel st with
       | .continue st' => WF_State st'
       | .halt _ st' => WF_State st' := by
+  sorry
+
+theorem step_progress {st : VmState} :
+    WF_State st →
+      match st.step with
+      | .continue _ => True
+      | .halt _ _ => True := by
+  sorry
+
+theorem step_gas_monotone {st : VmState} :
+    WF_State st →
+      match st.step with
+      | .continue st' => st'.gas.gasRemaining ≤ st.gas.gasRemaining
+      | .halt _ st' => st'.gas.gasRemaining ≤ st.gas.gasRemaining := by
   sorry
 
 end TvmLean
