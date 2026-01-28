@@ -7,6 +7,9 @@
     "collect": "node dist/collect.js",
     "sweep": "node dist/sweep.js"
   },
+  "overrides": {
+    "@ton/core": "0.63.0"
+  },
   "dependencies": {
     "txtracer-core": "^0.5.0"
   },

@@ -206,11 +206,11 @@ async function collectFixture(
     const shardAccountBase64 = shardAccountToBase64(shardAcc0);
 
     const exec: any = sandbox.executor;
-    if (typeof exec.sbsTransactionSetup !== "function") {
-      throw new Error("sandbox executor does not support step-by-step API (sbsTransactionSetup)");
+    if (typeof exec.runTransaction !== "function") {
+      throw new Error("sandbox executor does not support runTransaction");
     }
 
-    const { res: sbsPtr, emptr } = exec.sbsTransactionSetup({
+    const txRes = await exec.runTransaction({
       config: blockConfig,
       libs: libsCell ?? null,
       verbosity: "full_location_stack_verbose",
@@ -223,21 +223,6 @@ async function collectFixture(
       debugEnabled: true,
     });
 
-    let txRes: any;
-    let c7: TupleItem;
-    try {
-      const maxSteps = 5_000_000;
-      let steps = 0;
-      while (exec.sbsTransactionStep(sbsPtr)) {
-        steps++;
-        if (steps > maxSteps) throw new Error(`sbsTransactionStep exceeded ${maxSteps} steps`);
-      }
-      c7 = exec.sbsTransactionC7(sbsPtr) as TupleItem;
-      txRes = exec.sbsTransactionResult(sbsPtr);
-    } finally {
-      if (typeof exec.destroyEmulator === "function") exec.destroyEmulator(emptr);
-    }
-
     if (!txRes?.result?.success) throw new Error(`sandbox emulation failed: ${txRes?.result?.error ?? "unknown error"}`);
 
     const shardAccountAfter = loadShardAccount(Cell.fromBase64(String(txRes.result.shardAccount)).asSlice());
@@ -249,8 +234,6 @@ async function collectFixture(
     if (typeof actionsB64 === "string" && actionsB64.length > 0) {
       fixture.expected.c5_boc = actionsB64;
     }
-
-    fixture.expected.c7 = tupleItemToJson(c7);
   }
 
   return fixture;

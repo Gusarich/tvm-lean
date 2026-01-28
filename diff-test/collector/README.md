@@ -28,7 +28,7 @@ Or from a file with one tx hash per line:
 npm run collect -- --tx-file tx_hashes.txt --out-dir ../fixtures
 ```
 
-To include strict end-state expectations (`expected.c4_boc` / `expected.c5_boc` / `expected.c7`) via TON Sandbox emulation:
+To include strict end-state expectations (`expected.c4_boc` / `expected.c5_boc`, and optionally `expected.c7` if supported) via TON Sandbox emulation:
 
 ```sh
 npm run collect -- --tx <TX_HASH> --expected-state --out-dir ../fixtures
@@ -70,7 +70,7 @@ Notes:
 - In `--run-lean` mode, fixtures are written to `out-dir/_batch/` and deleted between batches to save disk; use `--keep-fixtures` to also keep a copy in `out-dir/`.
 - Add `--trace-failures --trace-max <N>` to include Lean VM step traces in results for non-PASS cases (useful for debugging).
 - Add `--trace-all --trace-max <N>` to include Lean VM step traces for **every** case (including PASS).
-- Add `--expected-state` to populate `expected.c4_boc` / `expected.c5_boc` / `expected.c7` using TON Sandbox emulation (slower, but enables strict end-state comparisons).
+- Add `--expected-state` to populate `expected.c4_boc` / `expected.c5_boc` using TON Sandbox emulation (slower, but enables strict end-state comparisons). Some Sandbox builds do not expose step-by-step transaction APIs, so `expected.c7` may be unavailable.
 - By default, `sweep` (like `collect`) only includes the **first transaction per account per masterchain block**. Use `--allow-nonfirst` to include all, but results may be unreliable until we implement in-block state replay.
 - For huge ranges, expect rate limits; use your own `TONCENTER_API_KEY` / `DTON_API_KEY` if needed.
 - `diff-test/fixtures/*.json` and `diff-test/*.jsonl` are intended to be local outputs and are gitignored (only `smoke_*.json` is checked in).

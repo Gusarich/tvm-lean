@@ -20,6 +20,9 @@ type Fixture = {
   stack_init: {
     balance_grams: string;
     msg_balance_grams: string;
+    now: string;
+    lt: string;
+    rand_seed: string;
     in_msg_boc: string;
     in_msg_body_boc: string;
     in_msg_extern: boolean;
@@ -76,6 +79,12 @@ function emptyCell(): any {
   return beginCell().endCell();
 }
 
+function bytesToBigIntBE(buf: Buffer): bigint {
+  let x = 0n;
+  for (const b of buf) x = (x << 8n) + BigInt(b);
+  return x;
+}
+
 function tupleItemToJson(item: TupleItem): TupleItemJson {
   if (item.type === "null") return { type: "null" };
   if (item.type === "nan") return { type: "nan" };
@@ -95,9 +104,32 @@ async function fetchToncenterBlocks(
   const base = testnet ? "https://testnet.toncenter.com" : "https://toncenter.com";
   const url = new URL(`${base}/api/v3/blocks`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`toncenter blocks: HTTP ${res.status} ${await res.text()}`);
-  return (await res.json()) as any;
+  const apiKey = process.env["TONCENTER_API_KEY"];
+  const headers = apiKey ? { "X-API-Key": apiKey } : undefined;
+
+  const maxAttempts = 8;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const res = await fetch(url, { headers });
+    if (res.ok) return (await res.json()) as any;
+
+    const body = await res.text();
+    const retryAfter = Number(res.headers.get("retry-after") ?? "");
+    const backoffMs =
+      Number.isFinite(retryAfter) && retryAfter > 0
+        ? Math.min(60_000, retryAfter * 1000)
+        : Math.min(60_000, 500 * 2 ** (attempt - 1));
+
+    if (res.status === 429 && attempt < maxAttempts) {
+      // eslint-disable-next-line no-console
+      console.log(`toncenter blocks: HTTP 429 (rate limit), retrying in ${backoffMs}ms...`);
+      await new Promise((r) => setTimeout(r, backoffMs));
+      continue;
+    }
+
+    throw new Error(`toncenter blocks: HTTP ${res.status} ${body}`);
+  }
+
+  throw new Error("toncenter blocks: exhausted retries");
 }
 
 async function getSeqnoRange(testnet: boolean, sinceUtime: number, untilUtime: number): Promise<[number, number]> {
@@ -252,7 +284,9 @@ async function main() {
   const [startSeqno, endSeqno] = await getSeqnoRange(opts.testnet, opts.sinceUtime, opts.untilUtime);
   console.log(`masterchain seqno range: ${startSeqno}..${endSeqno}`);
 
-  const batchDir = path.join(opts.outDir, "_batch");
+  // NOTE: the Lean diff runner ignores JSON files under any path segment that starts with `_`.
+  // So this directory name must *not* start with `_`.
+  const batchDir = path.join(opts.outDir, "batch");
   if (opts.runLean) {
     await rm(batchDir, { recursive: true, force: true });
     await mkdir(batchDir, { recursive: true });
@@ -377,6 +411,26 @@ async function main() {
           const msgBalance = inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n;
           const balance = shardAcc.account?.storage?.balance?.coins ?? 0n;
 
+          // Needed for a realistic c7 environment (Lean uses it in defaultInitC7),
+          // and for sandbox emulation when `--expected-state` is enabled.
+          const shardBlockKey = `${rawTx.block.workchain}:${rawTx.block.shard}:${rawTx.block.seqno}`;
+          let randSeed = randSeedByShardBlock.get(shardBlockKey);
+          if (!randSeed) {
+            const shardInt = BigInt(rawTx.block.shard);
+            const shardUint = shardInt < 0n ? shardInt + 0x10000000000000000n : shardInt;
+            const blocks = await fetchToncenterBlocks(opts.testnet, {
+              workchain: rawTx.block.workchain,
+              shard: "0x" + shardUint.toString(16),
+              seqno: rawTx.block.seqno,
+              limit: 1,
+            });
+            const b0: any = (blocks as any).blocks?.[0];
+            if (!b0?.rand_seed) throw new Error(`toncenter: missing rand_seed for shard block ${shardBlockKey}`);
+            randSeed = Buffer.from(String(b0.rand_seed), "base64");
+            randSeedByShardBlock.set(shardBlockKey, randSeed);
+          }
+          const randSeedInt = bytesToBigIntBE(randSeed);
+
           const fixture: Fixture = {
             tx_hash: txHashHex,
             code_boc: bocBase64(codeCell),
@@ -384,6 +438,9 @@ async function main() {
             stack_init: {
               balance_grams: balance.toString(10),
               msg_balance_grams: msgBalance.toString(10),
+              now: String(rawTx.tx.now),
+              lt: rawTx.tx.lt.toString(10),
+              rand_seed: randSeedInt.toString(10),
               in_msg_boc: bocBase64(inMsgCell),
               in_msg_body_boc: bocBase64(inBodyCell),
               in_msg_extern: inMsgExtern,
@@ -395,23 +452,6 @@ async function main() {
           };
 
           if (sandbox) {
-            const shardBlockKey = `${rawTx.block.workchain}:${rawTx.block.shard}:${rawTx.block.seqno}`;
-            let randSeed = randSeedByShardBlock.get(shardBlockKey);
-            if (!randSeed) {
-              const shardInt = BigInt(rawTx.block.shard);
-              const shardUint = shardInt < 0n ? shardInt + 0x10000000000000000n : shardInt;
-              const blocks = await fetchToncenterBlocks(opts.testnet, {
-                workchain: rawTx.block.workchain,
-                shard: "0x" + shardUint.toString(16),
-                seqno: rawTx.block.seqno,
-                limit: 1,
-              });
-              const b0: any = (blocks as any).blocks?.[0];
-              if (!b0?.rand_seed) throw new Error(`toncenter: missing rand_seed for shard block ${shardBlockKey}`);
-              randSeed = Buffer.from(String(b0.rand_seed), "base64");
-              randSeedByShardBlock.set(shardBlockKey, randSeed);
-            }
-
             let blockConfig = blockConfigByMc.get(seqno);
             if (!blockConfig) {
               blockConfig = await getBlockConfig(opts.testnet, block0 as any);
@@ -422,11 +462,11 @@ async function main() {
             const shardAccountBase64 = shardAccountToBase64(shardAcc0);
 
             const exec: any = sandbox.executor;
-            if (typeof exec.sbsTransactionSetup !== "function") {
-              throw new Error("sandbox executor does not support step-by-step API (sbsTransactionSetup)");
+            if (typeof exec.runTransaction !== "function") {
+              throw new Error("sandbox executor does not support runTransaction");
             }
 
-            const { res: sbsPtr, emptr } = exec.sbsTransactionSetup({
+            const txRes = await exec.runTransaction({
               config: blockConfig,
               libs: libsCell ?? null,
               verbosity: "full_location_stack_verbose",
@@ -439,21 +479,6 @@ async function main() {
               debugEnabled: true,
             });
 
-            let txRes: any;
-            let c7: TupleItem;
-            try {
-              const maxSteps = 5_000_000;
-              let steps = 0;
-              while (exec.sbsTransactionStep(sbsPtr)) {
-                steps++;
-                if (steps > maxSteps) throw new Error(`sbsTransactionStep exceeded ${maxSteps} steps`);
-              }
-              c7 = exec.sbsTransactionC7(sbsPtr) as TupleItem;
-              txRes = exec.sbsTransactionResult(sbsPtr);
-            } finally {
-              if (typeof exec.destroyEmulator === "function") exec.destroyEmulator(emptr);
-            }
-
             if (!txRes?.result?.success) throw new Error(`sandbox emulation failed: ${txRes?.result?.error ?? "unknown error"}`);
 
             const shardAccountAfter = loadShardAccount(Cell.fromBase64(String(txRes.result.shardAccount)).asSlice());
@@ -465,8 +490,6 @@ async function main() {
             if (typeof actionsB64 === "string" && actionsB64.length > 0) {
               fixture.expected.c5_boc = actionsB64;
             }
-
-            fixture.expected.c7 = tupleItemToJson(c7);
           }
 
           const outPath = path.join(opts.runLean ? batchDir : opts.outDir, `${txHashHex}.json`);
@@ -484,7 +507,8 @@ async function main() {
           }
         } catch (e: any) {
           skipped.errors++;
-          console.log(`✗ ${txHashHex}: ${e?.message ?? String(e)}`);
+          const msg = e?.stack ?? e?.message ?? String(e);
+          console.log(`✗ ${txHashHex}: ${msg}`);
         }
       }
 
