@@ -10,6 +10,6 @@
     "in_msg_extern": false
   },
   "expected": {
-    "exit_code": 6
+    "exit_code": 0
   }
 }

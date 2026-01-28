@@ -9,7 +9,9 @@
 /diff-test/results*.json
 /diff-test/*.jsonl
 /diff-test/_report*.json
+/diff-test/_tmp_*
+/diff-test/_txs_*
 /diff-test/fixtures_sweep_tmp/
-/diff-test/fixtures-local/
+/diff-test/fixtures-local*/
 /diff-test/collector/node_modules/
 /diff-test/collector/dist/

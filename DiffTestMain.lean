@@ -6,6 +6,7 @@ open Lean
 structure CliOpts where
   casePath? : Option System.FilePath := none
   dirPath? : Option System.FilePath := none
+  maxCases : Nat := 0
   fuel : Nat := 1_000_000
   gasLimit : Int := 1_000_000
   skipUnsupported : Bool := false
@@ -22,6 +23,10 @@ partial def parseArgs (args : List String) (opts : CliOpts := {}) : IO CliOpts :
       parseArgs rest { opts with casePath? := some path }
   | "--dir" :: path :: rest =>
       parseArgs rest { opts with dirPath? := some path }
+  | "--max-cases" :: n :: rest =>
+      match n.toNat? with
+      | some v => parseArgs rest { opts with maxCases := v }
+      | none => throw (IO.userError s!"invalid --max-cases {n}")
   | "--fuel" :: n :: rest =>
       match n.toNat? with
       | some v => parseArgs rest { opts with fuel := v }
@@ -61,9 +66,13 @@ def runOne (opts : CliOpts) (path : System.FilePath) : IO TestResult := do
       traceAll := opts.traceAll
       traceMax := opts.traceMax } tc
 
+def hasHiddenSegment (p : System.FilePath) : Bool :=
+  let parts := (toString p).split fun c => c = '/' || c = '\\'
+  parts.any fun seg => seg.startsWith "_"
+
 def isJsonFile (p : System.FilePath) : Bool :=
   match p.fileName with
-  | some name => p.extension == some "json" && !name.startsWith "_"
+  | some name => p.extension == some "json" && !name.startsWith "_" && !hasHiddenSegment p
   | none => false
 
 def main (args : List String) : IO Unit := do
@@ -76,9 +85,17 @@ def main (args : List String) : IO Unit := do
       results := results.push r
   | none, some dirPath =>
       let files ← dirPath.walkDir
-      for f in files do
+      let mut i : Nat := 0
+      while i < files.size do
+        let f := files[i]!
         if isJsonFile f then
           results := results.push (← runOne opts f)
+          if opts.maxCases > 0 ∧ results.size ≥ opts.maxCases then
+            i := files.size
+          else
+            i := i + 1
+        else
+          i := i + 1
   | some _, some _ =>
       throw (IO.userError "use only one of --case or --dir")
   | none, none =>

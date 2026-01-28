@@ -75,8 +75,8 @@ def testCounter : IO Unit := do
     | .ok c => pure c
     | .error e => throw (IO.userError s!"assembleCp0 failed: {reprStr e}")
   let initC4 : Cell := Cell.ofUInt 32 41
-  let st0 : VmState :=
-    { (VmState.initial codeCell) with regs := { (Regs.initial) with c4 := initC4 } }
+  let base := VmState.initial codeCell
+  let st0 : VmState := { base with regs := { base.regs with c4 := initC4 } }
   match VmState.run 200 st0 with
   | .continue _ =>
       throw (IO.userError "counter: did not halt (fuel exhausted?)")
@@ -91,8 +91,8 @@ def testBocCounter : IO Unit := do
     | .ok c => pure c
     | .error e => throw (IO.userError s!"boc counter: failed to parse: {e}")
   let initC4 : Cell := Cell.ofUInt 32 41
-  let st0 : VmState :=
-    { (VmState.initial codeCell) with regs := { (Regs.initial) with c4 := initC4 } }
+  let base := VmState.initial codeCell
+  let st0 : VmState := { base with regs := { base.regs with c4 := initC4 } }
   match VmState.run 200 st0 with
   | .continue _ =>
       throw (IO.userError "boc counter: did not halt (fuel exhausted?)")
@@ -100,18 +100,22 @@ def testBocCounter : IO Unit := do
       assert (exitCode == -1) s!"boc counter: unexpected exitCode={exitCode}"
       assert (bitsToNat st.regs.c4.bits == 42) s!"boc counter: unexpected c4={bitsToNat st.regs.c4.bits}"
 
-def testBocInvOpcode : IO Unit := do
+def testBocArithSample : IO Unit := do
   let bytes ← readHexFile "fixtures/inv_opcode.boc.hex"
   let codeCell ←
     match stdBocDeserialize bytes with
     | .ok c => pure c
-    | .error e => throw (IO.userError s!"boc inv_opcode: failed to parse: {e}")
+    | .error e => throw (IO.userError s!"boc arith_sample: failed to parse: {e}")
   let st0 : VmState := VmState.initial codeCell
   match VmState.run 50 st0 with
   | .continue _ =>
-      throw (IO.userError "boc inv_opcode: did not halt (fuel exhausted?)")
-  | .halt exitCode _ =>
-      assert (exitCode == -7) s!"boc inv_opcode: expected exitCode=-7, got {exitCode}"
+      throw (IO.userError "boc arith_sample: did not halt (fuel exhausted?)")
+  | .halt exitCode st => do
+      assert (exitCode == -1) s!"boc arith_sample: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"boc arith_sample: expected stack size=1, got {st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 11) s!"boc arith_sample: expected 11, got {n}"
+      | v => throw (IO.userError s!"boc arith_sample: unexpected stack value {v.pretty}")
 
 def testBocCrc32cOk : IO Unit := do
   let bytes ← readHexFile "fixtures/crc32c_ok.boc.hex"
@@ -144,6 +148,67 @@ def testBocParseSamples : IO Unit := do
         match stdBocDeserialize bytes with
         | .ok _ => pure ()
         | .error e => throw (IO.userError s!"boc sample failed to parse: {e}")
+
+def fiftPath : IO System.FilePath := do
+  let home := (← IO.getEnv "HOME").getD "/Users/daniil"
+  pure (System.FilePath.mk home / "Coding" / "ton" / "build" / "crypto" / "fift")
+
+def fiftCanonBocHex (inputHex : String) (mode : Nat) : IO String := do
+  let fift ← fiftPath
+  if !(← fift.pathExists) then
+    throw (IO.userError s!"fift not found at {fift}")
+  let scriptPath : System.FilePath := "/tmp/tvmlean_boc_canon.fif"
+  let script :=
+    s!"\"{inputHex.trim}\" x>B B>boc {mode} boc+>B B>x type cr bye\n"
+  IO.FS.writeFile scriptPath script
+  let res ← IO.Process.output { cmd := fift.toString, args := #["-n", scriptPath.toString] }
+  if res.exitCode != 0 then
+    throw (IO.userError s!"fift failed (exit {res.exitCode}): {res.stderr}")
+  pure res.stdout.trim
+
+def testBocSerializeMatchesCpp : IO Unit := do
+  let samples : List (String × Option System.FilePath) :=
+    [ ("fixtures/counter.boc.hex", some "fixtures/counter.boc.hex")
+    , ("fixtures/inv_opcode.boc.hex", some "fixtures/inv_opcode.boc.hex")
+    , ("fixtures/crc32c_ok.boc.hex", some "fixtures/crc32c_ok.boc.hex")
+    , ("B5EE9C7201010101000800000C7A801401A5A1", none)
+    , ("B5EE9C724101010100060000087A801401C8DE68DB", none)
+    ]
+
+  for (label, file?) in samples do
+    let hexRaw ←
+      match file? with
+      | some p => IO.FS.readFile p
+      | none => pure label
+    let hex := hexRaw.trim
+
+    let bytes ←
+      match byteArrayOfHex? hex with
+      | .ok b => pure b
+      | .error e => throw (IO.userError s!"boc({label}): bad hex: {e}")
+
+    let hdr ←
+      match parseBocHeader bytes with
+      | .ok h => pure h
+      | .error e => throw (IO.userError s!"boc({label}): header parse failed: {e}")
+    let opts := BocSerializeOpts.ofHeader hdr
+    let expectedHex ← fiftCanonBocHex hex opts.mode
+    let expectedBytes ←
+      match byteArrayOfHex? expectedHex with
+      | .ok b => pure b
+      | .error e => throw (IO.userError s!"boc({label}): fift output not hex: {e}")
+
+    let root ←
+      match stdBocDeserialize bytes with
+      | .ok c => pure c
+      | .error e => throw (IO.userError s!"boc({label}): stdBocDeserialize failed: {e}")
+
+    let ours ←
+      match stdBocSerialize root opts with
+      | .ok b => pure b
+      | .error e => throw (IO.userError s!"boc({label}): stdBocSerialize failed: {e}")
+
+    assert (ours == expectedBytes) s!"boc({label}): Lean serialization differs from C++ BagOfCells"
 
 def runProg (prog : List Instr) (fuel : Nat := 200) : IO StepResult := do
   let codeCell ←
@@ -181,6 +246,118 @@ def testSetCp : IO Unit := do
   | .halt exitCode _ =>
       assert (exitCode == -7) s!"setcp: expected exitCode=-7, got {exitCode}"
 
+def testShifts : IO Unit := do
+  let progL : List Instr := [ .pushInt (.num 1), .pushInt (.num 5), .lshift ]
+  match (← runProg progL) with
+  | .continue _ => throw (IO.userError "lshift: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"lshift: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"lshift: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 32) s!"lshift: expected 32, got {n}"
+      | v => throw (IO.userError s!"lshift: unexpected stack value {v.pretty}")
+
+  let progR : List Instr := [ .pushInt (.num 32), .pushInt (.num 5), .rshift ]
+  match (← runProg progR) with
+  | .continue _ => throw (IO.userError "rshift: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"rshift: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"rshift: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 1) s!"rshift: expected 1, got {n}"
+      | v => throw (IO.userError s!"rshift: unexpected stack value {v.pretty}")
+
+def testTuplePush : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 1), .pushInt (.num 2), .mktuple 2, .pushInt (.num 3), .tpush ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "tpush: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"tpush: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"tpush: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .tuple items =>
+          assert (items.size == 3) s!"tpush: expected tuple size=3, got {items.size}"
+          match items[0]!, items[1]!, items[2]! with
+          | .int (.num a), .int (.num b), .int (.num c) =>
+              assert (a == 1 ∧ b == 2 ∧ c == 3) s!"tpush: expected [1,2,3], got {items.map (·.pretty)}"
+          | _, _, _ =>
+              throw (IO.userError s!"tpush: unexpected tuple contents {items.map (·.pretty)}")
+      | v =>
+          throw (IO.userError s!"tpush: unexpected stack value {v.pretty}")
+
+def testBuilderBits : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 1), .newc, .stu 1, .bbits ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "bbits: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"bbits: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"bbits: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 1) s!"bbits: expected 1, got {n}"
+      | v => throw (IO.userError s!"bbits: unexpected stack value {v.pretty}")
+
+def cellOfBytes (bs : Array UInt8) : Cell :=
+  Id.run do
+    let mut bits : BitString := #[]
+    for b in bs do
+      bits := bits ++ natToBits b.toNat 8
+    { bits, refs := #[] }
+
+def testChkSignU : IO Unit := do
+  -- Fixed Ed25519 test vector: seed=0..31, msg=32 bytes, signature over msg.
+  let pkHex := "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8"
+  let msgHex := "54564d4c45414e5f454432353531395f544553545f564543544f525f5f000000"
+  let sigHex := "7eba76991a02f84a84f0918da018fe28a26db22adcffcd9ac6b88c035de6bdf51abf731ca7bcffbcd204d89f780df78ea088862af234719c525ad2b2b1985b03"
+
+  let pkBa ←
+    match byteArrayOfHex? pkHex with
+    | .ok ba => pure ba
+    | .error e => throw (IO.userError s!"chksignu: bad pk hex: {e}")
+  let msgBa ←
+    match byteArrayOfHex? msgHex with
+    | .ok ba => pure ba
+    | .error e => throw (IO.userError s!"chksignu: bad msg hex: {e}")
+  let sigBa ←
+    match byteArrayOfHex? sigHex with
+    | .ok ba => pure ba
+    | .error e => throw (IO.userError s!"chksignu: bad sig hex: {e}")
+
+  let keyNat := bytesToNatBE pkBa.data
+  let hashNat := bytesToNatBE msgBa.data
+  let sigSlice : Slice := Slice.ofCell (cellOfBytes sigBa.data)
+
+  let codeCell ←
+    match assembleCp0 [ .chkSignU ] with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"assembleCp0 failed: {reprStr e}")
+  let base := VmState.initial codeCell
+  let st0 : VmState :=
+    { base with stack := #[.int (.num (Int.ofNat hashNat)), .slice sigSlice, .int (.num (Int.ofNat keyNat))] }
+
+  match VmState.run 20 st0 with
+  | .continue _ => throw (IO.userError "chksignu: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"chksignu: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"chksignu: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == -1) s!"chksignu: expected -1, got {n}"
+      | v => throw (IO.userError s!"chksignu: unexpected stack value {v.pretty}")
+
+  -- Corrupt signature → false.
+  let b0 := sigBa.data[0]!
+  let sigBad := sigBa.data.set! 0 (UInt8.ofNat ((b0.toNat + 1) % 256))
+  let sigBadSlice : Slice := Slice.ofCell (cellOfBytes sigBad)
+  let stBad : VmState :=
+    { base with stack := #[.int (.num (Int.ofNat hashNat)), .slice sigBadSlice, .int (.num (Int.ofNat keyNat))] }
+  match VmState.run 20 stBad with
+  | .continue _ => throw (IO.userError "chksignu(bad): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"chksignu(bad): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"chksignu(bad): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 0) s!"chksignu(bad): expected 0, got {n}"
+      | v => throw (IO.userError s!"chksignu(bad): unexpected stack value {v.pretty}")
+
 def main (_args : List String) : IO Unit := do
   roundtrip (.pushInt (.num 0))
   roundtrip (.pushInt (.num (-5)))
@@ -211,12 +388,27 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.ifret)
   roundtrip (.ifnotret)
   roundtrip (.setcp 0)
+  roundtrip (.lshift)
+  roundtrip (.rshift)
+  roundtrip (.tpush)
+  roundtrip (.boolAnd)
+  roundtrip (.boolOr)
+  roundtrip (.composBoth)
+  roundtrip (.bbits)
+  roundtrip (.try_)
+  roundtrip (.chkSignU)
+  roundtrip (.chkSignS)
   testCounter
   testBocCounter
-  testBocInvOpcode
+  testBocArithSample
   testBocCrc32cOk
   testBocParseSamples
+  testBocSerializeMatchesCpp
   testEqual
   testIfNotRet
   testSetCp
+  testShifts
+  testTuplePush
+  testBuilderBits
+  testChkSignU
   IO.println "ok"

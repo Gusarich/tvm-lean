@@ -34,7 +34,7 @@ def runWithTrace (fuel : Nat) (st : TvmLean.VmState) : IO TvmLean.StepResult := 
   | fuel + 1 =>
       let next :=
         match st.cc with
-        | .ordinary code =>
+        | .ordinary code _ _ _ =>
             if code.bitsRemaining == 0 then
               if code.refsRemaining == 0 then
                 "<implicit RET>"
@@ -42,10 +42,16 @@ def runWithTrace (fuel : Nat) (st : TvmLean.VmState) : IO TvmLean.StepResult := 
                 "<implicit JMPREF>"
             else if st.cp = 0 then
               match TvmLean.decodeCp0 code with
-              | .ok (i, _) => reprStr i
+              | .ok (i, _) => TvmLean.Instr.pretty i
               | .error e => s!"<decode error {reprStr e}>"
             else
               s!"<cp={st.cp}>"
+        | .whileCond _ _ _ =>
+            "<whileCond>"
+        | .whileBody _ _ _ =>
+            "<whileBody>"
+        | .untilBody _ _ =>
+            "<untilBody>"
         | .quit n =>
             s!"<quit {n}>"
         | .excQuit =>
@@ -82,8 +88,8 @@ def main (args : List String) : IO Unit := do
         | .ok c => pure c
         | .error e => throw (IO.userError s!"assembleCp0 failed: {reprStr e}")
   let initC4 : TvmLean.Cell := TvmLean.Cell.ofUInt 32 opts.c4
-  let st0 : TvmLean.VmState :=
-    { (TvmLean.VmState.initial codeCell) with regs := { (TvmLean.Regs.initial) with c4 := initC4 } }
+  let base := TvmLean.VmState.initial codeCell
+  let st0 : TvmLean.VmState := { base with regs := { base.regs with c4 := initC4 } }
   let res ←
     if opts.trace then
       runWithTrace opts.fuel st0

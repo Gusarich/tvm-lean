@@ -232,6 +232,9 @@ instance : FromJson Expected where
 structure StackInit where
   balance_grams : Int
   msg_balance_grams : Int
+  now : Int := 0
+  lt : Int := 0
+  rand_seed : Int := 0
   in_msg_boc : String
   in_msg_body_boc : String
   in_msg_extern : Bool
@@ -241,6 +244,36 @@ instance : FromJson StackInit where
   fromJson? j := do
     let balanceStr ← j.getObjValAs? String "balance_grams"
     let msgBalanceStr ← j.getObjValAs? String "msg_balance_grams"
+    let now : Int ←
+      match j.getObjValAs? String "now" with
+      | .ok s =>
+          match s.toInt? with
+          | some n => pure n
+          | none => throw s!"invalid now '{s}'"
+      | .error _ =>
+          match j.getObjValAs? Int "now" with
+          | .ok n => pure n
+          | .error _ => pure 0
+    let lt : Int ←
+      match j.getObjValAs? String "lt" with
+      | .ok s =>
+          match s.toInt? with
+          | some n => pure n
+          | none => throw s!"invalid lt '{s}'"
+      | .error _ =>
+          match j.getObjValAs? Int "lt" with
+          | .ok n => pure n
+          | .error _ => pure 0
+    let rand_seed : Int ←
+      match j.getObjValAs? String "rand_seed" with
+      | .ok s =>
+          match s.toInt? with
+          | some n => pure n
+          | none => throw s!"invalid rand_seed '{s}'"
+      | .error _ =>
+          match j.getObjValAs? Int "rand_seed" with
+          | .ok n => pure n
+          | .error _ => pure 0
     let in_msg_boc ← j.getObjValAs? String "in_msg_boc"
     let in_msg_body_boc ← j.getObjValAs? String "in_msg_body_boc"
     let in_msg_extern ← j.getObjValAs? Bool "in_msg_extern"
@@ -252,7 +285,7 @@ instance : FromJson StackInit where
       match msgBalanceStr.toInt? with
       | some n => pure n
       | none => throw s!"invalid msg_balance_grams '{msgBalanceStr}'"
-    return { balance_grams, msg_balance_grams, in_msg_boc, in_msg_body_boc, in_msg_extern }
+    return { balance_grams, msg_balance_grams, now, lt, rand_seed, in_msg_boc, in_msg_body_boc, in_msg_extern }
 
 structure TestCase where
   tx_hash : String
@@ -372,13 +405,83 @@ def buildInitStack (si : StackInit) : Except String Stack := do
     | .ok c => pure c
     | .error e => throw s!"in_msg_body_boc: {e}"
   let flag : Int := if si.in_msg_extern then -1 else 0
+  -- In actual TVM execution for internal messages, the contract balance is credited with the incoming value
+  -- before running the code. (External messages have no value to credit.)
+  let balanceExec : Int := if si.in_msg_extern then si.balance_grams else si.balance_grams + si.msg_balance_grams
   return #[
-    .int (.num si.balance_grams),
+    .int (.num balanceExec),
     .int (.num si.msg_balance_grams),
     .cell inMsgCell,
     .slice (Slice.ofCell bodyCell),
     .int (.num flag)
   ]
+
+def tupleSetExtend (t : Array Value) (idx : Nat) (v : Value) : Array Value :=
+  if idx < t.size then
+    t.set! idx v
+  else
+    (t ++ Array.replicate (idx - t.size) Value.null).push v
+
+def extractMyAddrFromInMsg? (msgCell : Cell) : Option Slice :=
+  let s0 : Slice := Slice.ofCell msgCell
+  let parsed : Except Excno Slice := do
+    let (b0, s1) ← s0.takeBitsAsNatCellUnd 1
+    if b0 = 0 then
+      -- int_msg_info$0 ihr_disabled bounce bounced src dest ...
+      if !s1.haveBits 3 then
+        throw .cellUnd
+      let afterFlags := s1.advanceBits 3
+      let afterSrc ← afterFlags.skipMessageAddr
+      let destStart := afterSrc
+      let destStop ← destStart.skipMessageAddr
+      let addrCell := Slice.prefixCell destStart destStop
+      return Slice.ofCell addrCell
+    else
+      let (b1, s2) ← s1.takeBitsAsNatCellUnd 1
+      if b1 = 0 then
+        -- ext_in_msg_info$10 src:(MsgAddressExt) dest:(MsgAddressInt) ...
+        let afterSrc ← s2.skipMessageAddr
+        let destStart := afterSrc
+        let destStop ← destStart.skipMessageAddr
+        let addrCell := Slice.prefixCell destStart destStop
+        return Slice.ofCell addrCell
+      else
+        -- ext_out_msg_info$11 src:(MsgAddressInt) dest:(MsgAddressExt) ...
+        -- For such messages, the contract address is the `src`.
+        let srcStart := s2
+        let srcStop ← srcStart.skipMessageAddr
+        let addrCell := Slice.prefixCell srcStart srcStop
+        return Slice.ofCell addrCell
+  match parsed with
+  | .ok s => some s
+  | .error _ => none
+
+def defaultInitC7 (si : StackInit) (codeCell : Cell) : Array Value :=
+  -- Minimal TON environment tuple to unblock common contracts:
+  -- c7[0] is the "params" tuple; most `GETPARAM` opcodes read from it.
+  let myAddrVal : Value :=
+    match decodeBytes si.in_msg_boc with
+    | .ok msgBytes =>
+        match stdBocDeserialize msgBytes with
+        | .ok msgCell =>
+            match extractMyAddrFromInMsg? msgCell with
+            | some s => .slice s
+            | none => .null
+        | .error _ => .null
+    | .error _ => .null
+  let balanceExec : Int := if si.in_msg_extern then si.balance_grams else si.balance_grams + si.msg_balance_grams
+  let params0 : Array Value := #[]
+  let params1 := tupleSetExtend params0 3 (.int (.num si.now)) -- NOW
+  let params2 := tupleSetExtend params1 4 (.int (.num si.lt)) -- BLOCKLT (approx; same as tx lt)
+  let params3 := tupleSetExtend params2 5 (.int (.num si.lt)) -- LTIME (tx lt)
+  let params4 := tupleSetExtend params3 6 (.int (.num si.rand_seed)) -- RANDSEED
+  let params5 := tupleSetExtend params4 7 (.tuple #[.int (.num balanceExec), .null]) -- BALANCE
+  let params6 := tupleSetExtend params5 8 myAddrVal -- MYADDR
+  let params7 := tupleSetExtend params6 10 (.cell codeCell) -- MYCODE
+  let params8 := tupleSetExtend params7 11 (.tuple #[.int (.num si.msg_balance_grams), .null]) -- INCOMINGVALUE
+  let params9 := tupleSetExtend params8 12 (.int (.num 0)) -- STORAGEFEES (default 0)
+  let params10 := tupleSetExtend params9 15 (.int (.num 0)) -- DUEPAYMENT (default 0)
+  #[.tuple params10]
 
 def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
   let mkErr (msg : String) : TestResult :=
@@ -388,6 +491,19 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
       expected_gas_used := tc.expected.gas_used
       error := some msg }
 
+  let mkSkip (msg : String) : TestResult :=
+    { tx_hash := tc.tx_hash
+      status := .skip
+      expected_exit_code := tc.expected.exit_code
+      expected_gas_used := tc.expected.gas_used
+      error := some msg }
+
+  let isUnsupportedBocError (msg : String) : Bool :=
+    let has (sub : String) : Bool := (msg.splitOn sub).length > 1
+    has "special/exotic cells not supported" ||
+    has "non-zero level mask not supported" ||
+    has "absent cells not supported"
+
   match decodeBytes tc.code_boc with
   | .error e => return mkErr s!"code_boc decode: {e}"
   | .ok codeBytes =>
@@ -395,18 +511,43 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
       | .error e => return mkErr s!"data_boc decode: {e}"
       | .ok dataBytes =>
           match stdBocDeserialize codeBytes with
-          | .error e => return mkErr s!"code_boc parse: {e}"
+          | .error e =>
+              let msg := s!"code_boc parse: {e}"
+              if cfg.skipUnsupported && isUnsupportedBocError (toString e) then
+                return mkSkip msg
+              else
+                return mkErr msg
           | .ok codeCell =>
               match stdBocDeserialize dataBytes with
-              | .error e => return mkErr s!"data_boc parse: {e}"
+              | .error e =>
+                  let msg := s!"data_boc parse: {e}"
+                  if cfg.skipUnsupported && isUnsupportedBocError (toString e) then
+                    return mkSkip msg
+                  else
+                    return mkErr msg
               | .ok dataCell =>
                   match buildInitStack tc.stack_init with
-                  | .error e => return mkErr s!"stack_init: {e}"
+                  | .error e =>
+                      let msg := s!"stack_init: {e}"
+                      if cfg.skipUnsupported && isUnsupportedBocError e then
+                        return mkSkip msg
+                      else
+                        return mkErr msg
                   | .ok initStack =>
+                      let initC7 : Array Value :=
+                        match tc.expected.c7 with
+                        | none => defaultInitC7 tc.stack_init codeCell
+                        | some expC7 =>
+                            match expC7.toValue with
+                            | .ok (.tuple items) => items
+                            | .ok _ => defaultInitC7 tc.stack_init codeCell
+                            | .error _ => defaultInitC7 tc.stack_init codeCell
+
+                      let base := VmState.initial codeCell cfg.gasLimit
                       let st0 : VmState :=
-                        { (VmState.initial codeCell cfg.gasLimit) with
+                        { base with
                           stack := initStack
-                          regs := { (Regs.initial) with c4 := dataCell } }
+                          regs := { base.regs with c4 := dataCell, c7 := initC7 } }
 
                       let mkBase (exitCode : Int) (stF : VmState) : TestResult :=
                         -- `VmState.run*` returns bitwise-complemented exit codes (like C++ `vm.run()`).

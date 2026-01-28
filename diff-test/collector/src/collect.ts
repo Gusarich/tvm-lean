@@ -30,6 +30,9 @@ type Fixture = {
   stack_init: {
     balance_grams: string;
     msg_balance_grams: string;
+    now: string;
+    lt: string;
+    rand_seed: string;
     in_msg_boc: string;
     in_msg_body_boc: string;
     in_msg_extern: boolean;
@@ -99,6 +102,12 @@ function emptyCell(): any {
   return beginCell().endCell();
 }
 
+function bytesToBigIntBE(buf: Buffer): bigint {
+  let x = 0n;
+  for (const b of buf) x = (x << 8n) + BigInt(b);
+  return x;
+}
+
 function tupleItemToJson(item: TupleItem): TupleItemJson {
   if (item.type === "null") return { type: "null" };
   if (item.type === "nan") return { type: "nan" };
@@ -162,6 +171,8 @@ async function collectFixture(
 
   const inMsgExtern = inMsg.info.type !== "internal";
   const msgBalance = inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n;
+  const randSeed = Buffer.from(String(shardBlock.rand_seed), "base64");
+  const randSeedInt = bytesToBigIntBE(randSeed);
 
   const desc: any = rawTx.tx.description;
   if (desc?.type !== "generic") throw new Error(`unsupported tx description type: ${desc?.type ?? "unknown"}`);
@@ -175,6 +186,9 @@ async function collectFixture(
     stack_init: {
       balance_grams: (shardAcc.account?.storage?.balance?.coins ?? 0n).toString(10),
       msg_balance_grams: msgBalance.toString(10),
+      now: String(rawTx.tx.now),
+      lt: rawTx.tx.lt.toString(10),
+      rand_seed: randSeedInt.toString(10),
       in_msg_boc: bocBase64(inMsgCell),
       in_msg_body_boc: bocBase64(inBodyCell),
       in_msg_extern: inMsgExtern,
@@ -187,7 +201,6 @@ async function collectFixture(
 
   if (sandbox) {
     const blockConfig = await getBlockConfig(testnet, mcBlock as any);
-    const randSeed = Buffer.from(String(shardBlock.rand_seed), "base64");
 
     const shardAcc0: any = { ...shardAcc, lastTransactionLt: 0n, lastTransactionHash: 0n };
     const shardAccountBase64 = shardAccountToBase64(shardAcc0);
