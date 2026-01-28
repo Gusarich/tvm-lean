@@ -35,6 +35,8 @@ type Fixture = {
     now: string;
     lt: string;
     rand_seed: string;
+    storage_fees: string;
+    due_payment: string;
     in_msg_boc: string;
     in_msg_body_boc: string;
     in_msg_extern: boolean;
@@ -193,6 +195,7 @@ async function collectFixture(
   // - storage fees are collected before compute phase
   // - internal message value (credit phase) is added before compute phase
   const storageFees: bigint = desc.storagePhase?.storageFeesCollected ?? 0n;
+  const duePayment: bigint = desc.storagePhase?.storageFeesDue ?? 0n;
   const creditCoins: bigint =
     desc.creditPhase?.credit?.coins ??
     (inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n);
@@ -221,6 +224,8 @@ async function collectFixture(
       now: String(rawTx.tx.now),
       lt: rawTx.tx.lt.toString(10),
       rand_seed: randSeedInt.toString(10),
+      storage_fees: storageFees.toString(10),
+      due_payment: duePayment.toString(10),
       in_msg_boc: bocBase64(inMsgCell),
       in_msg_body_boc: bocBase64(inBodyCell),
       in_msg_extern: inMsgExtern,

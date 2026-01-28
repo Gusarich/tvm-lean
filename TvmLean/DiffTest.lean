@@ -259,6 +259,8 @@ structure StackInit where
   now : Int := 0
   lt : Int := 0
   rand_seed : Int := 0
+  storage_fees : Int := 0
+  due_payment : Int := 0
   in_msg_boc : String
   in_msg_body_boc : String
   in_msg_extern : Bool
@@ -298,6 +300,26 @@ instance : FromJson StackInit where
           match j.getObjValAs? Int "rand_seed" with
           | .ok n => pure n
           | .error _ => pure 0
+    let storage_fees : Int ←
+      match j.getObjValAs? String "storage_fees" with
+      | .ok s =>
+          match s.toInt? with
+          | some n => pure n
+          | none => throw s!"invalid storage_fees '{s}'"
+      | .error _ =>
+          match j.getObjValAs? Int "storage_fees" with
+          | .ok n => pure n
+          | .error _ => pure 0
+    let due_payment : Int ←
+      match j.getObjValAs? String "due_payment" with
+      | .ok s =>
+          match s.toInt? with
+          | some n => pure n
+          | none => throw s!"invalid due_payment '{s}'"
+      | .error _ =>
+          match j.getObjValAs? Int "due_payment" with
+          | .ok n => pure n
+          | .error _ => pure 0
     let in_msg_boc ← j.getObjValAs? String "in_msg_boc"
     let in_msg_body_boc ← j.getObjValAs? String "in_msg_body_boc"
     let in_msg_extern ← j.getObjValAs? Bool "in_msg_extern"
@@ -309,7 +331,7 @@ instance : FromJson StackInit where
       match msgBalanceStr.toInt? with
       | some n => pure n
       | none => throw s!"invalid msg_balance_grams '{msgBalanceStr}'"
-    return { balance_grams, msg_balance_grams, now, lt, rand_seed, in_msg_boc, in_msg_body_boc, in_msg_extern }
+    return { balance_grams, msg_balance_grams, now, lt, rand_seed, storage_fees, due_payment, in_msg_boc, in_msg_body_boc, in_msg_extern }
 
 structure TestCase where
   tx_hash : String
@@ -499,8 +521,8 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) : Array Value :=
   let params6 := tupleSetExtend params5 8 myAddrVal -- MYADDR
   let params7 := tupleSetExtend params6 10 (.cell codeCell) -- MYCODE
   let params8 := tupleSetExtend params7 11 (.tuple #[.int (.num si.msg_balance_grams), .null]) -- INCOMINGVALUE
-  let params9 := tupleSetExtend params8 12 (.int (.num 0)) -- STORAGEFEES (default 0)
-  let params10 := tupleSetExtend params9 15 (.int (.num 0)) -- DUEPAYMENT (default 0)
+  let params9 := tupleSetExtend params8 12 (.int (.num si.storage_fees)) -- STORAGEFEES
+  let params10 := tupleSetExtend params9 15 (.int (.num si.due_payment)) -- DUEPAYMENT
   #[.tuple params10]
 
 def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do

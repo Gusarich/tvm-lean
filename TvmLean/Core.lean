@@ -536,27 +536,86 @@ def sha512Digest (msg : Array UInt8) : Array UInt8 :=
 structure Cell where
   bits : BitString
   refs : Array Cell
+  -- `special=true` means "exotic cell" in TON terminology.
+  -- See TON Docs "Cells" + C++ `vm::DataCell` validation rules.
+  special : Bool
+  -- 3-bit level mask (0..7), as in TON `vm::Cell::LevelMask`.
+  levelMask : Nat
   deriving Repr
 
+inductive CellSpecialType where
+  | ordinary
+  | prunedBranch
+  | library
+  | merkleProof
+  | merkleUpdate
+  deriving Repr, DecidableEq
+
+def CellSpecialType.ofByte? (b : Nat) : Option CellSpecialType :=
+  match b with
+  | 0 => some .ordinary
+  | 1 => some .prunedBranch
+  | 2 => some .library
+  | 3 => some .merkleProof
+  | 4 => some .merkleUpdate
+  | _ => none
+
+def Cell.maxLevel : Nat := 3
+
+def LevelMask.getLevel (m : Nat) : Nat :=
+  if m = 0 then 0 else Nat.log2 m + 1
+
+def LevelMask.shiftRight (m : Nat) : Nat :=
+  m >>> 1
+
+def LevelMask.apply (m : Nat) (level : Nat) : Nat :=
+  -- `mask & ((1<<level)-1)`; for level=0 this is always 0.
+  if level = 0 then
+    0
+  else
+    m &&& ((1 <<< level) - 1)
+
+def LevelMask.isSignificant (m : Nat) (level : Nat) : Bool :=
+  level = 0 || (((m >>> (level - 1)) &&& 1) = 1)
+
+def LevelMask.popcount3 (m : Nat) : Nat :=
+  (if (m &&& 1) = 1 then 1 else 0) +
+  (if (m &&& 2) = 2 then 1 else 0) +
+  (if (m &&& 4) = 4 then 1 else 0)
+
+def LevelMask.getHashI (m : Nat) : Nat :=
+  LevelMask.popcount3 m
+
+def LevelMask.getHashesCount (m : Nat) : Nat :=
+  LevelMask.getHashI m + 1
+
+def Cell.computeOrdinaryLevelMask (refs : Array Cell) : Nat :=
+  refs.foldl (fun acc r => acc ||| r.levelMask) 0
+
+def Cell.mkOrdinary (bits : BitString) (refs : Array Cell := #[]) : Cell :=
+  { bits := bits, refs := refs, special := false, levelMask := Cell.computeOrdinaryLevelMask refs }
+
 def Cell.empty : Cell :=
-  { bits := #[], refs := #[] }
+  Cell.mkOrdinary #[] #[]
 
 instance : Inhabited Cell := ⟨Cell.empty⟩
 
 partial def Cell.beq (a b : Cell) : Bool :=
-  a.bits == b.bits &&
-    a.refs.size == b.refs.size &&
-      Id.run do
-        let mut ok := true
-        for i in [0:a.refs.size] do
-          if !(Cell.beq a.refs[i]! b.refs[i]!) then
-            ok := false
-        return ok
+  a.special == b.special &&
+    a.levelMask == b.levelMask &&
+      a.bits == b.bits &&
+        a.refs.size == b.refs.size &&
+          Id.run do
+            let mut ok := true
+            for i in [0:a.refs.size] do
+              if !(Cell.beq a.refs[i]! b.refs[i]!) then
+                ok := false
+            return ok
 
 instance : BEq Cell := ⟨Cell.beq⟩
 
 def Cell.ofUInt (bits : Nat) (n : Nat) : Cell :=
-  { bits := natToBits n bits, refs := #[] }
+  Cell.mkOrdinary (natToBits n bits) #[]
 
 def Cell.depthLe (c : Cell) : Nat → Bool
   | 0 => false
@@ -612,40 +671,254 @@ def exportUInt256BE (x : IntVal) : Except Excno (Array UInt8) := do
         throw .rangeChk
       return natToBytesBEFixed u 32
 
+structure CellLevelInfo where
+  ty : CellSpecialType
+  levelMask : Nat
+  effectiveLevel : Nat
+  depths : Array Nat
+  hashes : Array (Array UInt8)
+  deriving Repr
+
+def CellLevelInfo.clampLevel (info : CellLevelInfo) (level : Nat) : Nat :=
+  Nat.min info.effectiveLevel (Nat.min Cell.maxLevel level)
+
+def CellLevelInfo.getDepth (info : CellLevelInfo) (level : Nat) : Nat :=
+  info.depths[info.clampLevel level]!
+
+def CellLevelInfo.getHash (info : CellLevelInfo) (level : Nat) : Array UInt8 :=
+  info.hashes[info.clampLevel level]!
+
+def readDepthBE (data : Array UInt8) (off : Nat) : Except String Nat := do
+  if off + 2 > data.size then
+    throw "depth read out of bounds"
+  return ((data[off]!.toNat <<< 8) + data[off + 1]!.toNat)
+
+partial def Cell.computeLevelInfo? (c : Cell) : Except String CellLevelInfo := do
+  if c.refs.size > 4 then
+    throw "Too many references"
+  if c.bits.size > 1023 then
+    throw "Too many data bits"
+
+  let mut childInfos : Array CellLevelInfo := #[]
+  for r in c.refs do
+    childInfos := childInfos.push (← Cell.computeLevelInfo? r)
+
+  let ty : CellSpecialType ←
+    if !c.special then
+      pure .ordinary
+    else
+      if c.bits.size < 8 then
+        throw "Not enough data for a special cell"
+      let tyByte := bitsToNat (c.bits.take 8)
+      match CellSpecialType.ofByte? tyByte with
+      | some .ordinary => throw "Invalid special cell type"
+      | some t => pure t
+      | none => throw "Invalid special cell type"
+
+  let maxLevel : Nat := Cell.maxLevel
+  let mut levelMask : Nat := 0
+  let mut depths : Array Nat := Array.replicate (maxLevel + 1) 0
+
+  let mut prunedBytes : Option (Array UInt8) := none
+  let mut prunedHashesCount : Nat := 0
+
+  match ty with
+  | .ordinary =>
+      for ci in childInfos do
+        levelMask := levelMask ||| ci.levelMask
+        for lvl in [0:maxLevel + 1] do
+          let d := ci.getDepth lvl
+          if d > depths[lvl]! then
+            depths := depths.set! lvl d
+      if c.refs.size != 0 then
+        depths := depths.map (fun d => d + 1)
+  | .prunedBranch =>
+      if c.refs.size != 0 then
+        throw "Pruned branch cannot have references"
+      if c.bits.size < 16 then
+        throw "Length mismatch in a pruned branch"
+      if c.bits.size % 8 != 0 then
+        throw "Length mismatch in a pruned branch"
+      let bytes := bitStringToBytesBE c.bits
+      prunedBytes := some bytes
+      if bytes.size < 2 then
+        throw "Not enough data for a special cell"
+      levelMask := bytes[1]!.toNat
+      let lvl := LevelMask.getLevel levelMask
+      if lvl = 0 || lvl > maxLevel then
+        throw "Invalid level mask in a pruned branch"
+      prunedHashesCount := LevelMask.getHashI levelMask
+      let expectedBytes : Nat := 2 + prunedHashesCount * (32 + 2)
+      if bytes.size != expectedBytes then
+        throw "Length mismatch in a pruned branch"
+      -- depth[maxLevel] = 0
+      for off in [0:maxLevel] do
+        let i := maxLevel - 1 - off
+        if LevelMask.isSignificant levelMask (i + 1) then
+          let hashesBefore := LevelMask.getHashI (LevelMask.apply levelMask i)
+          let depthOff := 2 + prunedHashesCount * 32 + hashesBefore * 2
+          let d ← readDepthBE bytes depthOff
+          depths := depths.set! i d
+        else
+          depths := depths.set! i (depths[i + 1]!)
+  | .library =>
+      if c.refs.size != 0 then
+        throw "Library cell cannot have references"
+      if c.bits.size != 8 * (1 + 32) then
+        throw "Length mismatch in a library cell"
+      levelMask := 0
+      depths := Array.replicate (maxLevel + 1) 0
+  | .merkleProof =>
+      if c.refs.size != 1 then
+        throw "Merkle proof must have exactly one reference"
+      if c.bits.size != 8 * (1 + 32 + 2) then
+        throw "Length mismatch in a Merkle proof"
+      if c.bits.size % 8 != 0 then
+        throw "Length mismatch in a Merkle proof"
+      let bytes := bitStringToBytesBE c.bits
+      let child ←
+        match childInfos[0]? with
+        | some v => pure v
+        | none => throw "internal error (missing Merkle child)"
+      let storedHash := bytes.extract 1 (1 + 32)
+      if storedHash != child.getHash 0 then
+        throw "Invalid hash in a Merkle proof or update"
+      let storedDepth ← readDepthBE bytes (1 + 32)
+      if storedDepth != child.getDepth 0 then
+        throw "Invalid depth in a Merkle proof or update"
+      for lvl in [0:maxLevel + 1] do
+        let childLevel := Nat.min maxLevel (lvl + 1)
+        depths := depths.set! lvl (Nat.max depths[lvl]! (child.getDepth childLevel + 1))
+      levelMask := LevelMask.shiftRight child.levelMask
+  | .merkleUpdate =>
+      if c.refs.size != 2 then
+        throw "Merkle update must have exactly two references"
+      if c.bits.size != 8 * (1 + (32 + 2) * 2) then
+        throw "Length mismatch in a Merkle update"
+      if c.bits.size % 8 != 0 then
+        throw "Length mismatch in a Merkle update"
+      let bytes := bitStringToBytesBE c.bits
+      let c0 ←
+        match childInfos[0]? with
+        | some v => pure v
+        | none => throw "internal error (missing Merkle child 0)"
+      let c1 ←
+        match childInfos[1]? with
+        | some v => pure v
+        | none => throw "internal error (missing Merkle child 1)"
+      let storedHash0 := bytes.extract 1 (1 + 32)
+      if storedHash0 != c0.getHash 0 then
+        throw "Invalid hash in a Merkle proof or update"
+      let storedHash1 := bytes.extract (1 + 32) (1 + 2 * 32)
+      if storedHash1 != c1.getHash 0 then
+        throw "Invalid hash in a Merkle proof or update"
+      let storedDepth0 ← readDepthBE bytes (1 + 2 * 32)
+      if storedDepth0 != c0.getDepth 0 then
+        throw "Invalid depth in a Merkle proof or update"
+      let storedDepth1 ← readDepthBE bytes (1 + 2 * 32 + 2)
+      if storedDepth1 != c1.getDepth 0 then
+        throw "Invalid depth in a Merkle proof or update"
+      for lvl in [0:maxLevel + 1] do
+        let childLevel := Nat.min maxLevel (lvl + 1)
+        depths := depths.set! lvl (Nat.max depths[lvl]! (c0.getDepth childLevel + 1))
+        depths := depths.set! lvl (Nat.max depths[lvl]! (c1.getDepth childLevel + 1))
+      levelMask := LevelMask.shiftRight (c0.levelMask ||| c1.levelMask)
+
+  if c.levelMask != levelMask then
+    throw "level mask mismatch"
+
+  let effectiveLevel := LevelMask.getLevel levelMask
+  if effectiveLevel > maxLevel then
+    throw "Invalid level mask"
+
+  let zeroHash : Array UInt8 := Array.replicate 32 0
+  let mut hashes : Array (Array UInt8) := Array.replicate (maxLevel + 1) zeroHash
+  let mut lastComputed : Option Nat := none
+
+  let isMerkleNode : Bool := ty == .merkleProof || ty == .merkleUpdate
+
+  for lvl in [0:maxLevel + 1] do
+    let shouldCompute : Bool :=
+      lvl == maxLevel || LevelMask.isSignificant levelMask (lvl + 1)
+    if !shouldCompute then
+      continue
+
+    let h : Array UInt8 ←
+      match ty, prunedBytes with
+      | .prunedBranch, some bytes =>
+          if lvl != maxLevel then
+            let hashesBefore := LevelMask.getHashI (LevelMask.apply levelMask lvl)
+            let off := 2 + hashesBefore * 32
+            if off + 32 > bytes.size then
+              throw "Length mismatch in a pruned branch"
+            pure (bytes.extract off (off + 32))
+          else
+            -- computed below as an ordinary hash (no chaining for pruned branches)
+            pure #[] -- placeholder, overwritten below
+      | _, _ =>
+          pure #[] -- placeholder, overwritten below
+
+    let h :=
+      if h.isEmpty then
+        let refsCnt : Nat := c.refs.size
+        let bitLen : Nat := c.bits.size
+        let fullBytes : Nat := bitLen / 8
+        let remBits : Nat := bitLen % 8
+        let d1 : Nat :=
+          refsCnt +
+            (if c.special then 8 else 0) +
+              (LevelMask.apply levelMask lvl <<< 5)
+        let d2 : Nat := (fullBytes <<< 1) + (if remBits = 0 then 0 else 1)
+        Id.run do
+          let mut msg : Array UInt8 := #[UInt8.ofNat d1, UInt8.ofNat d2]
+          match lastComputed with
+          | some last =>
+              if ty != .prunedBranch then
+                msg := msg ++ hashes[last]!
+              else
+                -- pruned branch: no chaining; always hash original data
+                for i in [0:fullBytes] do
+                  msg := msg.push (bitsToByte c.bits (i * 8) 8)
+                if remBits ≠ 0 then
+                  msg := msg.push (bitsToPaddedLastByte c.bits (fullBytes * 8) remBits)
+          | none =>
+              for i in [0:fullBytes] do
+                msg := msg.push (bitsToByte c.bits (i * 8) 8)
+              if remBits ≠ 0 then
+                msg := msg.push (bitsToPaddedLastByte c.bits (fullBytes * 8) remBits)
+
+          let childLevel : Nat := if isMerkleNode then Nat.min maxLevel (lvl + 1) else lvl
+          for ci in childInfos do
+            let d := ci.getDepth childLevel
+            msg := msg.push (UInt8.ofNat ((d >>> 8) &&& 0xff))
+            msg := msg.push (UInt8.ofNat (d &&& 0xff))
+          for ci in childInfos do
+            msg := msg ++ ci.getHash childLevel
+          sha256Digest msg
+      else
+        h
+
+    -- Store + fill gaps.
+    let start : Nat :=
+      match lastComputed with
+      | none => 0
+      | some last => last + 1
+    for j in [start:lvl] do
+      hashes := hashes.set! j h
+    hashes := hashes.set! lvl h
+    lastComputed := some lvl
+
+  return { ty, levelMask, effectiveLevel, depths, hashes }
+
 partial def Cell.depth (c : Cell) : Nat :=
-  if c.refs.isEmpty then
-    0
-  else
-    1 + c.refs.foldl (fun m r => Nat.max m (Cell.depth r)) 0
+  match c.computeLevelInfo? with
+  | .ok info => info.getDepth Cell.maxLevel
+  | .error _ => 0
 
 partial def Cell.hashBytes (c : Cell) : Array UInt8 :=
-  Id.run do
-    let refsCnt : Nat := c.refs.size
-    let bitLen : Nat := c.bits.size
-    let fullBytes : Nat := bitLen / 8
-    let remBits : Nat := bitLen % 8
-    let d1 : Nat := refsCnt
-    let d2 : Nat := (fullBytes <<< 1) + (if remBits ≠ 0 then 1 else 0)
-
-    let mut msg : Array UInt8 := #[UInt8.ofNat d1, UInt8.ofNat d2]
-    for i in [0:fullBytes] do
-      msg := msg.push (bitsToByte c.bits (i * 8) 8)
-    if remBits ≠ 0 then
-      msg := msg.push (bitsToPaddedLastByte c.bits (fullBytes * 8) remBits)
-
-    -- Child depths (big-endian 16-bit).
-    for i in [0:refsCnt] do
-      let d := Cell.depth c.refs[i]!
-      msg := msg.push (UInt8.ofNat ((d >>> 8) &&& 0xff))
-      msg := msg.push (UInt8.ofNat (d &&& 0xff))
-
-    -- Child hashes.
-    for i in [0:refsCnt] do
-      let h := Cell.hashBytes c.refs[i]!
-      for b in h do
-        msg := msg.push b
-
-    sha256Digest msg
+  match c.computeLevelInfo? with
+  | .ok info => info.getHash Cell.maxLevel
+  | .error _ => Array.replicate 32 0
 
 structure Slice where
   cell : Cell
@@ -663,8 +936,9 @@ def Slice.refsRemaining (s : Slice) : Nat :=
   s.cell.refs.size - s.refPos
 
 def Slice.toCellRemaining (s : Slice) : Cell :=
-  { bits := s.cell.bits.extract s.bitPos s.cell.bits.size
-    refs := s.cell.refs.extract s.refPos s.cell.refs.size }
+  Cell.mkOrdinary
+    (s.cell.bits.extract s.bitPos s.cell.bits.size)
+    (s.cell.refs.extract s.refPos s.cell.refs.size)
 
 def Slice.haveBits (s : Slice) (n : Nat) : Bool :=
   decide (s.bitPos + n ≤ s.cell.bits.size)
@@ -708,7 +982,7 @@ def Builder.storeBits (b : Builder) (bs : BitString) : Builder :=
   { b with bits := b.bits ++ bs }
 
 def Builder.finalize (b : Builder) : Cell :=
-  { bits := b.bits, refs := b.refs }
+  Cell.mkOrdinary b.bits b.refs
 
 inductive DictSetMode : Type
   | set
@@ -1637,7 +1911,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       throw .invOpcode
     let codeBits := s8.readBits dataBits
     let rest := s8.advanceBits dataBits
-    let codeCell : Cell := { bits := codeBits, refs := #[] }
+    let codeCell : Cell := Cell.mkOrdinary codeBits #[]
     return (.pushCont (Slice.ofCell codeCell), 8, rest)
 
   -- Exception opcodes: THROW / THROWIF / THROWIFNOT short/long.
@@ -1681,7 +1955,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let raw := s21.readBits dataBits
       let rest := s21.advanceBits dataBits
       let bits := bitsStripTrailingMarker raw
-      let cell : Cell := { bits, refs := #[] }
+      let cell : Cell := Cell.mkOrdinary bits #[]
       return (.sdBeginsConst quiet (Slice.ofCell cell), 21, rest)
 
   -- DICTPUSHCONST (24-bit, +1 ref): 0xf4a4..0xf4a7 + 10-bit key size.
@@ -1850,7 +2124,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         let (c, rest') ← rest.takeRefInv
         contRefs := contRefs.push c
         rest := rest'
-      let codeCell : Cell := { bits := codeBits, refs := contRefs }
+      let codeCell : Cell := Cell.mkOrdinary codeBits contRefs
       return (.pushCont (Slice.ofCell codeCell), 16, rest)
 
   -- PUSHSLICE r2 (18-bit prefix): 0x8d + 3-bit refs (0..4) + 7-bit len, then inline bits/refs.
@@ -1876,7 +2150,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         refCells := refCells.push c
         rest := rest'
       let bits := bitsStripTrailingMarker raw
-      let cell : Cell := { bits, refs := refCells }
+      let cell : Cell := Cell.mkOrdinary bits refCells
       return (.pushSliceConst (Slice.ofCell cell), 18, rest)
 
   -- PUSHINT (8/16/long)
@@ -1900,7 +2174,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         rs := rs.push c
         rest := rest'
       let bits := bitsStripTrailingMarker raw
-      let cell : Cell := { bits, refs := rs }
+      let cell : Cell := Cell.mkOrdinary bits rs
       return (.stSliceConst (Slice.ofCell cell), 14, rest)
 
   let b8 ← s.peekBitsAsNat 8
@@ -1923,7 +2197,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     let raw := s12.readBits dataBits
     let rest := s12.advanceBits dataBits
     let bits := bitsStripTrailingMarker raw
-    let cell : Cell := { bits, refs := #[] }
+    let cell : Cell := Cell.mkOrdinary bits #[]
     return (.pushSliceConst (Slice.ofCell cell), 12, rest)
   if b8 = 0x80 then
     let (_, s8) ← s.takeBitsAsNat 8
@@ -2747,8 +3021,9 @@ def Slice.skipMessageAddr (s : Slice) : Except Excno Slice := do
       throw .cellUnd
 
 def Slice.prefixCell (start stop : Slice) : Cell :=
-  { bits := start.cell.bits.extract start.bitPos stop.bitPos
-    refs := start.cell.refs.extract start.refPos stop.refPos }
+  Cell.mkOrdinary
+    (start.cell.bits.extract start.bitPos stop.bitPos)
+    (start.cell.refs.extract start.refPos stop.refPos)
 
 def natLenBits (n : Nat) : Nat :=
   if n = 0 then 0 else Nat.log2 n + 1
@@ -2912,7 +3187,7 @@ partial def dictReplaceBuilderAuxWithCells (cell : Cell) (key : BitString) (pos 
     let newBits := prefixBits ++ newVal.bits
     if newBits.size > 1023 || newVal.refs.size > 4 then
       throw .cellOv
-    let newCell : Cell := { bits := newBits, refs := newVal.refs }
+    let newCell : Cell := Cell.mkOrdinary newBits newVal.refs
     return (newCell, true, 1, #[cell])
   else
     let nextPos : Nat := pos + lbl.len
@@ -2935,7 +3210,7 @@ partial def dictReplaceBuilderAuxWithCells (cell : Cell) (key : BitString) (pos 
         #[left, childNew]
       else
         #[childNew, right]
-    let newCell : Cell := { bits := cell.bits, refs := newRefs }
+    let newCell : Cell := Cell.mkOrdinary cell.bits newRefs
     return (newCell, true, created + 1, #[cell] ++ loaded)
 
 def dictReplaceBuilderWithCells (root : Option Cell) (key : BitString) (newVal : Builder) :
@@ -3832,7 +4107,7 @@ def assembleCp0 (code : List Instr) : Except Excno Cell := do
   let mut bits : BitString := #[]
   for i in code do
     bits := bits ++ (← encodeCp0 i)
-  return { bits, refs := #[] }
+  return Cell.mkOrdinary bits #[]
 
 structure Regs where
   c0 : Continuation
@@ -4511,9 +4786,8 @@ def execInstr (i : Instr) : VM Unit := do
       -- C++ `XCTOS` uses `load_cell_slice_ref`, which charges a cell load/reload.
       modify fun st => st.registerCellLoad c
       VM.push (.slice (Slice.ofCell c))
-      -- C++ `XCTOS` also returns a boolean `is_special`. We don't model special cells yet,
-      -- and our current BOC fast-path rejects exotic cells, so return `false` (0).
-      VM.pushSmallInt 0
+      -- C++ `XCTOS` also returns a boolean `is_special` (true for exotic/special cells).
+      VM.pushSmallInt (if c.special then -1 else 0)
   | .newc =>
       VM.push (.builder Builder.empty)
   | .endc =>
@@ -4563,8 +4837,9 @@ def execInstr (i : Instr) : VM Unit := do
       let s ← VM.popSlice
       if s.haveBits bits then
         let newCell : Cell :=
-          { bits := s.cell.bits.extract s.bitPos (s.bitPos + bits)
-            refs := s.cell.refs.extract s.refPos s.cell.refs.size }
+          Cell.mkOrdinary
+            (s.cell.bits.extract s.bitPos (s.bitPos + bits))
+            (s.cell.refs.extract s.refPos s.cell.refs.size)
         VM.push (.slice (Slice.ofCell newCell))
       else
         throw .cellUnd
@@ -4589,8 +4864,9 @@ def execInstr (i : Instr) : VM Unit := do
       if bits ≤ s.bitsRemaining then
         let keep : Nat := s.bitsRemaining - bits
         let newCell : Cell :=
-          { bits := s.cell.bits.extract s.bitPos (s.bitPos + keep)
-            refs := s.cell.refs.extract s.refPos s.cell.refs.size }
+          Cell.mkOrdinary
+            (s.cell.bits.extract s.bitPos (s.bitPos + keep))
+            (s.cell.refs.extract s.refPos s.cell.refs.size)
         VM.push (.slice (Slice.ofCell newCell))
       else
         throw .cellUnd
@@ -4706,7 +4982,7 @@ def execInstr (i : Instr) : VM Unit := do
       let s ← VM.popSlice
       if s.haveBits bits then
         let subBits := s.readBits bits
-        let subCell : Cell := { bits := subBits, refs := #[] }
+        let subCell : Cell := Cell.mkOrdinary subBits #[]
         VM.push (.slice (Slice.ofCell subCell))
         if !prefetch then
           VM.push (.slice (s.advanceBits bits))
@@ -4723,7 +4999,7 @@ def execInstr (i : Instr) : VM Unit := do
       let s ← VM.popSlice
       if s.haveBits bits then
         let subBits := s.readBits bits
-        let subCell : Cell := { bits := subBits, refs := #[] }
+        let subCell : Cell := Cell.mkOrdinary subBits #[]
         VM.push (.slice (Slice.ofCell subCell))
         if !prefetch then
           VM.push (.slice (s.advanceBits bits))
@@ -5811,7 +6087,7 @@ def execInstr (i : Instr) : VM Unit := do
         let st ← get
         let prev := st.regs.c5
         let bits := natToBits 0x0ec3c86d 32 ++ natToBits mode8 8
-        let newHead : Cell := { bits, refs := #[prev, msgCell] }
+        let newHead : Cell := Cell.mkOrdinary bits #[prev, msgCell]
         set { st with regs := { st.regs with c5 := newHead } }
       else
         pure ()
@@ -5822,7 +6098,7 @@ def execInstr (i : Instr) : VM Unit := do
       let st ← get
       let prev := st.regs.c5
       let bits := natToBits 0x0ec3c86d 32 ++ natToBits mode 8
-      let newHead : Cell := { bits, refs := #[prev, msgCell] }
+      let newHead : Cell := Cell.mkOrdinary bits #[prev, msgCell]
       set { st with regs := { st.regs with c5 := newHead } }
   | .rawReserve =>
       let f ← VM.popNatUpTo 31
@@ -5840,7 +6116,7 @@ def execInstr (i : Instr) : VM Unit := do
       modify fun st => st.consumeGas cellCreateGasPrice
       let st ← get
       let prev := st.regs.c5
-      let newHead : Cell := { bits, refs := #[prev] }
+      let newHead : Cell := Cell.mkOrdinary bits #[prev]
       set { st with regs := { st.regs with c5 := newHead } }
   | .throw exc =>
       modify fun st => (st.throwException exc).consumeGas exceptionGasPrice

@@ -42,7 +42,7 @@ Keep it executable first, with “well formed” as predicates, not dependent ty
 * `Cell`
 
   * `bits : BitString` and `refs : Array Cell` with checks for ≤ 1023 bits and ≤ 4 refs
-  * optionally `cellType` and `exotic` marker, but in MVP you can treat everything as ordinary
+  * plus `special : Bool` (exotic cell flag) and `levelMask : Nat` (0..7) to support TON cell levels/hashes
 * `Slice`
 
   * `cell : Cell`, `bitPos : Nat`, `refPos : Nat`

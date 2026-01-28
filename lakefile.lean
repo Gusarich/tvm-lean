@@ -29,3 +29,6 @@ lean_exe "tvm-lean-tests" where
 
 lean_exe "tvm-lean-diff-test" where
   root := `DiffTestMain
+
+lean_exe "tvm-lean-actions-debug" where
+  root := `ActionsDebugMain

@@ -3,11 +3,11 @@ import TvmLean.Core
 
 namespace TvmLean
 
-/-! Minimal Bag-of-Cells (BOC) (de)serialization (Milestone 2 “fast path”).
+/-! Minimal Bag-of-Cells (BOC) (de)serialization.
 
 This is an **untrusted input layer**: it is executable engineering code, not formally verified yet.
 Supported: `serialized_boc` (0xb5ee9c72) and the legacy idx formats (0x68ff65f3 / 0xacc3a728), with optional CRC32C.
-We intentionally reject exotic/special cells, absent cells, and non-zero level masks for now.
+We support exotic/special cells and non-zero level masks, and validate hashes/depths when `with_hashes` is present.
 -/
 
 inductive BocError : Type
@@ -171,7 +171,7 @@ def parseCellSerInfo (cellBytes : ByteArray) (refByteSize : Nat) : BocM CellSerI
   let special := ((d1 >>> 3) &&& 1) = 1
   let withHashes := ((d1 >>> 4) &&& 1) = 1
   if refsCnt > 4 then
-    bocFail "BOC: absent cells not supported"
+    bocFail "BOC: invalid cell reference count"
   let hashesCount := popcount3 levelMask + 1
   let hashesBytes : Nat := if withHashes then hashesCount * 32 else 0
   let depthBytes : Nat := if withHashes then hashesCount * 2 else 0
@@ -199,10 +199,6 @@ def parseCellBytes
     (revIdx : Nat)
     (cellCount : Nat) : BocM Cell := do
   let info ← parseCellSerInfo cellBytes refByteSize
-  if info.special then
-    bocFail "BOC: special/exotic cells not supported (Milestone 2 fast-path)"
-  if info.levelMask ≠ 0 then
-    bocFail "BOC: non-zero level mask not supported (Milestone 2 fast-path)"
   if info.endOffset ≠ cellBytes.size then
     bocFail "BOC: unused space in cell serialization"
 
@@ -245,7 +241,48 @@ def parseCellBytes
       bocFail "BOC: forward reference"
     refs := refs.push (cellsRev[refRevIdx]!)
 
-  return { bits := bs, refs := refs }
+  let cell : Cell := { bits := bs, refs := refs, special := info.special, levelMask := info.levelMask }
+  let infoComputed ←
+    match cell.computeLevelInfo? with
+    | .ok i => pure i
+    | .error e => bocFail s!"BOC: invalid cell: {e}"
+
+  if info.withHashes then
+    let hashN : Nat := LevelMask.getHashesCount info.levelMask
+    let hashesOffset : Nat := 2
+    let depthOffset : Nat := hashesOffset + hashN * 32
+
+    -- Top hash/depth (at effective level).
+    let topHashOff : Nat := hashesOffset + 32 * (hashN - 1)
+    let topDepthOff : Nat := depthOffset + 2 * (hashN - 1)
+    let storedTopHash := cellBytes.extract topHashOff (topHashOff + 32)
+    let computedTopHash : ByteArray := ByteArray.mk (infoComputed.getHash Cell.maxLevel)
+    if storedTopHash != computedTopHash then
+      bocFail "BOC: representation hash mismatch"
+    let storedTopDepth ← readNatBE cellBytes topDepthOff 2
+    let computedTopDepth : Nat := infoComputed.getDepth Cell.maxLevel
+    if storedTopDepth != computedTopDepth then
+      bocFail "BOC: depth mismatch"
+
+    -- Lower hashes/depths.
+    let effLevel : Nat := infoComputed.effectiveLevel
+    let mut hash_i : Nat := 0
+    for level_i in [0:effLevel] do
+      if !LevelMask.isSignificant info.levelMask level_i then
+        continue
+      let off := hashesOffset + 32 * hash_i
+      let stored := cellBytes.extract off (off + 32)
+      let computed : ByteArray := ByteArray.mk (infoComputed.getHash level_i)
+      if stored != computed then
+        bocFail "BOC: lower hash mismatch"
+      let offD := depthOffset + 2 * hash_i
+      let storedD ← readNatBE cellBytes offD 2
+      let computedD : Nat := infoComputed.getDepth level_i
+      if storedD != computedD then
+        bocFail "BOC: lower depth mismatch"
+      hash_i := hash_i + 1
+
+  return cell
 
 def stdBocDeserializeMulti (data : ByteArray) (maxRoots : Nat := 4) : BocM (Array Cell) := do
   if data.size = 0 then
@@ -539,7 +576,10 @@ def serializeCellNoRefs (c : Cell) : BocM (Array UInt8) := do
     bocFail "BOC: cell bitstring too large"
   let fullBytes : Nat := c.bits.size / 8
   let remBits : Nat := c.bits.size % 8
-  let d1 : Nat := refsCnt
+  let d1 : Nat :=
+    refsCnt +
+      (if c.special then 8 else 0) +
+        ((LevelMask.apply c.levelMask Cell.maxLevel) <<< 5)
   let d2 : Nat := (fullBytes <<< 1) + (if remBits = 0 then 0 else 1)
   let mut out : Array UInt8 := #[UInt8.ofNat d1, UInt8.ofNat d2]
   for i in [0:fullBytes] do

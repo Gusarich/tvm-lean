@@ -36,5 +36,5 @@ lake exe tvm-lean-tests
 
 ## Notes / limitations
 
-- The BOC parser in `TvmLean/Boc.lean` is a “Milestone 2 fast path”: it verifies header sizes and (if present) CRC32C, but currently rejects absent cells, exotic/special cells, and non-zero level masks.
+- The BOC parser in `TvmLean/Boc.lean` is a “Milestone 2 fast path” for untrusted input: it verifies header sizes and (if present) CRC32C, supports exotic/special cells + non-zero level masks, and validates hashes/depths when `with_hashes` is present. It still rejects **absent cells** (incomplete BoCs).
 - The CLI `--boc` flag expects a *binary* `.boc`. Test fixtures in `fixtures/*.boc.hex` are hex strings (used by `Tests.lean`).

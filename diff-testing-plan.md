@@ -37,13 +37,23 @@ Validate the Lean TVM implementation against real historical TON blockchain tran
 │     "stack_init": {                                                 │
 │       "balance_grams": "123",                                       │
 │       "msg_balance_grams": "456",                                   │
+│       "now": "1700000000",                                          │
+│       "lt": "12345678900001",                                       │
+│       "rand_seed": "0",                                             │
+│       "storage_fees": "0",                                          │
+│       "due_payment": "0",                                           │
 │       "in_msg_boc": "<base64>",                                     │
 │       "in_msg_body_boc": "<base64>",                                │
 │       "in_msg_extern": false                                        │
 │     },                                                              │
 │     "expected": {                                                   │
 │       "exit_code": 0,                                               │
-│       "gas_used": "12345"                                           │
+│       "gas_used": "12345",                                          │
+│       "gas_limit": "1000000",                                       │
+│       "gas_max": "1000000",                                         │
+│       "gas_credit": "0",                                            │
+│       "c4_boc": "<base64>",                                         │
+│       "c5_boc": "<base64>"                                          │
 │     }                                                               │
 │   }                                                                 │
 └─────────────────────────────────────────────────────────────────────┘
@@ -120,7 +130,7 @@ LIMIT 1000
 - Higher gas usage
 
 **Skip initially:**
-- Transactions with library cells (need extra handling)
+- Transactions with unresolved library references (need extra handling / resolution)
 - Tick/tock transactions (special execution context)
 - Split/merge transactions
 
@@ -160,28 +170,55 @@ async function collectTestCase(txHash: string): Promise<TestCase> {
 
   const shardAcc = await getBlockAccount(false, baseTx.address, mcBlock)
   const st: any = shardAcc.account?.storage?.state
-  const dataCell = st?.type === "active" ? st.state?.data : beginCell().endCell()
-  const codeCell = trace.codeCell ?? (st?.type === "active" ? st.state?.code : undefined)
-  if (!codeCell) throw new Error("no code cell (inactive account?)")
+  const inMsg: any = rawTx.tx.inMessage
+  if (!inMsg) throw new Error("no inMessage in transaction")
 
-  const inMsgCell = beginCell().store(storeMessage(rawTx.tx.inMessage)).endCell()
-  const inBodyCell = (rawTx.tx.inMessage as any).body ?? beginCell().endCell()
+  // For non-active accounts, TVM initializes code/data from the inbound message `init` (if present).
+  const dataCell = st?.type === "active" ? (st.state?.data ?? beginCell().endCell()) : (inMsg.init?.data ?? beginCell().endCell())
+  const codeCell = st?.type === "active" ? st.state?.code : inMsg.init?.code
+  if (!codeCell) throw new Error("no code cell")
+
+  const inMsgCell = beginCell().store(storeMessage(inMsg)).endCell()
+  const inBodyCell = inMsg.body ?? beginCell().endCell()
+
+  const desc: any = rawTx.tx.description
+  if (desc?.type !== "generic") throw new Error("unsupported tx description type")
+  const computePhase: any = desc.computePhase
+  if (computePhase?.type !== "vm") throw new Error("compute phase is not vm")
+
+  // Match `Transaction::prepare_vm_stack` balance at compute start.
+  const storageFees: bigint = desc.storagePhase?.storageFeesCollected ?? 0n
+  const duePayment: bigint = desc.storagePhase?.storageFeesDue ?? 0n
+  const msgImportFee: bigint = inMsg.info.type === "external-in" ? inMsg.info.importFee : 0n
+  const creditCoins: bigint =
+    desc.creditPhase?.credit?.coins ??
+    (inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n)
+  const balanceBefore: bigint = shardAcc.account?.storage?.balance?.coins ?? 0n
+  const balanceExec: bigint = balanceBefore - msgImportFee - storageFees + creditCoins
 
   return {
     tx_hash: txHash,
     code_boc: codeCell.toBoc().toString("base64"),
     data_boc: dataCell.toBoc().toString("base64"),
     stack_init: {
-      balance_grams: trace.money.balanceBefore.toString(10),
-      msg_balance_grams: (trace.inMsg.amount ?? 0n).toString(10),
+      balance_grams: balanceExec.toString(10),
+      msg_balance_grams: creditCoins.toString(10),
+      now: String(rawTx.tx.now),
+      lt: rawTx.tx.lt.toString(10),
+      rand_seed: "0", // from shard block `rand_seed` (base64 → bigint)
+      storage_fees: storageFees.toString(10),
+      due_payment: duePayment.toString(10),
       in_msg_boc: inMsgCell.toBoc().toString("base64"),
       in_msg_body_boc: inBodyCell.toBoc().toString("base64"),
-      in_msg_extern: trace.inMsg.sender === undefined,
+      in_msg_extern: inMsg.info.type !== "internal",
     },
     expected: {
       // IMPORTANT: blockchain `compute_exit_code` is the *uncomplemented* code.
-      exit_code: computeInfo.exitCode,
-      gas_used: computeInfo.gasUsed.toString(10),
+      exit_code: computePhase.exitCode,
+      gas_used: computePhase.gasUsed.toString(10),
+      gas_limit: "1000000", // computed from block config (see `computeGasInit`)
+      gas_max: "1000000",
+      gas_credit: "0",
     },
   }
 }
