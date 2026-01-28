@@ -6,6 +6,8 @@ import { Address, beginCell, Cell, loadShardAccount, storeMessage, type TupleIte
 import { Blockchain } from "@ton/sandbox";
 import { collectUsedLibraries, findFullBlockForSeqno, findRawTxByHash, getBlockAccount, getBlockConfig, shardAccountToBase64 } from "txtracer-core";
 
+import { computeGasInit, parseGlobalConfig, type ParsedGlobalConfig } from "./gas.js";
+
 type TupleItemJson =
   | { type: "null" }
   | { type: "nan" }
@@ -30,6 +32,9 @@ type Fixture = {
   expected: {
     exit_code: number;
     gas_used?: string;
+    gas_limit?: string;
+    gas_max?: string;
+    gas_credit?: string;
     c4_boc?: string;
     c5_boc?: string;
     c7?: TupleItemJson;
@@ -306,7 +311,7 @@ async function main() {
   };
 
   const randSeedByShardBlock = new Map<string, Buffer>();
-  const blockConfigByMc = new Map<number, any>();
+  const blockConfigByMc = new Map<number, { configCell: string; parsed: ParsedGlobalConfig }>();
 
   for (let seqno = startSeqno; seqno <= endSeqno; seqno++) {
     if (opts.maxBlocks !== undefined && seqno - startSeqno >= opts.maxBlocks) break;
@@ -315,6 +320,13 @@ async function main() {
     const block = {
       shards: [...block0.shards].sort((a: any, b: any) => (a.workchain === -1 ? -1 : 0) - (b.workchain === -1 ? -1 : 0)),
     };
+
+    let blockCfg = blockConfigByMc.get(seqno);
+    if (!blockCfg) {
+      const configCell = await getBlockConfig(opts.testnet, block0 as any);
+      blockCfg = { configCell, parsed: parseGlobalConfig(configCell) };
+      blockConfigByMc.set(seqno, blockCfg);
+    }
 
     // Compute min-lt per account inside this master block (used to skip non-first txs).
     const minLtByAccount = new Map<string, bigint>();
@@ -394,6 +406,8 @@ async function main() {
             dataCell = st.state?.data ?? emptyCell();
             codeCell = st.state?.code;
           } else {
+            // For non-active accounts, TVM initializes code/data from the message `init` (if present).
+            dataCell = rawTx.tx.inMessage?.init?.data ?? emptyCell();
             codeCell = rawTx.tx.inMessage?.init?.code;
           }
           if (!codeCell) {
@@ -408,8 +422,21 @@ async function main() {
           const inMsgCell = beginCell().store(storeMessage(inMsg) as any).endCell();
           const inBodyCell = inMsg.body ?? emptyCell();
           const inMsgExtern = inMsg.info.type !== "internal";
-          const msgBalance = inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n;
-          const balance = shardAcc.account?.storage?.balance?.coins ?? 0n;
+          const msgImportFee = inMsg.info.type === "external-in" ? inMsg.info.importFee : 0n;
+          const storageFees: bigint = desc.storagePhase?.storageFeesCollected ?? 0n;
+          const creditCoins: bigint =
+            desc.creditPhase?.credit?.coins ??
+            (inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n);
+          const balanceBefore: bigint = shardAcc.account?.storage?.balance?.coins ?? 0n;
+          const balanceExec: bigint = balanceBefore - msgImportFee - storageFees + creditCoins;
+          const gasInit = computeGasInit(blockCfg.parsed, {
+            workchain: address.workChain,
+            address,
+            now: rawTx.tx.now,
+            balanceGrams: balanceExec,
+            msgBalanceGrams: creditCoins,
+            inMsgExtern,
+          });
 
           // Needed for a realistic c7 environment (Lean uses it in defaultInitC7),
           // and for sandbox emulation when `--expected-state` is enabled.
@@ -436,8 +463,8 @@ async function main() {
             code_boc: bocBase64(codeCell),
             data_boc: bocBase64(dataCell),
             stack_init: {
-              balance_grams: balance.toString(10),
-              msg_balance_grams: msgBalance.toString(10),
+              balance_grams: balanceExec.toString(10),
+              msg_balance_grams: creditCoins.toString(10),
               now: String(rawTx.tx.now),
               lt: rawTx.tx.lt.toString(10),
               rand_seed: randSeedInt.toString(10),
@@ -448,15 +475,14 @@ async function main() {
             expected: {
               exit_code: computePhase.exitCode,
               gas_used: computePhase.gasUsed.toString(10),
+              gas_limit: gasInit.gasLimit.toString(10),
+              gas_max: gasInit.gasMax.toString(10),
+              gas_credit: gasInit.gasCredit.toString(10),
             },
           };
 
           if (sandbox) {
-            let blockConfig = blockConfigByMc.get(seqno);
-            if (!blockConfig) {
-              blockConfig = await getBlockConfig(opts.testnet, block0 as any);
-              blockConfigByMc.set(seqno, blockConfig);
-            }
+            const blockConfig = blockCfg.configCell;
 
             const shardAcc0: any = { ...shardAcc, lastTransactionLt: 0n, lastTransactionHash: 0n };
             const shardAccountBase64 = shardAccountToBase64(shardAcc0);

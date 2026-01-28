@@ -197,6 +197,9 @@ partial def ExpectedVal.toValue : ExpectedVal → Except String Value
 structure Expected where
   exit_code : Int
   gas_used : Option Int := none
+  gas_limit : Option Int := none
+  gas_max : Option Int := none
+  gas_credit : Option Int := none
   c4_boc : Option String := none
   c5_boc : Option String := none
   c7 : Option ExpectedVal := none
@@ -215,6 +218,27 @@ instance : FromJson Expected where
               | some n => some n
               | none => none
           | .error _ => none
+    let gas_limit :=
+      match j.getObjValAs? Int "gas_limit" with
+      | .ok v => some v
+      | .error _ =>
+          match j.getObjValAs? String "gas_limit" with
+          | .ok s => s.toInt?
+          | .error _ => none
+    let gas_max :=
+      match j.getObjValAs? Int "gas_max" with
+      | .ok v => some v
+      | .error _ =>
+          match j.getObjValAs? String "gas_max" with
+          | .ok s => s.toInt?
+          | .error _ => none
+    let gas_credit :=
+      match j.getObjValAs? Int "gas_credit" with
+      | .ok v => some v
+      | .error _ =>
+          match j.getObjValAs? String "gas_credit" with
+          | .ok s => s.toInt?
+          | .error _ => none
     let c4_boc :=
       match j.getObjValAs? String "c4_boc" with
       | .ok s => some s
@@ -227,7 +251,7 @@ instance : FromJson Expected where
       match j.getObjValAs? ExpectedVal "c7" with
       | .ok v => some v
       | .error _ => none
-    return { exit_code, gas_used, c4_boc, c5_boc, c7 }
+    return { exit_code, gas_used, gas_limit, gas_max, gas_credit, c4_boc, c5_boc, c7 }
 
 structure StackInit where
   balance_grams : Int
@@ -405,11 +429,8 @@ def buildInitStack (si : StackInit) : Except String Stack := do
     | .ok c => pure c
     | .error e => throw s!"in_msg_body_boc: {e}"
   let flag : Int := if si.in_msg_extern then -1 else 0
-  -- In actual TVM execution for internal messages, the contract balance is credited with the incoming value
-  -- before running the code. (External messages have no value to credit.)
-  let balanceExec : Int := if si.in_msg_extern then si.balance_grams else si.balance_grams + si.msg_balance_grams
   return #[
-    .int (.num balanceExec),
+    .int (.num si.balance_grams),
     .int (.num si.msg_balance_grams),
     .cell inMsgCell,
     .slice (Slice.ofCell bodyCell),
@@ -469,13 +490,12 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) : Array Value :=
             | none => .null
         | .error _ => .null
     | .error _ => .null
-  let balanceExec : Int := if si.in_msg_extern then si.balance_grams else si.balance_grams + si.msg_balance_grams
   let params0 : Array Value := #[]
   let params1 := tupleSetExtend params0 3 (.int (.num si.now)) -- NOW
   let params2 := tupleSetExtend params1 4 (.int (.num si.lt)) -- BLOCKLT (approx; same as tx lt)
   let params3 := tupleSetExtend params2 5 (.int (.num si.lt)) -- LTIME (tx lt)
   let params4 := tupleSetExtend params3 6 (.int (.num si.rand_seed)) -- RANDSEED
-  let params5 := tupleSetExtend params4 7 (.tuple #[.int (.num balanceExec), .null]) -- BALANCE
+  let params5 := tupleSetExtend params4 7 (.tuple #[.int (.num si.balance_grams), .null]) -- BALANCE
   let params6 := tupleSetExtend params5 8 myAddrVal -- MYADDR
   let params7 := tupleSetExtend params6 10 (.cell codeCell) -- MYCODE
   let params8 := tupleSetExtend params7 11 (.tuple #[.int (.num si.msg_balance_grams), .null]) -- INCOMINGVALUE
@@ -543,7 +563,11 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                             | .ok _ => defaultInitC7 tc.stack_init codeCell
                             | .error _ => defaultInitC7 tc.stack_init codeCell
 
-                      let base := VmState.initial codeCell cfg.gasLimit
+                      let gasLimitInit : Int := tc.expected.gas_limit.getD cfg.gasLimit
+                      let gasMax0 : Int := tc.expected.gas_max.getD cfg.gasLimit
+                      let gasMaxInit : Int := if gasMax0 < gasLimitInit then gasLimitInit else gasMax0
+                      let gasCreditInit : Int := tc.expected.gas_credit.getD 0
+                      let base := VmState.initial codeCell gasLimitInit gasMaxInit gasCreditInit
                       let st0 : VmState :=
                         { base with
                           stack := initStack
@@ -553,7 +577,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                         -- `VmState.run*` returns bitwise-complemented exit codes (like C++ `vm.run()`).
                         -- Blockchain `compute_exit_code` is the uncomplemented one (like C++ `cp.exit_code = ~vm.run()`).
                         let actualExit : Int := ~~~ exitCode
-                        let gasUsed : Int := stF.gas.gasConsumed
+                        let gasUsed : Int := min stF.gas.gasConsumed stF.gas.gasLimit
                         let isUnsupported := actualExit = Excno.invOpcode.toInt
                         let mismatches0 : Array String := #[]
                         let mismatches1 :=
@@ -595,6 +619,13 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                           return base
                         let mut mismatches : Array String := #[]
 
+                        -- In the C++ implementation, the account state (c4) and action list (c5) are taken from the
+                        -- committed state only when the compute phase is accepted. For external messages this means
+                        -- `ACCEPT` (or `SETGASLIMIT`) has been executed, i.e. `gas_credit == 0`.
+                        let okData : Bool := (stF.gas.gasCredit == 0) && stF.cstate.committed
+                        let finalC4 : Cell := if okData then stF.cstate.c4 else dataCell
+                        let finalC5 : Cell := if okData then stF.cstate.c5 else Cell.empty
+
                         match tc.expected.c4_boc with
                         | some s =>
                             match decodeBytes s with
@@ -603,7 +634,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                                 match stdBocDeserialize bytes with
                                 | .error e => mismatches := mismatches.push s!"expected.c4_boc parse: {e}"
                                 | .ok exp =>
-                                    if !(stF.regs.c4 == exp) then
+                                    if !(finalC4 == exp) then
                                       mismatches := mismatches.push "c4 mismatch"
                         | none => pure ()
 
@@ -615,7 +646,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                                 match stdBocDeserialize bytes with
                                 | .error e => mismatches := mismatches.push s!"expected.c5_boc parse: {e}"
                                 | .ok exp =>
-                                    if !(stF.regs.c5 == exp) then
+                                    if !(finalC5 == exp) then
                                       mismatches := mismatches.push "c5 mismatch"
                         | none => pure ()
 

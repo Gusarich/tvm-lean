@@ -16,6 +16,8 @@ import {
 import { beginCell, Cell, loadShardAccount, storeMessage, type TupleItem } from "@ton/core";
 import { Blockchain } from "@ton/sandbox";
 
+import { computeGasInit, parseGlobalConfig } from "./gas.js";
+
 type TupleItemJson =
   | { type: "null" }
   | { type: "nan" }
@@ -40,6 +42,9 @@ type Fixture = {
   expected: {
     exit_code: number;
     gas_used?: string;
+    gas_limit?: string;
+    gas_max?: string;
+    gas_credit?: string;
     c4_boc?: string;
     c5_boc?: string;
     c7?: TupleItemJson;
@@ -150,6 +155,9 @@ async function collectFixture(
   const st: any = shardAcc.account?.storage?.state;
   if (st?.type === "active") {
     dataCell = st.state?.data ?? emptyCell();
+  } else {
+    // For non-active accounts, TVM initializes c4 from the message `init.data` (if present).
+    dataCell = rawTx.tx.inMessage?.init?.data ?? emptyCell();
   }
 
   // Code to execute: prefer library-resolved code cell (loadedCode), fall back to snapshot code.
@@ -157,6 +165,7 @@ async function collectFixture(
   if (st?.type === "active") {
     codeCell = st.state?.code;
   } else {
+    // For non-active accounts, TVM initializes code from the message `init.code` (if present).
     codeCell = rawTx.tx.inMessage?.init?.code;
   }
   if (!codeCell) throw new Error("no code cell (inactive account?)");
@@ -170,7 +179,7 @@ async function collectFixture(
   const inBodyCell = (inMsg as any).body ?? emptyCell();
 
   const inMsgExtern = inMsg.info.type !== "internal";
-  const msgBalance = inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n;
+  const msgImportFee = inMsg.info.type === "external-in" ? inMsg.info.importFee : 0n;
   const randSeed = Buffer.from(String(shardBlock.rand_seed), "base64");
   const randSeedInt = bytesToBigIntBE(randSeed);
 
@@ -179,13 +188,36 @@ async function collectFixture(
   const computePhase: any = desc.computePhase;
   if (computePhase?.type !== "vm") throw new Error(`compute phase is not vm (type=${computePhase?.type ?? "unknown"})`);
 
+  // Match `Transaction::prepare_vm_stack` / compute phase balance:
+  // - balance is debited by external message import fee (if any)
+  // - storage fees are collected before compute phase
+  // - internal message value (credit phase) is added before compute phase
+  const storageFees: bigint = desc.storagePhase?.storageFeesCollected ?? 0n;
+  const creditCoins: bigint =
+    desc.creditPhase?.credit?.coins ??
+    (inMsg.info.type === "internal" ? inMsg.info.value.coins : 0n);
+
+  const balanceBefore: bigint = shardAcc.account?.storage?.balance?.coins ?? 0n;
+  const balanceExec: bigint = balanceBefore - msgImportFee - storageFees + creditCoins;
+
+  const blockConfig = await getBlockConfig(testnet, mcBlock as any);
+  const cfg = parseGlobalConfig(blockConfig);
+  const gasInit = computeGasInit(cfg, {
+    workchain: baseTx.address.workChain,
+    address: baseTx.address,
+    now: rawTx.tx.now,
+    balanceGrams: balanceExec,
+    msgBalanceGrams: creditCoins,
+    inMsgExtern,
+  });
+
   const fixture: Fixture = {
     tx_hash: txHash,
     code_boc: bocBase64(codeCell),
     data_boc: bocBase64(dataCell),
     stack_init: {
-      balance_grams: (shardAcc.account?.storage?.balance?.coins ?? 0n).toString(10),
-      msg_balance_grams: msgBalance.toString(10),
+      balance_grams: balanceExec.toString(10),
+      msg_balance_grams: creditCoins.toString(10),
       now: String(rawTx.tx.now),
       lt: rawTx.tx.lt.toString(10),
       rand_seed: randSeedInt.toString(10),
@@ -196,12 +228,13 @@ async function collectFixture(
     expected: {
       exit_code: computePhase.exitCode,
       gas_used: computePhase.gasUsed.toString(10),
+      gas_limit: gasInit.gasLimit.toString(10),
+      gas_max: gasInit.gasMax.toString(10),
+      gas_credit: gasInit.gasCredit.toString(10),
     },
   };
 
   if (sandbox) {
-    const blockConfig = await getBlockConfig(testnet, mcBlock as any);
-
     const shardAcc0: any = { ...shardAcc, lastTransactionLt: 0n, lastTransactionHash: 0n };
     const shardAccountBase64 = shardAccountToBase64(shardAcc0);
 
@@ -265,7 +298,7 @@ async function main() {
       console.log(`✓ ${txHash}`);
     } catch (e: any) {
       // eslint-disable-next-line no-console
-      console.log(`✗ ${txHash}: ${e?.message ?? String(e)}`);
+      console.log(`✗ ${txHash}: ${e?.stack ?? e?.message ?? String(e)}`);
     }
   }
 }

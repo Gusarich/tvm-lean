@@ -1394,6 +1394,7 @@ mutual
     c0 : Option Continuation := none
     c1 : Option Continuation := none
     c2 : Option Continuation := none
+    c3 : Option Continuation := none
     c4 : Option Cell := none
     c5 : Option Cell := none
     c7 : Option (Array Value) := none
@@ -1524,6 +1525,14 @@ def GasLimits.ofLimit (limit : Int) : GasLimits :=
     gasCredit := 0
     gasRemaining := limit
     gasBase := limit }
+
+def GasLimits.ofLimits (limit max credit : Int) : GasLimits :=
+  let base : Int := limit + credit
+  { gasMax := max
+    gasLimit := limit
+    gasCredit := credit
+    gasRemaining := base
+    gasBase := base }
 
 def GasLimits.gasConsumed (g : GasLimits) : Int :=
   g.gasBase - g.gasRemaining
@@ -3857,12 +3866,13 @@ structure VmState where
   maxDataDepth : Nat
   deriving Repr
 
-def VmState.initial (code : Cell) (gasLimit : Int := 1_000_000) : VmState :=
+def VmState.initial (code : Cell) (gasLimit : Int := 1_000_000) (gasMax : Int := GasLimits.infty)
+    (gasCredit : Int := 0) : VmState :=
   { stack := #[]
     regs := { Regs.initial with c3 := .ordinary (Slice.ofCell code) (.quit 0) OrdCregs.empty OrdCdata.empty }
     cc := .ordinary (Slice.ofCell code) (.quit 0) OrdCregs.empty OrdCdata.empty
     cp := 0
-    gas := GasLimits.ofLimit gasLimit
+    gas := GasLimits.ofLimits gasLimit gasMax gasCredit
     chksgnCounter := 0
     loadedCells := #[]
     callStack := #[]
@@ -4366,6 +4376,22 @@ def execInstr (i : Instr) : VM Unit := do
       let cont ← VM.popCont
       let v ← VM.pop
       match cont, idx, v with
+      | .ordinary code saved cregs cdata, 0, .cont k =>
+          match cregs.c0 with
+          | none => VM.push (.cont (.ordinary code saved { cregs with c0 := some k } cdata))
+          | some _ => throw .typeChk
+      | .ordinary code saved cregs cdata, 1, .cont k =>
+          match cregs.c1 with
+          | none => VM.push (.cont (.ordinary code saved { cregs with c1 := some k } cdata))
+          | some _ => throw .typeChk
+      | .ordinary code saved cregs cdata, 2, .cont k =>
+          match cregs.c2 with
+          | none => VM.push (.cont (.ordinary code saved { cregs with c2 := some k } cdata))
+          | some _ => throw .typeChk
+      | .ordinary code saved cregs cdata, 3, .cont k =>
+          match cregs.c3 with
+          | none => VM.push (.cont (.ordinary code saved { cregs with c3 := some k } cdata))
+          | some _ => throw .typeChk
       | .ordinary code saved cregs cdata, 4, .cell c =>
           match cregs.c4 with
           | none => VM.push (.cont (.ordinary code saved { cregs with c4 := some c } cdata))
@@ -4381,6 +4407,10 @@ def execInstr (i : Instr) : VM Unit := do
             | some _ => cregs
             | none => { cregs with c7 := some t }
           VM.push (.cont (.ordinary code saved cregs' cdata))
+      | .ordinary _ _ _ _, 0, _ => throw .typeChk
+      | .ordinary _ _ _ _, 1, _ => throw .typeChk
+      | .ordinary _ _ _ _, 2, _ => throw .typeChk
+      | .ordinary _ _ _ _, 3, _ => throw .typeChk
       | .ordinary _ _ _ _, 4, _ => throw .typeChk
       | .ordinary _ _ _ _, 5, _ => throw .typeChk
       | .ordinary _ _ _ _, 7, _ => throw .typeChk
@@ -6149,6 +6179,8 @@ def VmState.ccSummary (cc : Continuation) : String :=
       s!"ord(bitPos={code.bitPos},refPos={code.refPos},bitsRem={code.bitsRemaining},refsRem={code.refsRemaining},next8={code.peekByteHex},next16={code.peekWord16Hex})"
 
 def VmState.outOfGasHalt (st : VmState) : StepResult :=
+  -- Match C++ unhandled out-of-gas: clear stack and push `gas_consumed()`
+  -- (which may exceed the base/limit if `gas_remaining` went negative).
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
   StepResult.halt Excno.outOfGas.toInt st'
@@ -6219,16 +6251,17 @@ def VmState.step (st : VmState) : StepResult :=
           else
             .continue stExcGas
   | .ordinary code saved cregs cdata =>
-      -- Apply pending continuation control regs (MVP: c0,c1,c2,c4,c5,c7), once.
+      -- Apply pending continuation control regs (MVP: c0,c1,c2,c3,c4,c5,c7), once.
       let st : VmState :=
         let regs0 := st.regs
         let regs1 := match cregs.c0 with | some c0 => { regs0 with c0 := c0 } | none => regs0
         let regs2 := match cregs.c1 with | some c1 => { regs1 with c1 := c1 } | none => regs1
         let regs3 := match cregs.c2 with | some c2 => { regs2 with c2 := c2 } | none => regs2
-        let regs4 := match cregs.c4 with | some c4 => { regs3 with c4 := c4 } | none => regs3
-        let regs5 := match cregs.c5 with | some c5 => { regs4 with c5 := c5 } | none => regs4
-        let regs6 := match cregs.c7 with | some c7 => { regs5 with c7 := c7 } | none => regs5
-        let st1 : VmState := { st with regs := regs6 }
+        let regs4 := match cregs.c3 with | some c3 => { regs3 with c3 := c3 } | none => regs3
+        let regs5 := match cregs.c4 with | some c4 => { regs4 with c4 := c4 } | none => regs4
+        let regs6 := match cregs.c5 with | some c5 => { regs5 with c5 := c5 } | none => regs5
+        let regs7 := match cregs.c7 with | some c7 => { regs6 with c7 := c7 } | none => regs6
+        let st1 : VmState := { st with regs := regs7 }
         let st2 : VmState :=
           if cdata.stack.isEmpty then
             st1
