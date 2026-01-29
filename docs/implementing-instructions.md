@@ -5,10 +5,16 @@ Each issue description is intentionally a “mini-brief”: it points you to the
 
 ## 1) Pick work (Linear)
 
-Pick an instruction issue with:
+This repo uses a **parent + subissue** model:
+
+- Parent issue: `Instr: <NAME>` / `Fift: <ALIAS> -> <ACTUAL>` (spec context + TON refs)
+- Work issues: child subissues labeled `ws/*` (each should be closed by a single PR)
+
+Pick a work subissue under an instruction with:
 
 - `kind/tvm` (or `kind/fift-alias` for aliases)
 - a `cat/*` label matching the spec category
+- one `ws/*` label (e.g. `ws/impl`, `ws/tests`, `ws/diff`, `ws/spec-audit`, `ws/proof`)
 
 In the issue description:
 
@@ -45,6 +51,13 @@ Tip: if the Linear issue mnemonic is `FOO`, start with `rg -n \"\\bFOO\\b\" TvmL
    - Add a focused unit test in `Tests.lean` (use `runProg` for tiny programs when possible).
    - If the opcode is exercised in diff fixtures, run `tvm-lean-diff-test` locally and fix mismatches.
 
+## One PR per issue
+
+Hard rule: **close each `ws/*` subissue with exactly one PR**.
+
+- Use the `gitBranchName` from Linear for the branch name.
+- Put the Linear identifier (e.g. `TVM-5997`) in the PR title so Linear auto-links it.
+
 ## 4) Run checks
 
 ```sh
@@ -60,4 +73,3 @@ Alias issues are about *mnemonic expansion*, not new VM behavior:
 - confirm the alias maps to the correct `tvm::<actual>` per spec
 - ensure any relevant pretty-printing/decoding/assembler surfaces handle it consistently
 - add a small test to lock it in
-
