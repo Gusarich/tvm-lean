@@ -2,6 +2,8 @@
 
 This repo uses Linear to track the full TVM instruction backlog from the vendored spec.
 
+If you're implementing opcodes, start with `docs/implementing-instructions.md`.
+
 ## Projects
 
 - `Instruction Coverage (TVM Spec)`: one issue per instruction / alias.
@@ -41,6 +43,7 @@ LINEAR_API_KEY="lin_api_..." python3 tools/linear_sync.py --apply
 ```
 
 Tip: put `LINEAR_API_KEY="lin_api_..."` in a local `.env` at the repo root and the sync script will pick it up.
+You can start from `.env.example`.
 
 To normalize older issue descriptions to the canonical template (adds encoding/TON refs/checklists where missing):
 

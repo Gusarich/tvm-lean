@@ -1,5 +1,7 @@
 # TVM Lean Diff Testing Plan
 
+Repo overview: `docs/START_HERE.md`.
+
 ## Goal
 
 Validate the Lean TVM implementation against real historical TON blockchain transactions by comparing execution results (exit code, gas used, final state) between the Lean VM and actual on-chain outcomes.

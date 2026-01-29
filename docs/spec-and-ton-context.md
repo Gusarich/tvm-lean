@@ -1,5 +1,7 @@
 # TVM Spec + TON Monorepo Context
 
+Start here: `docs/START_HERE.md`.
+
 This repo uses the instruction catalog from `ton-blockchain/tvm-specification` as the **source of truth** for:
 
 - the complete list of TVM instructions (currently 919)
@@ -56,4 +58,3 @@ Fift instructions in the spec are aliases:
 - each entry is `{ name, actual_name }`
 
 We track these separately (and in Linear) to ensure alias expansion stays consistent with the underlying TVM instruction.
-

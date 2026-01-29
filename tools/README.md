@@ -38,7 +38,7 @@ python3 tools/linear_sync.py
 Apply (creates/updates issues):
 
 ```sh
-echo 'LINEAR_API_KEY="lin_api_..."' > .env  # or export LINEAR_API_KEY in your shell
+cp .env.example .env  # then set LINEAR_API_KEY=... (or export LINEAR_API_KEY in your shell)
 LINEAR_API_KEY="lin_api_..." python3 tools/linear_sync.py --apply
 ```
 
