@@ -6,7 +6,14 @@ Executable Lean model of a small subset of the TON Virtual Machine (TVM), struct
 
 - Milestone 1: executable VM state + small-step semantics, plus WF predicate scaffolding (proofs are `sorry` for now).
 - Milestone 2: cp0 bitcode decoding and a minimal BOC loader (fast-path, untrusted input layer).
-- Opcode coverage is intentionally partial; see `docs/progress/instructions.csv`.
+- Opcode coverage is intentionally partial; progress tracking lives in `docs/progress/instructions_full.csv` (generated from the vendored TVM spec).
+
+## Spec + TON C++ context
+
+We vendor `ton-blockchain/tvm-specification` (pinned) and generate indexes that link each instruction to its bytecode
+layout and reference C++ implementation in the TON monorepo.
+
+See `docs/spec-and-ton-context.md`.
 
 ## Quickstart
 

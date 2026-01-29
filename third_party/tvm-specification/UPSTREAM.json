@@ -1,0 +1,11 @@
+{
+  "repo": "https://github.com/ton-blockchain/tvm-specification",
+  "commit": "522a6893d7445f09339724cb4a9d96823c756ad9",
+  "commit_date_utc": "2026-01-28T15:40:30Z",
+  "vendored_files": [
+    "README.md",
+    "LICENSE",
+    "gen/tvm-specification.json -> tvm-specification.json",
+    "gen/schema.json -> schema.json"
+  ]
+}

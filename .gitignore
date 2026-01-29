@@ -2,6 +2,15 @@
 /lake-packages
 /build
 
+# Python caches
+__pycache__/
+*.py[cod]
+
+# Secrets / local config
+/.env
+/.env.*
+!/.env.example
+
 # Diff testing (generated fixtures/results; keep smoke fixtures checked in)
 /diff-test/fixtures/*.json
 !/diff-test/fixtures/smoke_*.json
