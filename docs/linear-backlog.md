@@ -18,6 +18,15 @@ If you're implementing opcodes, start with `docs/implementing-instructions.md`.
 - `cat/*`: spec categories (e.g. `cat/arithmetic`, `cat/cell`, …).
 - `ws/*`: workstream markers used when splitting work (e.g. `ws/impl`, `ws/tests`, `ws/spec-audit`, `ws/proof`).
 
+## One PR per issue
+
+Hard rule: **every work issue is closed by exactly one PR**.
+
+- The parent instruction issue (`SpecKey: tvm::...` / `SpecKey: fift::...`) is primarily a **spec/context container**.
+- Do the actual work in subissues labeled `ws/*` (impl/tests/diff/spec-audit/proof). Each subissue should map to a
+  single PR.
+- If a parent instruction can be done in one PR end-to-end, you may skip subissues; otherwise use subissues.
+
 ## Unique keys
 
 Every instruction/alias issue starts with a unique key in its description so it can be found and synced:

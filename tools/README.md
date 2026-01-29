@@ -55,3 +55,20 @@ Verify completeness (expects 919 TVM + 116 Fift):
 ```sh
 python3 tools/linear_sync.py --verify
 ```
+
+## Create standard subissues (ws/*)
+
+To keep “one PR per issue”, we work in subissues labeled `ws/*` (impl/tests/diff/spec-audit/proof) under each
+instruction issue.
+
+Dry-run:
+
+```sh
+python3 tools/linear_subissues.py
+```
+
+Apply (bulk create missing subissues):
+
+```sh
+python3 tools/linear_subissues.py --apply
+```

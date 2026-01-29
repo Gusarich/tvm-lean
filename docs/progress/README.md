@@ -11,6 +11,13 @@ generated from the pinned spec (and may include legacy “implemented/tested” 
 - `instructions_full.csv`: progress table for **every** TVM instruction (919) and every Fift alias (116).
 - `instructions.csv`: legacy/manual list used early on (kept for now).
 
+## Editing
+
+Do **not** edit `tvm_spec_index.*` or `instructions_full.csv` manually — they are generated.
+
+If you want to keep lightweight “implemented/tested” markers in-repo for now, update the legacy seed
+`instructions.csv` and regenerate `instructions_full.csv`.
+
 ## Regenerate
 
 ```sh
