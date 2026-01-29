@@ -7,9 +7,9 @@ package "tvm-lean" where
     if System.Platform.isOSX then
       #["-L/opt/homebrew/lib", "-L/usr/local/lib", "-lsodium"]
     else
-      -- Avoid `-L/usr/lib...` because it can reorder libc/glibc resolution for Lean's sysroot toolchain on CI.
-      -- Link against the system `libsodium` by full path (Ubuntu x86_64).
-      #["/usr/lib/x86_64-linux-gnu/libsodium.so"]
+      -- Link libsodium statically to avoid glibc version mismatches between the system `libsodium.so`
+      -- and Lean's sysroot toolchain on CI (Ubuntu x86_64).
+      #["/usr/lib/x86_64-linux-gnu/libsodium.a"]
 
 lean_lib «TvmLean» where
   -- add library configuration options here

@@ -18,8 +18,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsodium-dev
 
-      - name: Cache elan toolchain
-        uses: actions/cache@v4
+      - name: Restore elan toolchain cache
+        uses: actions/cache/restore@v4
         id: elan-cache
         with:
           path: |
@@ -35,8 +35,9 @@ jobs:
           fi
           echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
 
-      - name: Cache Lake (packages + build)
-        uses: actions/cache@v4
+      - name: Restore Lake cache (packages + build)
+        uses: actions/cache/restore@v4
+        id: lake-cache
         with:
           path: |
             .lake/packages
@@ -86,3 +87,20 @@ jobs:
           path: |
             diff-test/nightly_*_results.jsonl
             diff-test/fixtures_sweep_tmp
+
+      - name: Save elan toolchain cache
+        if: ${{ always() && steps.elan-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.elan
+          key: ubuntu-elan-${{ hashFiles('lean-toolchain') }}
+
+      - name: Save Lake cache (packages + build)
+        if: ${{ always() && steps.lake-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            .lake/packages
+            .lake/build
+          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
