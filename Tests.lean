@@ -206,6 +206,17 @@ def testEqual : IO Unit := do
       | .int (.num n) => assert (n == -1) s!"equal: expected -1, got {n}"
       | v => throw (IO.userError s!"equal: unexpected stack value {v.pretty}")
 
+def testAdd : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 7), .pushInt (.num 4), .add ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "add: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"add: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"add: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 11) s!"add: expected 11, got {n}"
+      | v => throw (IO.userError s!"add: unexpected stack value {v.pretty}")
+
 def testIfNotRet : IO Unit := do
   -- IFNOTRET returns when flag is false (0); the following PUSHINT must not execute.
   let prog : List Instr := [ .pushInt (.num 0), .ifnotret, .pushInt (.num 99) ]
@@ -477,6 +488,7 @@ def main (_args : List String) : IO Unit := do
   testBocParseSamples
   testBocSerializeMatchesCanonical
   testEqual
+  testAdd
   testIfNotRet
   testSetCp
   testShifts
