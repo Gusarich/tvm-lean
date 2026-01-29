@@ -21,7 +21,7 @@ Validate the Lean TVM implementation against real historical TON blockchain tran
 │   • Account code BOC (at that block)                                │
 │   • Account data BOC (c4, at that block)                            │
 │   • Incoming message cell + body slice                              │
-│   • Block config / c7 tuple (optional, via Sandbox)                 │
+│   • Block config / c7 tuple (required for full register diff; via Sandbox) │
 │   • Library cells (if any)                                          │
 └─────────────────────────────────────────────────────────────────────┘
                                   │
@@ -53,7 +53,8 @@ Validate the Lean TVM implementation against real historical TON blockchain tran
 │       "gas_max": "1000000",                                         │
 │       "gas_credit": "0",                                            │
 │       "c4_boc": "<base64>",                                         │
-│       "c5_boc": "<base64>"                                          │
+│       "c5_boc": "<base64>",                                         │
+│       "c7": { "type": "tuple", "items": [/* ... */] }               │
 │     }                                                               │
 │   }                                                                 │
 └─────────────────────────────────────────────────────────────────────┘

@@ -2,8 +2,8 @@ import { mkdir, rm, writeFile, appendFile, access, readFile, readdir } from "nod
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import { Address, beginCell, Cell, loadShardAccount, storeMessage, type TupleItem } from "@ton/core";
-import { Blockchain } from "@ton/sandbox";
+import { Address, beginCell, Cell, Dictionary, loadShardAccount, storeMessage, type TupleItem } from "@ton/core";
+import { Blockchain, Executor } from "@ton/sandbox";
 import { collectUsedLibraries, findFullBlockForSeqno, findRawTxByHash, getBlockAccount, getBlockConfig, shardAccountToBase64 } from "txtracer-core";
 
 import { computeGasInit, parseGlobalConfig, type ParsedGlobalConfig } from "./gas.js";
@@ -18,6 +18,8 @@ type TupleItemJson =
 type Fixture = {
   tx_hash: string;
   code_boc: string;
+  // Code cell exposed as `MYCODE` in c7 (can differ from `code_boc` when the executable code is a resolved library).
+  mycode_boc?: string;
   data_boc: string;
   stack_init: {
     balance_grams: string;
@@ -30,6 +32,19 @@ type Fixture = {
     in_msg_boc: string;
     in_msg_body_boc: string;
     in_msg_extern: boolean;
+    // Full blockchain config cell (HashmapE 32 -> Cell), used by CONFIGROOT (c7 params[9]) and for accurate c7 init.
+    config_root_boc?: string;
+    // Selected ConfigParams used by UNPACKEDCONFIGTUPLE (c7 params[14]).
+    config_storage_prices_boc?: string; // ConfigParam 18 (StoragePrices dict)
+    config_global_id_boc?: string; // ConfigParam 19 (Global ID)
+    config_mc_gas_prices_boc?: string; // ConfigParam 20 (GasPrices for masterchain)
+    config_gas_prices_boc?: string; // ConfigParam 21 (GasPrices for basechain)
+    config_size_limits_boc?: string; // ConfigParam 43 (SizeLimits)
+    // ConfigParam 24 / 25 (MsgForwardPrices), used by GETORIGINALFWDFEE and related opcodes.
+    config_mc_fwd_prices_boc?: string;
+    config_fwd_prices_boc?: string;
+    // ConfigParam 45 (PrecompiledContractsConfig), used to override compute_phase.gas_used and to populate GETPRECOMPILEDGAS.
+    config_precompiled_contracts_boc?: string;
   };
   expected: {
     exit_code: number;
@@ -104,6 +119,27 @@ function tupleItemToJson(item: TupleItem): TupleItemJson {
   throw new Error(`unsupported TupleItem type: ${(item as any).type}`);
 }
 
+function patchC7BlockLt(c7: TupleItemJson, blockLt: bigint): TupleItemJson {
+  if (c7.type !== "tuple") return c7;
+  const env = c7.items[0];
+  if (!env || env.type !== "tuple") return c7;
+
+  const envItems = [...env.items];
+  if (envItems.length <= 4) return c7;
+
+  envItems[4] = { type: "int", value: blockLt.toString(10) };
+  const c7Items = [...c7.items];
+  c7Items[0] = { type: "tuple", items: envItems };
+  return { type: "tuple", items: c7Items };
+}
+
+function extractConfigParamCell(configCellB64: string, idx: number): Cell | null {
+  const params = Cell.fromBase64(configCellB64)
+    .beginParse()
+    .loadDictDirect(Dictionary.Keys.Int(32), Dictionary.Values.Cell());
+  return params.get(idx) ?? null;
+}
+
 async function fetchToncenterBlocks(
   testnet: boolean,
   params: Record<string, string | number>,
@@ -176,7 +212,7 @@ function parseArgs(argv: string[]): SweepOpts {
     traceAll: false,
     traceMax: 200,
     keepFixtures: false,
-    expectedState: false,
+    expectedState: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -219,6 +255,8 @@ function parseArgs(argv: string[]): SweepOpts {
       opts.keepFixtures = true;
     } else if (a === "--expected-state") {
       opts.expectedState = true;
+    } else if (a === "--no-expected-state") {
+      opts.expectedState = false;
     } else if (a === "--") {
       // ignore
     } else {
@@ -272,6 +310,10 @@ async function runLeanBatch(opts: SweepOpts, batchDir: string) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
+  if (opts.runLean && !opts.expectedState) {
+    throw new Error("--run-lean requires --expected-state (tvm-lean-diff-test compares c7 and other final VM registers)");
+  }
+
   if (opts.runLean) {
     await access(opts.leanBin).catch(() => {
       throw new Error(`Lean diff runner not found at ${opts.leanBin}. Build it with: (cd ../.. && lake build tvm-lean-diff-test)`);
@@ -280,12 +322,13 @@ async function main() {
 
   await mkdir(opts.outDir, { recursive: true });
 
-  let sandbox: { executor: any } | undefined = undefined;
+  let sandbox: { executor: any; debugExecutor?: Executor } | undefined = undefined;
   if (opts.expectedState) {
     const blockchain = await Blockchain.create();
     blockchain.verbosity.print = false;
     blockchain.verbosity.vmLogs = "vm_logs_verbose";
-    sandbox = { executor: blockchain.executor as any };
+    const debugExecutor = await Executor.create({ debug: true });
+    sandbox = { executor: blockchain.executor as any, debugExecutor };
   }
 
   const [startSeqno, endSeqno] = await getSeqnoRange(opts.testnet, opts.sinceUtime, opts.untilUtime);
@@ -416,6 +459,7 @@ async function main() {
             skipped.noCode++;
             continue;
           }
+          const myCodeCell = codeCell;
 
           const [libs, loadedCode] = await collectUsedLibraries(opts.testnet, shardAcc, rawTx.tx as any, []);
           libsCell = libs;
@@ -464,6 +508,7 @@ async function main() {
           const fixture: Fixture = {
             tx_hash: txHashHex,
             code_boc: bocBase64(codeCell),
+            mycode_boc: bocBase64(myCodeCell),
             data_boc: bocBase64(dataCell),
             stack_init: {
               balance_grams: balanceExec.toString(10),
@@ -476,6 +521,7 @@ async function main() {
               in_msg_boc: bocBase64(inMsgCell),
               in_msg_body_boc: bocBase64(inBodyCell),
               in_msg_extern: inMsgExtern,
+              config_root_boc: blockCfg.configCell,
             },
             expected: {
               exit_code: computePhase.exitCode,
@@ -485,6 +531,23 @@ async function main() {
               gas_credit: gasInit.gasCredit.toString(10),
             },
           };
+
+          const storagePricesCell = extractConfigParamCell(blockCfg.configCell, 18);
+          const globalIdCell = extractConfigParamCell(blockCfg.configCell, 19);
+          const mcGasPricesCell = extractConfigParamCell(blockCfg.configCell, 20);
+          const gasPricesCell = extractConfigParamCell(blockCfg.configCell, 21);
+          const mcFwdPricesCell = extractConfigParamCell(blockCfg.configCell, 24);
+          const fwdPricesCell = extractConfigParamCell(blockCfg.configCell, 25);
+          const sizeLimitsCell = extractConfigParamCell(blockCfg.configCell, 43);
+          const precompiledContractsCell = extractConfigParamCell(blockCfg.configCell, 45);
+          if (storagePricesCell) fixture.stack_init.config_storage_prices_boc = bocBase64(storagePricesCell);
+          if (globalIdCell) fixture.stack_init.config_global_id_boc = bocBase64(globalIdCell);
+          if (mcGasPricesCell) fixture.stack_init.config_mc_gas_prices_boc = bocBase64(mcGasPricesCell);
+          if (gasPricesCell) fixture.stack_init.config_gas_prices_boc = bocBase64(gasPricesCell);
+          if (mcFwdPricesCell) fixture.stack_init.config_mc_fwd_prices_boc = bocBase64(mcFwdPricesCell);
+          if (fwdPricesCell) fixture.stack_init.config_fwd_prices_boc = bocBase64(fwdPricesCell);
+          if (sizeLimitsCell) fixture.stack_init.config_size_limits_boc = bocBase64(sizeLimitsCell);
+          if (precompiledContractsCell) fixture.stack_init.config_precompiled_contracts_boc = bocBase64(precompiledContractsCell);
 
           if (sandbox) {
             const blockConfig = blockCfg.configCell;
@@ -520,6 +583,60 @@ async function main() {
             const actionsB64: any = txRes.result.actions;
             if (typeof actionsB64 === "string" && actionsB64.length > 0) {
               fixture.expected.c5_boc = actionsB64;
+            }
+
+            if (sandbox.debugExecutor) {
+              const dbg = sandbox.debugExecutor;
+              const { emptr } = dbg.sbsTransactionSetup({
+                config: blockConfig,
+                libs: libsCell ?? null,
+                verbosity: "full_location_stack_verbose",
+                shardAccount: shardAccountBase64,
+                message: inMsgCell,
+                now: rawTx.tx.now,
+                lt: rawTx.tx.lt,
+                randomSeed: randSeed,
+                ignoreChksig: false,
+                debugEnabled: true,
+              });
+
+              try {
+                const maxSteps = 5_000_000;
+                let steps = 0;
+                while (true) {
+                  steps++;
+                  const done = dbg.sbsTransactionStep(emptr);
+                  if (done) break;
+                  if (steps >= maxSteps) {
+                    throw new Error(`debugger step limit exceeded (>${maxSteps})`);
+                  }
+                }
+
+                const c7 = dbg.sbsTransactionC7(emptr);
+                const blockLt = rawTx.tx.lt - (rawTx.tx.lt % 1000000n);
+                fixture.expected.c7 = patchC7BlockLt(tupleItemToJson(c7), blockLt);
+
+                if (c7.type === "tuple" && c7.items[0]?.type === "tuple") {
+                  // Override balance/in_msg_value from c7 to match the exact VM init values used by the emulator.
+                  const env = c7.items[0];
+                  const bal = env.items[7];
+                  if (bal?.type === "tuple" && bal.items[0]?.type === "int") {
+                    fixture.stack_init.balance_grams = bal.items[0].value.toString(10);
+                  }
+                  const inMsgVal = env.items[11];
+                  if (inMsgVal?.type === "tuple" && inMsgVal.items[0]?.type === "int") {
+                    fixture.stack_init.msg_balance_grams = inMsgVal.items[0].value.toString(10);
+                  }
+
+                  // Capture MYCODE from c7 (can differ from `code_boc`, e.g. when the executable code was a resolved library).
+                  const myCode = c7.items[0].items[10];
+                  if (myCode?.type === "cell") {
+                    fixture.mycode_boc = bocBase64(myCode.cell);
+                  }
+                }
+              } finally {
+                dbg.destroyEmulator(emptr);
+              }
             }
           }
 

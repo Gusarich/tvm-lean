@@ -194,6 +194,46 @@ partial def ExpectedVal.toValue : ExpectedVal → Except String Value
         out := out.push v
       return .tuple out
 
+partial def valueEqNormalized : Value → Value → Bool
+  | .null, .null => true
+  | .int x, .int y => x == y
+  | .cell x, .cell y => x == y
+  | .builder x, .builder y => x == y
+  | .cont x, .cont y => x == y
+  | .slice x, .slice y => x.toCellRemaining == y.toCellRemaining
+  | .tuple x, .tuple y =>
+      if x.size != y.size then
+        false
+      else
+        Id.run do
+          let mut ok := true
+          for i in [0:x.size] do
+            if ok then
+              ok := valueEqNormalized x[i]! y[i]!
+          return ok
+  | _, _ => false
+
+partial def firstValueMismatch (expected actual : Value) : Option (List Nat × Value × Value) :=
+  if valueEqNormalized expected actual then
+    none
+  else
+    match expected, actual with
+    | .tuple e, .tuple a =>
+        if e.size != a.size then
+          some ([], expected, actual)
+        else
+          Id.run do
+            for i in [0:e.size] do
+              let ev := e[i]!
+              let av := a[i]!
+              if !valueEqNormalized ev av then
+                match firstValueMismatch ev av with
+                | some (path, leafE, leafA) => return some (i :: path, leafE, leafA)
+                | none => return some ([i], ev, av)
+            return some ([], expected, actual)
+    | _, _ =>
+        some ([], expected, actual)
+
 structure Expected where
   exit_code : Int
   gas_used : Option Int := none
@@ -264,6 +304,19 @@ structure StackInit where
   in_msg_boc : String
   in_msg_body_boc : String
   in_msg_extern : Bool
+  -- Full blockchain config cell (HashmapE 32 -> Cell), used by CONFIGROOT (c7 params[9]) and for accurate c7 init.
+  config_root_boc : Option String := none
+  -- Selected ConfigParams used by UNPACKEDCONFIGTUPLE (c7 params[14]).
+  config_storage_prices_boc : Option String := none -- ConfigParam 18 (StoragePrices dict)
+  config_global_id_boc : Option String := none -- ConfigParam 19 (Global ID)
+  config_mc_gas_prices_boc : Option String := none -- ConfigParam 20 (GasPrices for masterchain)
+  config_gas_prices_boc : Option String := none -- ConfigParam 21 (GasPrices for basechain)
+  -- ConfigParam 24 / 25 (MsgForwardPrices), needed for GETORIGINALFWDFEE and related opcodes.
+  config_mc_fwd_prices_boc : Option String := none
+  config_fwd_prices_boc : Option String := none
+  config_size_limits_boc : Option String := none -- ConfigParam 43 (SizeLimits)
+  -- ConfigParam 45 (PrecompiledContractsConfig), needed to populate GETPRECOMPILEDGAS and to override compute_phase.gas_used.
+  config_precompiled_contracts_boc : Option String := none
   deriving Repr
 
 instance : FromJson StackInit where
@@ -323,6 +376,42 @@ instance : FromJson StackInit where
     let in_msg_boc ← j.getObjValAs? String "in_msg_boc"
     let in_msg_body_boc ← j.getObjValAs? String "in_msg_body_boc"
     let in_msg_extern ← j.getObjValAs? Bool "in_msg_extern"
+    let config_root_boc :=
+      match j.getObjValAs? String "config_root_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_storage_prices_boc :=
+      match j.getObjValAs? String "config_storage_prices_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_global_id_boc :=
+      match j.getObjValAs? String "config_global_id_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_mc_gas_prices_boc :=
+      match j.getObjValAs? String "config_mc_gas_prices_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_gas_prices_boc :=
+      match j.getObjValAs? String "config_gas_prices_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_mc_fwd_prices_boc :=
+      match j.getObjValAs? String "config_mc_fwd_prices_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_fwd_prices_boc :=
+      match j.getObjValAs? String "config_fwd_prices_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_size_limits_boc :=
+      match j.getObjValAs? String "config_size_limits_boc" with
+      | .ok s => some s
+      | .error _ => none
+    let config_precompiled_contracts_boc :=
+      match j.getObjValAs? String "config_precompiled_contracts_boc" with
+      | .ok s => some s
+      | .error _ => none
     let balance_grams ←
       match balanceStr.toInt? with
       | some n => pure n
@@ -331,11 +420,32 @@ instance : FromJson StackInit where
       match msgBalanceStr.toInt? with
       | some n => pure n
       | none => throw s!"invalid msg_balance_grams '{msgBalanceStr}'"
-    return { balance_grams, msg_balance_grams, now, lt, rand_seed, storage_fees, due_payment, in_msg_boc, in_msg_body_boc, in_msg_extern }
+    return {
+      balance_grams,
+      msg_balance_grams,
+      now,
+      lt,
+      rand_seed,
+      storage_fees,
+      due_payment,
+      in_msg_boc,
+      in_msg_body_boc,
+      in_msg_extern,
+      config_root_boc,
+      config_storage_prices_boc,
+      config_global_id_boc,
+      config_mc_gas_prices_boc,
+      config_gas_prices_boc,
+      config_mc_fwd_prices_boc,
+      config_fwd_prices_boc,
+      config_size_limits_boc,
+      config_precompiled_contracts_boc
+    }
 
 structure TestCase where
   tx_hash : String
   code_boc : String
+  mycode_boc? : Option String := none
   data_boc : String
   stack_init : StackInit
   expected : Expected
@@ -345,10 +455,14 @@ instance : FromJson TestCase where
   fromJson? j := do
     let tx_hash ← j.getObjValAs? String "tx_hash"
     let code_boc ← j.getObjValAs? String "code_boc"
+    let mycode_boc? :=
+      match j.getObjValAs? String "mycode_boc" with
+      | .ok s => some s
+      | .error _ => none
     let data_boc ← j.getObjValAs? String "data_boc"
     let stack_init ← j.getObjValAs? StackInit "stack_init"
     let expected ← j.getObjValAs? Expected "expected"
-    return { tx_hash, code_boc, data_boc, stack_init, expected }
+    return { tx_hash, code_boc, mycode_boc?, data_boc, stack_init, expected }
 
 inductive DiffStatus
   | pass
@@ -499,31 +613,445 @@ def extractMyAddrFromInMsg? (msgCell : Cell) : Option Slice :=
   | .ok s => some s
   | .error _ => none
 
-def defaultInitC7 (si : StackInit) (codeCell : Cell) : Array Value :=
-  -- Minimal TON environment tuple to unblock common contracts:
-  -- c7[0] is the "params" tuple; most `GETPARAM` opcodes read from it.
-  let myAddrVal : Value :=
+def defaultInMsgParams (si : StackInit) : Array Value :=
+  -- Conservative default that stays in-range for `tuple_index`-style accesses.
+  -- We at least propagate `msg_balance_grams` as the "remaining value" field.
+  let addrNone : Value :=
+    let cell : Cell := Cell.mkOrdinary #[false, false] #[]
+    .slice (Slice.ofCell cell)
+  #[
+    .int (.num 0),                  -- bounce
+    .int (.num 0),                  -- bounced
+    addrNone,                       -- src_addr
+    .int (.num 0),                  -- fwd_fee
+    .int (.num 0),                  -- created_lt
+    .int (.num 0),                  -- created_at
+    .int (.num 0),                  -- original value
+    .int (.num si.msg_balance_grams), -- value
+    .null,                          -- value extra
+    .null                           -- state_init
+  ]
+
+def extractInMsgParamsFromInMsg? (si : StackInit) (msgCell : Cell) : Option (Array Value) :=
+  let addrNone : Value :=
+    let cell : Cell := Cell.mkOrdinary #[false, false] #[]
+    .slice (Slice.ofCell cell)
+
+  let s0 : Slice := Slice.ofCell msgCell
+  let parsed : Except Excno (Array Value) := do
+    let (b0, s1) ← s0.takeBitsAsNatCellUnd 1
+    if b0 = 0 then
+      -- int_msg_info$0 ihr_disabled:Bool bounce:Bool bounced:Bool ...
+      let (_, s2) ← s1.takeBitsAsNatCellUnd 1 -- ihr_disabled
+      let (bounceNat, s3) ← s2.takeBitsAsNatCellUnd 1
+      let (bouncedNat, s4) ← s3.takeBitsAsNatCellUnd 1
+      let bounceVal : Value := .int (.num (if bounceNat = 1 then -1 else 0))
+      let bouncedVal : Value := .int (.num (if bouncedNat = 1 then -1 else 0))
+
+      -- src:MsgAddressInt
+      let srcStart := s4
+      let srcStop ← srcStart.skipMessageAddr
+      let srcCell := Slice.prefixCell srcStart srcStop
+      let srcVal : Value := .slice (Slice.ofCell srcCell)
+
+      -- dest:MsgAddressInt (skip)
+      let afterDest ← srcStop.skipMessageAddr
+
+      -- value:CurrencyCollection
+      let (origGrams, afterValue) ← afterDest.takeCurrencyCollectionGramsCellUnd
+
+      -- extra_flags:(VarUInteger 16) (skip)
+      let (_, afterFlags) ← afterValue.takeVarUIntegerCellUnd 4
+
+      -- fwd_fee:Grams
+      let (fwdFee, afterFee) ← afterFlags.takeGramsCellUnd
+
+      -- created_lt:uint64 created_at:uint32
+      let (createdLtNat, afterLt) ← afterFee.takeBitsAsNatCellUnd 64
+      let (createdAtNat, afterAt) ← afterLt.takeBitsAsNatCellUnd 32
+
+      -- init:(Maybe (Either StateInit ^StateInit))
+      let (hasInit, afterHasInit) ← afterAt.takeBitsAsNatCellUnd 1
+      let stateInit? : Option Cell ←
+        if hasInit = 0 then
+          pure none
+        else
+          let (isRef, afterEither) ← afterHasInit.takeBitsAsNatCellUnd 1
+          if isRef = 1 then
+            if !afterEither.haveRefs 1 then
+              throw .cellUnd
+            let c := afterEither.cell.refs[afterEither.refPos]!
+            pure (some c)
+          else
+            let stStart := afterEither
+            let stStop ← stStart.skipStateInitCellUnd
+            let stCell := Slice.prefixCell stStart stStop
+            pure (some stCell)
+
+      let stateInitVal : Value :=
+        match stateInit? with
+        | none => .null
+        | some c => .cell c
+
+      let valueVal : Value := .int (.num si.msg_balance_grams)
+
+      return #[
+        bounceVal,
+        bouncedVal,
+        srcVal,
+        .int (.num fwdFee),
+        .int (.num (Int.ofNat createdLtNat)),
+        .int (.num (Int.ofNat createdAtNat)),
+        .int (.num origGrams),
+        valueVal,
+        .null,
+        stateInitVal
+      ]
+    else
+      let (b1, s2) ← s1.takeBitsAsNatCellUnd 1
+      if b1 = 0 then
+        -- ext_in_msg_info$10 src:(MsgAddressExt) dest:(MsgAddressInt) import_fee:Grams ...
+        -- Transaction.cpp fabricates `in_msg_info` from this, with:
+        -- - bounce/bounced = false
+        -- - created_lt/created_at = 0
+        -- - value = 0 (external messages cannot carry value)
+        -- - fwd_fee is absent (treated as zero in `prepare_in_msg_params_tuple`)
+        let bounceVal : Value := .int (.num 0)
+        let bouncedVal : Value := .int (.num 0)
+
+        let srcStart := s2
+        let srcStop ← srcStart.skipMessageAddr
+        let srcCell := Slice.prefixCell srcStart srcStop
+        let srcVal : Value := .slice (Slice.ofCell srcCell)
+
+        let afterDest ← srcStop.skipMessageAddr
+
+        let (_, afterImportFee) ← afterDest.takeGramsCellUnd
+
+        -- init:(Maybe (Either StateInit ^StateInit))
+        let (hasInit, afterHasInit) ← afterImportFee.takeBitsAsNatCellUnd 1
+        let stateInit? : Option Cell ←
+          if hasInit = 0 then
+            pure none
+          else
+            let (isRef, afterEither) ← afterHasInit.takeBitsAsNatCellUnd 1
+            if isRef = 1 then
+              if !afterEither.haveRefs 1 then
+                throw .cellUnd
+              let c := afterEither.cell.refs[afterEither.refPos]!
+              pure (some c)
+            else
+              let stStart := afterEither
+              let stStop ← stStart.skipStateInitCellUnd
+              let stCell := Slice.prefixCell stStart stStop
+              pure (some stCell)
+
+        let stateInitVal : Value :=
+          match stateInit? with
+          | none => .null
+          | some c => .cell c
+
+        return #[
+          bounceVal,
+          bouncedVal,
+          srcVal,
+          .int (.num 0), -- fwd_fee
+          .int (.num 0), -- created_lt
+          .int (.num 0), -- created_at
+          .int (.num 0), -- original value
+          .int (.num si.msg_balance_grams), -- value (should be 0 for external inbound)
+          .null,
+          stateInitVal
+        ]
+      else
+        -- ext_out_msg_info$11 ... (not an inbound message)
+        return #[
+          .int (.num 0),
+          .int (.num 0),
+          addrNone,
+          .int (.num 0),
+          .int (.num 0),
+          .int (.num 0),
+          .int (.num 0),
+          .int (.num 0),
+          .null,
+          .null
+        ]
+
+  match parsed with
+  | .ok t => some t
+  | .error _ => none
+
+def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeCell) : Array Value :=
+  -- TON c7 initialization:
+  -- - c7[0] is the environment tuple (`SmartContractInfo`, see TON docs `tvm/registers.md`)
+  -- - c7[1..] are global variables (set via SETGLOB/SETGLOBVAR).
+  --
+  -- Some fixtures may omit config params; when missing, fall back to a known-good mainnet snapshot
+  -- to avoid treating fee opcodes (e.g. GETORIGINALFWDFEE) as "unsupported" just because the fixture is missing config.
+  let defaultMcFwdPricesBoc : String :=
+    "te6cckEBAQEAIwAAQuoAAAAAAJiWgAAAAAAnEAAAAAAAD0JAAAAAAYAAVVVVVX2jQy8="
+  let defaultFwdPricesBoc : String :=
+    "te6cckEBAQEAIwAAQuoAAAAAAAYagAAAAAABkAAAAAAAAJxAAAAAAYAAVVVVVXYlR3Q="
+  let defaultStoragePricesBoc : String :=
+    "te6cckEBAQEAKQAATdBmAAAAAAAAAAAAAAAAgAAAAAAAAPoAAAAAAAAB9AAAAAAAA9CQQJVLVZs="
+  let defaultGlobalIdBoc : String :=
+    "te6cckEBAQEABgAACP///xHmo3/3"
+  let defaultMcGasPricesBoc : String :=
+    "te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAD0JA3gAAAAAnEAAAAAAAAAAPQkAAAAAABCwdgAAAAAAAACcQAAAAAAAmJaAAAAAABfXhAAAAAAA7msoAKm2gQw=="
+  let defaultGasPricesBoc : String :=
+    "te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAAJxA3gAAAAABkAAAAAAAAAAPQkAAAAAAAA9CQAAAAAAAACcQAAAAAACYloAAAAAABfXhAAAAAAA7msoAGR7wcQ=="
+  let inMsgCell? : Option Cell :=
     match decodeBytes si.in_msg_boc with
     | .ok msgBytes =>
         match stdBocDeserialize msgBytes with
-        | .ok msgCell =>
-            match extractMyAddrFromInMsg? msgCell with
-            | some s => .slice s
-            | none => .null
+        | .ok msgCell => some msgCell
+        | .error _ => none
+    | .error _ => none
+
+  let myAddrVal : Value :=
+    match inMsgCell? with
+    | some msgCell =>
+        match extractMyAddrFromInMsg? msgCell with
+        | some s => .slice s
+        | none => .null
+    | none => .null
+
+  let configRootVal : Value :=
+    match si.config_root_boc with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .cell c
+            | .error _ => .null
         | .error _ => .null
-    | .error _ => .null
-  let params0 : Array Value := #[]
+    | none => .null
+
+  let addrHashBytes : Array UInt8 :=
+    match myAddrVal with
+    | .slice addr =>
+        match (do
+          let s0 := addr
+          let (tag, s2) ← s0.takeBitsAsNatCellUnd 2
+          if tag != 2 then
+            throw .cellUnd
+          let s3 ← s2.skipMaybeAnycast
+          let (_, s4) ← s3.takeBitsAsNatCellUnd 8 -- workchain_id:int8
+          if !s4.haveBits 256 then
+            throw .cellUnd
+          let bits256 := s4.readBits 256
+          let mut out : Array UInt8 := #[]
+          for i in [0:32] do
+            out := out.push (bitsToByte bits256 (i * 8) 8)
+          return out : Except Excno (Array UInt8)) with
+        | .ok bs => bs
+        | .error _ => Array.replicate 32 0
+    | _ => Array.replicate 32 0
+
+  let randSeedVal : Value :=
+    -- TON: RANDSEED = sha256(block_rand_seed . account_address) (256-bit).
+    if decide (si.rand_seed < 0 ∨ si.rand_seed ≥ intPow2 256) then
+      .int (.num 0)
+    else
+      let seedBytes := natToBytesBEFixed si.rand_seed.toNat 32
+      let digest := sha256Digest (seedBytes ++ addrHashBytes)
+      .int (.num (Int.ofNat (bytesToNatBE digest)))
+
+  let inMsgParamsVal : Value :=
+    match inMsgCell? with
+    | some msgCell =>
+        match extractInMsgParamsFromInMsg? si msgCell with
+        | some t => .tuple t
+        | none => .tuple (defaultInMsgParams si)
+    | none => .tuple (defaultInMsgParams si)
+  let params0 : Array Value :=
+    #[.int (.num 0x076ef1ea), .int (.num 0), .int (.num 0)] -- magic, actions, msgs_sent
   let params1 := tupleSetExtend params0 3 (.int (.num si.now)) -- NOW
-  let params2 := tupleSetExtend params1 4 (.int (.num si.lt)) -- BLOCKLT (approx; same as tx lt)
+  -- TON: `block_lt` is the start logical time of the block containing this transaction (aligned by `lt_align = 1_000_000`).
+  let blockLt : Int :=
+    if decide (si.lt < 0) then
+      0
+    else
+      si.lt - (si.lt % 1_000_000)
+  let params2 := tupleSetExtend params1 4 (.int (.num blockLt)) -- BLOCKLT
   let params3 := tupleSetExtend params2 5 (.int (.num si.lt)) -- LTIME (tx lt)
-  let params4 := tupleSetExtend params3 6 (.int (.num si.rand_seed)) -- RANDSEED
+  let params4 := tupleSetExtend params3 6 randSeedVal -- RANDSEED
   let params5 := tupleSetExtend params4 7 (.tuple #[.int (.num si.balance_grams), .null]) -- BALANCE
   let params6 := tupleSetExtend params5 8 myAddrVal -- MYADDR
-  let params7 := tupleSetExtend params6 10 (.cell codeCell) -- MYCODE
+  let params6 := tupleSetExtend params6 9 configRootVal -- CONFIGROOT
+  -- `MYCODE` (c7 params[10]) is the code cell that is executed by the emulator.
+  let params7 := tupleSetExtend params6 10 (.cell myCodeCell) -- MYCODE
   let params8 := tupleSetExtend params7 11 (.tuple #[.int (.num si.msg_balance_grams), .null]) -- INCOMINGVALUE
   let params9 := tupleSetExtend params8 12 (.int (.num si.storage_fees)) -- STORAGEFEES
-  let params10 := tupleSetExtend params9 15 (.int (.num si.due_payment)) -- DUEPAYMENT
-  #[.tuple params10]
+
+  let bytesToBitsBE (bytes : Array UInt8) : BitString :=
+    Id.run do
+      let mut bits : BitString := #[]
+      for b in bytes do
+        bits := bits ++ natToBits b.toNat 8
+      bits
+
+  let precompiledGasUsageVal : Value :=
+    -- ConfigParam 45 precompiled-contracts list → c7 params[16] (Maybe Integer).
+    let codeHashBytes : Array UInt8 := Cell.hashBytes myCodeCell
+    let codeHashBits : BitString := bytesToBitsBE codeHashBytes
+
+    -- Fallback for fixtures that don't include ConfigParam 45: a known mainnet precompiled code hash with gas_usage=1000.
+    -- Prefer the per-transaction `config_precompiled_contracts_boc` field when present.
+    let fallbackGasUsage? : Option Nat :=
+      let defaultPrecompiledHashHex : String :=
+        "89468F02C78E570802E39979C8516FC38DF07EA76A48357E0536F2BA7B3EE37B"
+      match hexDecode defaultPrecompiledHashHex with
+      | .ok ba =>
+          if codeHashBytes == ba.data then
+            some 1000
+          else
+            none
+      | .error _ => none
+
+    let lookupGasUsage? (cfgCell : Cell) : Option Nat :=
+      match (do
+        let cs0 := Slice.ofCell cfgCell
+        let (tag, cs1) ← cs0.takeBitsAsNatCellUnd 8
+        if tag != 0xc0 then
+          throw .cellUnd
+        let (hmeTag, cs2) ← cs1.takeBitsAsNatCellUnd 1
+        if hmeTag = 0 then
+          return none
+        let (root, _rest) ← cs2.takeRefCell
+        let val? ← dictLookup (some root) codeHashBits
+        match val? with
+        | none => return none
+        | some valSlice =>
+            let (vtag, s1) ← valSlice.takeBitsAsNatCellUnd 8
+            if vtag != 0xb0 then
+              throw .cellUnd
+            let (gas, _s2) ← s1.takeBitsAsNatCellUnd 64
+            return some gas : Except Excno (Option Nat)) with
+      | .ok v => v
+      | .error _ => none
+
+    let gasUsage? : Option Nat :=
+      match si.config_precompiled_contracts_boc with
+      | none => fallbackGasUsage?
+      | some boc =>
+          match decodeBytes boc with
+          | .error _ => fallbackGasUsage?
+          | .ok bs =>
+              match stdBocDeserialize bs with
+              | .error _ => fallbackGasUsage?
+              | .ok cfgCell => lookupGasUsage? cfgCell <|> fallbackGasUsage?
+
+    match gasUsage? with
+    | some g => .int (.num (Int.ofNat g))
+    | none => .null
+  let mcFwdPricesVal : Value :=
+    match (si.config_mc_fwd_prices_boc <|> some defaultMcFwdPricesBoc) with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .slice (Slice.ofCell c)
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+  let fwdPricesVal : Value :=
+    match (si.config_fwd_prices_boc <|> some defaultFwdPricesBoc) with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .slice (Slice.ofCell c)
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+
+  let storagePricesVal : Value :=
+    -- `UNPACKEDCONFIGTUPLE[0]` is the current `StoragePrices` entry selected by `now` (not the whole dict),
+    -- see C++ `Config::get_unpacked_config_tuple` (mc-config.cpp).
+    let selectCurrentStoragePrices (root : Cell) : Value :=
+      let hintBits : BitString := natToBits si.now.toNat 32
+      match dictNearestWithCells (some root) hintBits false true false with
+      | .ok (some (valSlice, _), _) =>
+          -- `dictNearestWithCells` returns a slice into the dict payload; trim it to a standalone cell.
+          .slice (Slice.ofCell valSlice.toCellRemaining)
+      | .ok (none, _) => .null
+      | .error _ => .null
+    match (si.config_storage_prices_boc <|> some defaultStoragePricesBoc) with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c =>
+                if c.bits.isEmpty && c.refs.isEmpty then
+                  .null
+                else
+                  selectCurrentStoragePrices c
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+
+  let globalIdVal : Value :=
+    match (si.config_global_id_boc <|> some defaultGlobalIdBoc) with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .slice (Slice.ofCell c)
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+
+  let mcGasPricesVal : Value :=
+    match (si.config_mc_gas_prices_boc <|> some defaultMcGasPricesBoc) with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .slice (Slice.ofCell c)
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+
+  let gasPricesVal : Value :=
+    match (si.config_gas_prices_boc <|> some defaultGasPricesBoc) with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .slice (Slice.ofCell c)
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+
+  let sizeLimitsVal : Value :=
+    match si.config_size_limits_boc with
+    | some boc =>
+        match decodeBytes boc with
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .ok c => .slice (Slice.ofCell c)
+            | .error _ => .null
+        | .error _ => .null
+    | none => .null
+
+  -- `Transaction::prepare_vm_c7` stores the unpacked config tuple at params[14] for global_version >= 6.
+  -- Include the config slices needed for common fee opcodes (ConfigParams 18-21,24-25).
+  let unpacked0 : Array Value := #[]
+  let unpacked1 := tupleSetExtend unpacked0 0 storagePricesVal
+  let unpacked2 := tupleSetExtend unpacked1 1 globalIdVal
+  let unpacked3 := tupleSetExtend unpacked2 2 mcGasPricesVal
+  let unpacked4 := tupleSetExtend unpacked3 3 gasPricesVal
+  let unpacked5 := tupleSetExtend unpacked4 4 mcFwdPricesVal
+  let unpacked6 := tupleSetExtend unpacked5 5 fwdPricesVal
+  let unpacked7 := tupleSetExtend unpacked6 6 sizeLimitsVal
+
+  let params10 := tupleSetExtend params9 14 (.tuple unpacked7) -- UNPACKEDCONFIGTUPLE
+  let params11 := tupleSetExtend params10 15 (.int (.num si.due_payment)) -- DUEPAYMENT
+  let params12 := tupleSetExtend params11 16 precompiledGasUsageVal -- GETPRECOMPILEDGAS (Maybe Integer)
+  let params13 := tupleSetExtend params12 17 inMsgParamsVal -- INMSGPARAMS (TVM global_version >= 11)
+  #[.tuple params13]
 
 def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
   let mkErr (msg : String) : TestResult :=
@@ -576,14 +1104,17 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                       else
                         return mkErr msg
                   | .ok initStack =>
-                      let initC7 : Array Value :=
-                        match tc.expected.c7 with
-                        | none => defaultInitC7 tc.stack_init codeCell
-                        | some expC7 =>
-                            match expC7.toValue with
-                            | .ok (.tuple items) => items
-                            | .ok _ => defaultInitC7 tc.stack_init codeCell
-                            | .error _ => defaultInitC7 tc.stack_init codeCell
+                      let myCodeCellForC7 : Cell :=
+                        match tc.mycode_boc? with
+                        | none => codeCell
+                        | some boc =>
+                            match decodeBytes boc with
+                            | .error _ => codeCell
+                            | .ok bs =>
+                                match stdBocDeserialize bs with
+                                | .ok c => c
+                                | .error _ => codeCell
+                      let initC7 : Array Value := defaultInitC7 tc.stack_init codeCell myCodeCellForC7
 
                       let gasLimitInit : Int := tc.expected.gas_limit.getD cfg.gasLimit
                       let gasMax0 : Int := tc.expected.gas_max.getD cfg.gasLimit
@@ -595,11 +1126,23 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                           stack := initStack
                           regs := { base.regs with c4 := dataCell, c7 := initC7 } }
 
+                      let precompiledGasUsage? : Option Int :=
+                        match initC7.get? 0 with
+                        | some (.tuple params) =>
+                            match params.get? 16 with
+                            | some (.int (.num n)) => some n
+                            | _ => none
+                        | _ => none
+
                       let mkBase (exitCode : Int) (stF : VmState) : TestResult :=
                         -- `VmState.run*` returns bitwise-complemented exit codes (like C++ `vm.run()`).
                         -- Blockchain `compute_exit_code` is the uncomplemented one (like C++ `cp.exit_code = ~vm.run()`).
                         let actualExit : Int := ~~~ exitCode
-                        let gasUsed : Int := min stF.gas.gasConsumed stF.gas.gasLimit
+                        let gasUsed0 : Int := min stF.gas.gasConsumed stF.gas.gasLimit
+                        let gasUsed : Int :=
+                          match precompiledGasUsage? with
+                          | some g => g
+                          | none => gasUsed0
                         let isUnsupported := actualExit = Excno.invOpcode.toInt
                         let mismatches0 : Array String := #[]
                         let mismatches1 :=
@@ -641,12 +1184,24 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                           return base
                         let mut mismatches : Array String := #[]
 
-                        -- In the C++ implementation, the account state (c4) and action list (c5) are taken from the
-                        -- committed state only when the compute phase is accepted. For external messages this means
-                        -- `ACCEPT` (or `SETGASLIMIT`) has been executed, i.e. `gas_credit == 0`.
-                        let okData : Bool := (stF.gas.gasCredit == 0) && stF.cstate.committed
-                        let finalC4 : Cell := if okData then stF.cstate.c4 else dataCell
-                        let finalC5 : Cell := if okData then stF.cstate.c5 else Cell.empty
+                        -- Always compare the VM registers as-is after execution (no "committed state" gating).
+                        let finalC4 : Cell := stF.regs.c4
+                        let finalC5 : Cell := stF.regs.c5
+
+                        let bytesToHex (bs : Array UInt8) : String :=
+                          "0x" ++ String.intercalate "" (bs.toList.map (fun b => natToHexPad b.toNat 2))
+                        let cellHashHex (c : Cell) : String :=
+                          bytesToHex (Cell.hashBytes c)
+                        let describeValue (v : Value) : String :=
+                          match v with
+                          | .null => "null"
+                          | .int .nan => "nan"
+                          | .int (.num n) => s!"int({n})"
+                          | .cell c => s!"cell({cellHashHex c})"
+                          | .slice s => s!"slice({cellHashHex s.cell},bitPos={s.bitPos},refPos={s.refPos})"
+                          | .builder b => s!"builder(bits={b.bits.size},refs={b.refs.size})"
+                          | .tuple t => s!"tuple(len={t.size})"
+                          | .cont _ => "cont"
 
                         match tc.expected.c4_boc with
                         | some s =>
@@ -679,11 +1234,45 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                             | .ok v =>
                                 match v with
                                 | .tuple items =>
-                                    if !(arrayBeq stF.regs.c7 items) then
-                                      mismatches := mismatches.push "c7 mismatch"
+                                    if stF.regs.c7.size != items.size then
+                                      mismatches :=
+                                        mismatches.push
+                                          s!"c7 mismatch (size expected={items.size} actual={stF.regs.c7.size})"
+                                    else if !(arrayBeqBy stF.regs.c7 items valueEqNormalized) then
+                                      let firstMismatch? : Option Nat :=
+                                        Id.run do
+                                          let mut m : Option Nat := none
+                                          for i in [0:items.size] do
+                                            if m.isNone then
+                                              if !valueEqNormalized (stF.regs.c7[i]!) (items[i]!) then
+                                                m := some i
+                                          return m
+                                      match firstMismatch? with
+                                      | some i =>
+                                          let exp := items[i]!
+                                          let act := stF.regs.c7[i]!
+                                          match firstValueMismatch exp act with
+                                          | some (path, leafE, leafA) =>
+                                              let pathStr :=
+                                                match path with
+                                                | [] => "<root>"
+                                                | _ =>
+                                                    let parts := path.map toString
+                                                    String.intercalate "." parts
+                                              mismatches :=
+                                                mismatches.push
+                                                  s!"c7 mismatch at idx={i} path={pathStr} expected={describeValue leafE} actual={describeValue leafA}"
+                                          | none =>
+                                              mismatches :=
+                                                mismatches.push
+                                                  s!"c7 mismatch at idx={i} expected={describeValue exp} actual={describeValue act}"
+                                      | none =>
+                                          mismatches := mismatches.push "c7 mismatch"
                                 | _ =>
                                     mismatches := mismatches.push "expected.c7: expected tuple"
-                        | none => pure ()
+                        | none =>
+                            -- We compare all registers unconditionally; missing expected.c7 is a fixture error.
+                            mismatches := mismatches.push "missing expected.c7 (re-collect with diff-test/collector --expected-state)"
 
                         if mismatches.isEmpty then
                           return base

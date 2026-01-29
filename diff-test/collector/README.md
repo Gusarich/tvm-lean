@@ -22,16 +22,27 @@ Optional (recommended): set your own API keys to avoid rate limits:
 npm run collect -- --tx <TX_HASH> --out-dir ../fixtures
 ```
 
+The collector also embeds the relevant global-config parameters needed for fee opcodes:
+- `stack_init.config_mc_fwd_prices_boc` (ConfigParam 24, `MsgForwardPrices` for masterchain)
+- `stack_init.config_fwd_prices_boc` (ConfigParam 25, `MsgForwardPrices` for basechain)
+
 Or from a file with one tx hash per line:
 
 ```sh
 npm run collect -- --tx-file tx_hashes.txt --out-dir ../fixtures
 ```
 
-To include strict end-state expectations (`expected.c4_boc` / `expected.c5_boc`, and optionally `expected.c7` if supported) via TON Sandbox emulation:
+By default, the collector uses TON Sandbox emulation to populate strict expectations (`expected.c4_boc` / `expected.c5_boc` / `expected.c7`).
+To disable this (faster, but produces fixtures that are not suitable for full register diffing):
 
 ```sh
-npm run collect -- --tx <TX_HASH> --expected-state --out-dir ../fixtures
+npm run collect -- --tx <TX_HASH> --no-expected-state --out-dir ../fixtures
+```
+
+To embed the Sandbox VM log into the fixture (for debugging gas/step mismatches):
+
+```sh
+npm run collect -- --tx <TX_HASH> --include-vm-log --out-dir ../fixtures
 ```
 
 By default, the collector skips transactions that are *not the first one for that account inside the masterchain block*
@@ -70,7 +81,7 @@ Notes:
 - In `--run-lean` mode, fixtures are written to `out-dir/_batch/` and deleted between batches to save disk; use `--keep-fixtures` to also keep a copy in `out-dir/`.
 - Add `--trace-failures --trace-max <N>` to include Lean VM step traces in results for non-PASS cases (useful for debugging).
 - Add `--trace-all --trace-max <N>` to include Lean VM step traces for **every** case (including PASS).
-- Add `--expected-state` to populate `expected.c4_boc` / `expected.c5_boc` using TON Sandbox emulation (slower, but enables strict end-state comparisons). Some Sandbox builds do not expose step-by-step transaction APIs, so `expected.c7` may be unavailable.
+- Use `--no-expected-state` to disable TON Sandbox emulation (faster, but disables strict end-state comparisons and `expected.c7`).
 - By default, `sweep` (like `collect`) only includes the **first transaction per account per masterchain block**. Use `--allow-nonfirst` to include all, but results may be unreliable until we implement in-block state replay.
 - For huge ranges, expect rate limits; use your own `TONCENTER_API_KEY` / `DTON_API_KEY` if needed.
 - `diff-test/fixtures/*.json` and `diff-test/*.jsonl` are intended to be local outputs and are gitignored (only `smoke_*.json` is checked in).
