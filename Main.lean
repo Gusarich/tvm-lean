@@ -46,6 +46,8 @@ def runWithTrace (fuel : Nat) (st : TvmLean.VmState) : IO TvmLean.StepResult := 
               | .error e => s!"<decode error {reprStr e}>"
             else
               s!"<cp={st.cp}>"
+        | .envelope _ _ _ =>
+            "<envelope>"
         | .whileCond _ _ _ =>
             "<whileCond>"
         | .whileBody _ _ _ =>

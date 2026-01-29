@@ -73,6 +73,7 @@ type SweepOpts = {
   resultsPath: string;
   fuel: number;
   gasLimit: number;
+  skipUnsupported: boolean;
   traceFailures: boolean;
   traceAll: boolean;
   traceMax: number;
@@ -208,6 +209,7 @@ function parseArgs(argv: string[]): SweepOpts {
     resultsPath: path.resolve(process.cwd(), "..", "results.jsonl"),
     fuel: 1_000_000,
     gasLimit: 1_000_000,
+    skipUnsupported: false,
     traceFailures: false,
     traceAll: false,
     traceMax: 200,
@@ -245,6 +247,8 @@ function parseArgs(argv: string[]): SweepOpts {
       opts.fuel = Number(argv[++i]!);
     } else if (a === "--gas-limit") {
       opts.gasLimit = Number(argv[++i]!);
+    } else if (a === "--skip-unsupported") {
+      opts.skipUnsupported = true;
     } else if (a === "--trace-failures") {
       opts.traceFailures = true;
     } else if (a === "--trace-all") {
@@ -278,16 +282,18 @@ async function runLeanBatch(opts: SweepOpts, batchDir: string) {
     const traceArgs: string[] = [];
     if (opts.traceAll) traceArgs.push("--trace-all", "--trace-max", String(opts.traceMax));
     else if (opts.traceFailures) traceArgs.push("--trace-failures", "--trace-max", String(opts.traceMax));
+    const skipArgs: string[] = [];
+    if (opts.skipUnsupported) skipArgs.push("--skip-unsupported");
     const p = spawn(
       opts.leanBin,
       [
         "--dir",
         batchDir,
-        "--skip-unsupported",
         "--fuel",
         String(opts.fuel),
         "--gas-limit",
         String(opts.gasLimit),
+        ...skipArgs,
         ...traceArgs,
         "--out",
         reportPath,

@@ -34,6 +34,12 @@ Run tests:
 lake exe tvm-lean-tests
 ```
 
+Run offline diff regression tests (curated mainnet fixtures):
+
+```sh
+lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
+```
+
 ## Notes / limitations
 
 - The BOC parser in `TvmLean/Boc.lean` is a “Milestone 2 fast path” for untrusted input: it verifies header sizes and (if present) CRC32C, supports exotic/special cells + non-zero level masks, and validates hashes/depths when `with_hashes` is present. It still rejects **absent cells** (incomplete BoCs).

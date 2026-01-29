@@ -148,25 +148,7 @@ def testBocParseSamples : IO Unit := do
         match stdBocDeserialize bytes with
         | .ok _ => pure ()
         | .error e => throw (IO.userError s!"boc sample failed to parse: {e}")
-
-def fiftPath : IO System.FilePath := do
-  let home := (← IO.getEnv "HOME").getD "/Users/daniil"
-  pure (System.FilePath.mk home / "Coding" / "ton" / "build" / "crypto" / "fift")
-
-def fiftCanonBocHex (inputHex : String) (mode : Nat) : IO String := do
-  let fift ← fiftPath
-  if !(← fift.pathExists) then
-    throw (IO.userError s!"fift not found at {fift}")
-  let scriptPath : System.FilePath := "/tmp/tvmlean_boc_canon.fif"
-  let script :=
-    s!"\"{inputHex.trim}\" x>B B>boc {mode} boc+>B B>x type cr bye\n"
-  IO.FS.writeFile scriptPath script
-  let res ← IO.Process.output { cmd := fift.toString, args := #["-n", scriptPath.toString] }
-  if res.exitCode != 0 then
-    throw (IO.userError s!"fift failed (exit {res.exitCode}): {res.stderr}")
-  pure res.stdout.trim
-
-def testBocSerializeMatchesCpp : IO Unit := do
+def testBocSerializeMatchesCanonical : IO Unit := do
   let samples : List (String × Option System.FilePath) :=
     [ ("fixtures/counter.boc.hex", some "fixtures/counter.boc.hex")
     , ("fixtures/inv_opcode.boc.hex", some "fixtures/inv_opcode.boc.hex")
@@ -192,11 +174,6 @@ def testBocSerializeMatchesCpp : IO Unit := do
       | .ok h => pure h
       | .error e => throw (IO.userError s!"boc({label}): header parse failed: {e}")
     let opts := BocSerializeOpts.ofHeader hdr
-    let expectedHex ← fiftCanonBocHex hex opts.mode
-    let expectedBytes ←
-      match byteArrayOfHex? expectedHex with
-      | .ok b => pure b
-      | .error e => throw (IO.userError s!"boc({label}): fift output not hex: {e}")
 
     let root ←
       match stdBocDeserialize bytes with
@@ -208,7 +185,7 @@ def testBocSerializeMatchesCpp : IO Unit := do
       | .ok b => pure b
       | .error e => throw (IO.userError s!"boc({label}): stdBocSerialize failed: {e}")
 
-    assert (ours == expectedBytes) s!"boc({label}): Lean serialization differs from C++ BagOfCells"
+    assert (ours == bytes) s!"boc({label}): stdBocSerialize differs from canonical input"
 
 def runProg (prog : List Instr) (fuel : Nat := 200) : IO StepResult := do
   let codeCell ←
@@ -498,7 +475,7 @@ def main (_args : List String) : IO Unit := do
   testBocArithSample
   testBocCrc32cOk
   testBocParseSamples
-  testBocSerializeMatchesCpp
+  testBocSerializeMatchesCanonical
   testEqual
   testIfNotRet
   testSetCp

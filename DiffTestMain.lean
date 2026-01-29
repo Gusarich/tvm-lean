@@ -10,6 +10,7 @@ structure CliOpts where
   fuel : Nat := 1_000_000
   gasLimit : Int := 1_000_000
   skipUnsupported : Bool := false
+  strictExit : Bool := false
   traceFailures : Bool := false
   traceAll : Bool := false
   traceMax : Nat := 200
@@ -37,6 +38,8 @@ partial def parseArgs (args : List String) (opts : CliOpts := {}) : IO CliOpts :
       | none => throw (IO.userError s!"invalid --gas-limit {n}")
   | "--skip-unsupported" :: rest =>
       parseArgs rest { opts with skipUnsupported := true }
+  | "--strict-exit" :: rest =>
+      parseArgs rest { opts with strictExit := true }
   | "--trace-failures" :: rest =>
       parseArgs rest { opts with traceFailures := true }
   | "--trace-all" :: rest =>
@@ -111,3 +114,8 @@ def main (args : List String) : IO Unit := do
   match opts.outPath? with
   | some outPath => writeReport outPath results
   | none => pure ()
+
+  if opts.strictExit && (fail > 0 || skip > 0 || err > 0) then
+    IO.Process.exit 1
+  else
+    pure ()

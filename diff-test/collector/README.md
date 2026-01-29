@@ -62,7 +62,7 @@ Collect fixtures only:
 npm run sweep -- --since 2026-01-27 --max-blocks 10 --out-dir ../fixtures
 ```
 
-Run Lean on the fly in batches (skipping invOpcode / unsupported-opcode failures):
+Run Lean on the fly in batches:
 
 ```sh
 # from repo root, build the diff runner once
@@ -79,6 +79,7 @@ npm run sweep -- \
 Notes:
 - `--max-txs` limits **transactions scanned**, not fixtures produced. Use `--max-fixtures <N>` if you want to run exactly N diff tests.
 - In `--run-lean` mode, fixtures are written to `out-dir/_batch/` and deleted between batches to save disk; use `--keep-fixtures` to also keep a copy in `out-dir/`.
+- Add `--skip-unsupported` to classify `invOpcode` / unsupported BOC parse errors as `SKIP` (otherwise they are reported as `FAIL`/`ERROR`).
 - Add `--trace-failures --trace-max <N>` to include Lean VM step traces in results for non-PASS cases (useful for debugging).
 - Add `--trace-all --trace-max <N>` to include Lean VM step traces for **every** case (including PASS).
 - Use `--no-expected-state` to disable TON Sandbox emulation (faster, but disables strict end-state comparisons and `expected.c7`).

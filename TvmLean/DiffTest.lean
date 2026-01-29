@@ -787,20 +787,8 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
   -- - c7[0] is the environment tuple (`SmartContractInfo`, see TON docs `tvm/registers.md`)
   -- - c7[1..] are global variables (set via SETGLOB/SETGLOBVAR).
   --
-  -- Some fixtures may omit config params; when missing, fall back to a known-good mainnet snapshot
-  -- to avoid treating fee opcodes (e.g. GETORIGINALFWDFEE) as "unsupported" just because the fixture is missing config.
-  let defaultMcFwdPricesBoc : String :=
-    "te6cckEBAQEAIwAAQuoAAAAAAJiWgAAAAAAnEAAAAAAAD0JAAAAAAYAAVVVVVX2jQy8="
-  let defaultFwdPricesBoc : String :=
-    "te6cckEBAQEAIwAAQuoAAAAAAAYagAAAAAABkAAAAAAAAJxAAAAAAYAAVVVVVXYlR3Q="
-  let defaultStoragePricesBoc : String :=
-    "te6cckEBAQEAKQAATdBmAAAAAAAAAAAAAAAAgAAAAAAAAPoAAAAAAAAB9AAAAAAAA9CQQJVLVZs="
-  let defaultGlobalIdBoc : String :=
-    "te6cckEBAQEABgAACP///xHmo3/3"
-  let defaultMcGasPricesBoc : String :=
-    "te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAD0JA3gAAAAAnEAAAAAAAAAAPQkAAAAAABCwdgAAAAAAAACcQAAAAAAAmJaAAAAAABfXhAAAAAAA7msoAKm2gQw=="
-  let defaultGasPricesBoc : String :=
-    "te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAAJxA3gAAAAABkAAAAAAAAAAPQkAAAAAAAA9CQAAAAAAAACcQAAAAAACYloAAAAAABfXhAAAAAAA7msoAGR7wcQ=="
+  -- For strict diff tests, fixtures should include the relevant config params (18-21,24-25,43,45) so fee opcodes
+  -- and precompiled gas accounting match on-chain behavior.
   let inMsgCell? : Option Cell :=
     match decodeBytes si.in_msg_boc with
     | .ok msgBytes =>
@@ -897,19 +885,6 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
     let codeHashBytes : Array UInt8 := Cell.hashBytes myCodeCell
     let codeHashBits : BitString := bytesToBitsBE codeHashBytes
 
-    -- Fallback for fixtures that don't include ConfigParam 45: a known mainnet precompiled code hash with gas_usage=1000.
-    -- Prefer the per-transaction `config_precompiled_contracts_boc` field when present.
-    let fallbackGasUsage? : Option Nat :=
-      let defaultPrecompiledHashHex : String :=
-        "89468F02C78E570802E39979C8516FC38DF07EA76A48357E0536F2BA7B3EE37B"
-      match hexDecode defaultPrecompiledHashHex with
-      | .ok ba =>
-          if codeHashBytes == ba.data then
-            some 1000
-          else
-            none
-      | .error _ => none
-
     let lookupGasUsage? (cfgCell : Cell) : Option Nat :=
       match (do
         let cs0 := Slice.ofCell cfgCell
@@ -932,22 +907,20 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
       | .ok v => v
       | .error _ => none
 
-    let gasUsage? : Option Nat :=
-      match si.config_precompiled_contracts_boc with
-      | none => fallbackGasUsage?
-      | some boc =>
-          match decodeBytes boc with
-          | .error _ => fallbackGasUsage?
-          | .ok bs =>
-              match stdBocDeserialize bs with
-              | .error _ => fallbackGasUsage?
-              | .ok cfgCell => lookupGasUsage? cfgCell <|> fallbackGasUsage?
-
-    match gasUsage? with
-    | some g => .int (.num (Int.ofNat g))
+    match si.config_precompiled_contracts_boc with
     | none => .null
+    | some boc =>
+        match decodeBytes boc with
+        | .error _ => .null
+        | .ok bs =>
+            match stdBocDeserialize bs with
+            | .error _ => .null
+            | .ok cfgCell =>
+                match lookupGasUsage? cfgCell with
+                | some g => .int (.num (Int.ofNat g))
+                | none => .null
   let mcFwdPricesVal : Value :=
-    match (si.config_mc_fwd_prices_boc <|> some defaultMcFwdPricesBoc) with
+    match si.config_mc_fwd_prices_boc with
     | some boc =>
         match decodeBytes boc with
         | .ok bs =>
@@ -957,7 +930,7 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
         | .error _ => .null
     | none => .null
   let fwdPricesVal : Value :=
-    match (si.config_fwd_prices_boc <|> some defaultFwdPricesBoc) with
+    match si.config_fwd_prices_boc with
     | some boc =>
         match decodeBytes boc with
         | .ok bs =>
@@ -978,7 +951,7 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
           .slice (Slice.ofCell valSlice.toCellRemaining)
       | .ok (none, _) => .null
       | .error _ => .null
-    match (si.config_storage_prices_boc <|> some defaultStoragePricesBoc) with
+    match si.config_storage_prices_boc with
     | some boc =>
         match decodeBytes boc with
         | .ok bs =>
@@ -993,7 +966,7 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
     | none => .null
 
   let globalIdVal : Value :=
-    match (si.config_global_id_boc <|> some defaultGlobalIdBoc) with
+    match si.config_global_id_boc with
     | some boc =>
         match decodeBytes boc with
         | .ok bs =>
@@ -1004,7 +977,7 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
     | none => .null
 
   let mcGasPricesVal : Value :=
-    match (si.config_mc_gas_prices_boc <|> some defaultMcGasPricesBoc) with
+    match si.config_mc_gas_prices_boc with
     | some boc =>
         match decodeBytes boc with
         | .ok bs =>
@@ -1015,7 +988,7 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
     | none => .null
 
   let gasPricesVal : Value :=
-    match (si.config_gas_prices_boc <|> some defaultGasPricesBoc) with
+    match si.config_gas_prices_boc with
     | some boc =>
         match decodeBytes boc with
         | .ok bs =>
