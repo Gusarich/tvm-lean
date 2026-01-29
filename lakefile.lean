@@ -3,7 +3,12 @@ open System Lake DSL
 
 package "tvm-lean" where
   version := v!"0.1.0"
-  moreLinkArgs := #["-L/opt/homebrew/lib", "-L/usr/local/lib", "-lsodium"]
+  moreLinkArgs :=
+    if System.Platform.isOSX then
+      #["-L/opt/homebrew/lib", "-L/usr/local/lib", "-lsodium"]
+    else
+      -- Lean's bundled clang links with a sysroot; add explicit system library search paths so `-lsodium` resolves on CI.
+      #["-L/usr/lib/x86_64-linux-gnu", "-L/usr/lib", "-lsodium"]
 
 lean_lib «TvmLean» where
   -- add library configuration options here

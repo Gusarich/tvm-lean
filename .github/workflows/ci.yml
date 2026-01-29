@@ -7,26 +7,16 @@ on:
 
 jobs:
   lean:
-    name: Lean (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: ["ubuntu-latest", "macos-latest"]
+    name: Lean
+    runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps (Ubuntu)
-        if: runner.os == 'Linux'
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y libsodium-dev
-
-      - name: Install system deps (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install libsodium
 
       - name: Install elan (Lean toolchain)
         run: |
@@ -40,7 +30,7 @@ jobs:
             ~/.elan
             .lake/packages
             .lake/build
-          key: ${{ runner.os }}-lean-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+          key: ubuntu-lean-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
 
       - name: Build
         run: lake build
@@ -68,4 +58,3 @@ jobs:
           cd diff-test/collector
           npm ci
           npm run build
-
