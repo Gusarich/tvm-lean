@@ -206,6 +206,27 @@ def testEqual : IO Unit := do
       | .int (.num n) => assert (n == -1) s!"equal: expected -1, got {n}"
       | v => throw (IO.userError s!"equal: unexpected stack value {v.pretty}")
 
+def testIsNull : IO Unit := do
+  let progNull : List Instr := [ .pushNull, .isNull ]
+  match (← runProg progNull) with
+  | .continue _ => throw (IO.userError "isnull(null): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"isnull(null): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"isnull(null): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == -1) s!"isnull(null): expected -1, got {n}"
+      | v => throw (IO.userError s!"isnull(null): unexpected stack value {v.pretty}")
+
+  let progNonNull : List Instr := [ .pushInt (.num 0), .isNull ]
+  match (← runProg progNonNull) with
+  | .continue _ => throw (IO.userError "isnull(non-null): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"isnull(non-null): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"isnull(non-null): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 0) s!"isnull(non-null): expected 0, got {n}"
+      | v => throw (IO.userError s!"isnull(non-null): unexpected stack value {v.pretty}")
+
 def testIfNotRet : IO Unit := do
   -- IFNOTRET returns when flag is false (0); the following PUSHINT must not execute.
   let prog : List Instr := [ .pushInt (.num 0), .ifnotret, .pushInt (.num 99) ]
@@ -470,6 +491,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.chkSignU)
   roundtrip (.chkSignS)
   roundtrip (.getOriginalFwdFee)
+  roundtrip (.isNull)
   testCounter
   testBocCounter
   testBocArithSample
@@ -477,6 +499,7 @@ def main (_args : List String) : IO Unit := do
   testBocParseSamples
   testBocSerializeMatchesCanonical
   testEqual
+  testIsNull
   testIfNotRet
   testSetCp
   testShifts

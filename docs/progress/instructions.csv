@@ -86,7 +86,7 @@ NEGATE,true,false
 MUL,true,false
 THROWANY,true,false
 XC2PU,true,false
-ISNULL,true,false
+ISNULL,true,true
 OR,true,false
 DICTUGET,true,false
 REWRITESTDADDR,true,false
