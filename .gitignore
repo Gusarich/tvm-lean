@@ -11,6 +11,9 @@ __pycache__/
 /.env.*
 !/.env.example
 
+# Codex AutoPR local state
+/.autopr/
+
 # Diff testing (generated fixtures/results; keep smoke fixtures checked in)
 /diff-test/fixtures/*.json
 !/diff-test/fixtures/smoke_*.json
