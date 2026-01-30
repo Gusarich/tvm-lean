@@ -1209,6 +1209,7 @@ inductive Instr : Type
   | inc
   | dec
   | negate
+  | qnegate
   | add
   | addInt (n : Int) -- ADDINT <tinyint8>
   | sub
@@ -1544,6 +1545,7 @@ def Instr.pretty : Instr → String
   | .inc => "INC"
   | .dec => "DEC"
   | .negate => "NEGATE"
+  | .qnegate => "QNEGATE"
   | .add => "ADD"
   | .addInt n => s!"ADDINT {n}"
   | .sub => "SUB"
@@ -1888,6 +1890,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .inc, .inc => true
   | .dec, .dec => true
   | .negate, .negate => true
+  | .qnegate, .qnegate => true
   | .add, .add => true
   | .sub, .sub => true
   | .subr, .subr => true
@@ -2973,6 +2976,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb60b then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.abs false, 16, s16)
+    if w16 = 0xb7a3 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qnegate, 16, s16)
     -- PUSHPOW2 / PUSHNAN: 0x8300..0x83ff.
     if w16 &&& 0xff00 = 0x8300 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -5085,6 +5091,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xdf 8
   | .negate =>
       return natToBits 0xa3 8
+  | .qnegate =>
+      return natToBits 0xb7a3 16
   | .inc =>
       return natToBits 0xa4 8
   | .dec =>
@@ -7090,6 +7098,11 @@ def execInstr (i : Instr) : VM Unit := do
       match x with
       | .nan => VM.pushIntQuiet .nan false
       | .num n => VM.pushIntQuiet (.num (-n)) false
+  | .qnegate =>
+      let x ← VM.popInt
+      match x with
+      | .nan => VM.pushIntQuiet .nan true
+      | .num n => VM.pushIntQuiet (.num (-n)) true
   | .add =>
       let y ← VM.popInt
       let x ← VM.popInt
