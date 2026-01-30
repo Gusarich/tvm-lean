@@ -4,6 +4,7 @@ import TvmLean.Core.Exec.Arith.Dec
 import TvmLean.Core.Exec.Arith.Negate
 import TvmLean.Core.Exec.Arith.Qnegate
 import TvmLean.Core.Exec.Arith.Add
+import TvmLean.Core.Exec.Arith.Qadd
 import TvmLean.Core.Exec.Arith.AddInt
 import TvmLean.Core.Exec.Arith.Sub
 import TvmLean.Core.Exec.Arith.Subr
@@ -56,6 +57,7 @@ def execInstrArith (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrArithNegate i <|
   execInstrArithQnegate i <|
   execInstrArithAdd i <|
+  execInstrArithQadd i <|
   execInstrArithAddInt i <|
   execInstrArithSub i <|
   execInstrArithSubr i <|

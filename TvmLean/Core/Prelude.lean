@@ -1211,6 +1211,7 @@ inductive Instr : Type
   | negate
   | qnegate
   | add
+  | qadd
   | addInt (n : Int) -- ADDINT <tinyint8>
   | sub
   | subr
@@ -1547,6 +1548,7 @@ def Instr.pretty : Instr → String
   | .negate => "NEGATE"
   | .qnegate => "QNEGATE"
   | .add => "ADD"
+  | .qadd => "QADD"
   | .addInt n => s!"ADDINT {n}"
   | .sub => "SUB"
   | .subr => "SUBR"
@@ -2976,6 +2978,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb60b then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.abs false, 16, s16)
+    if w16 = 0xb7a0 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qadd, 16, s16)
     if w16 = 0xb7a3 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qnegate, 16, s16)
@@ -5099,6 +5104,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xa5 8
   | .add =>
       return natToBits 0xa0 8
+  | .qadd =>
+      return natToBits 0xb7a0 16
   | .addInt n =>
       if decide (-128 ≤ n ∧ n ≤ 127) then
         let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
