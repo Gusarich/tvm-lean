@@ -268,6 +268,34 @@ def testTuplePush : IO Unit := do
       | v =>
           throw (IO.userError s!"tpush: unexpected stack value {v.pretty}")
 
+def testIndex3 : IO Unit := do
+  let prog : List Instr :=
+    [ .pushInt (.num 1)
+    , .pushInt (.num 2)
+    , .tupleOp (.mktuple 2) -- A0 = [1,2]
+    , .pushInt (.num 3)
+    , .pushInt (.num 4)
+    , .tupleOp (.mktuple 2) -- A1 = [3,4]
+    , .tupleOp (.mktuple 2) -- A = [A0,A1]
+    , .pushInt (.num 5)
+    , .pushInt (.num 6)
+    , .tupleOp (.mktuple 2) -- B0 = [5,6]
+    , .pushInt (.num 7)
+    , .pushInt (.num 8)
+    , .tupleOp (.mktuple 2) -- B1 = [7,8]
+    , .tupleOp (.mktuple 2) -- B = [B0,B1]
+    , .tupleOp (.mktuple 2) -- t = [A,B]
+    , .tupleOp (.index3 1 0 1)
+    ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "index3: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"index3: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"index3: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 6) s!"index3: expected 6, got {n}"
+      | v => throw (IO.userError s!"index3: unexpected stack value {v.pretty}")
+
 def testBuilderBits : IO Unit := do
   let prog : List Instr := [ .pushInt (.num 1), .newc, .stu 1, .bbits ]
   match (← runProg prog) with
@@ -462,6 +490,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.lshift)
   roundtrip (.rshift)
   roundtrip (.tupleOp .tpush)
+  roundtrip (.tupleOp (.index3 1 2 3))
   roundtrip (.boolAnd)
   roundtrip (.boolOr)
   roundtrip (.composBoth)
@@ -481,6 +510,7 @@ def main (_args : List String) : IO Unit := do
   testSetCp
   testShifts
   testTuplePush
+  testIndex3
   testBuilderBits
   testXctosIsSpecial
   testChkSignU
