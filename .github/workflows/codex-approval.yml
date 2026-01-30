@@ -1,0 +1,96 @@
+name: Codex Approval
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+  statuses: write
+
+concurrency:
+  group: codex-approval
+  cancel-in-progress: false
+
+jobs:
+  codex-approval:
+    name: Codex approval status
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update codex approval status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const botLogin = process.env.CODEX_BOT_LOGIN || "chatgpt-codex-connector[bot]";
+            const statusContext = process.env.CODEX_STATUS_CONTEXT || "codex/approval";
+            const baseBranch = process.env.TARGET_BRANCH || "main";
+
+            async function listOpenPullRequests() {
+              return await github.paginate(github.rest.pulls.list, {
+                owner,
+                repo,
+                state: "open",
+                base: baseBranch,
+                per_page: 100,
+              });
+            }
+
+            function decideState(reactions) {
+              const byBot = reactions.filter(r => r?.user?.login === botLogin);
+              const hasThumbsUp = byBot.some(r => r.content === "+1");
+              const hasThumbsDown = byBot.some(r => r.content === "-1");
+
+              if (hasThumbsUp) {
+                return { state: "success", description: "Codex approved (+1 reaction)." };
+              }
+              if (hasThumbsDown) {
+                return { state: "failure", description: "Codex rejected (-1 reaction)." };
+              }
+              return { state: "pending", description: "Waiting for Codex approval (+1 reaction)." };
+            }
+
+            async function updateStatusForPR(prNumber, sha, htmlUrl) {
+              const reactions = await github.paginate(github.rest.reactions.listForIssue, {
+                owner,
+                repo,
+                issue_number: prNumber,
+                per_page: 100,
+              });
+
+              const { state, description } = decideState(reactions);
+
+              await github.rest.repos.createCommitStatus({
+                owner,
+                repo,
+                sha,
+                state,
+                context: statusContext,
+                description,
+                target_url: htmlUrl,
+              });
+            }
+
+            if (context.eventName === "pull_request") {
+              const pr = context.payload.pull_request;
+              if (!pr || pr.base?.ref !== baseBranch) {
+                return;
+              }
+              await updateStatusForPR(pr.number, pr.head.sha, pr.html_url);
+              return;
+            }
+
+            const prs = await listOpenPullRequests();
+            core.info(`Scanning ${prs.length} open PR(s) targeting ${baseBranch}...`);
+
+            for (const pr of prs) {
+              // This is just a status signal; keep it consistent even for drafts.
+              await updateStatusForPR(pr.number, pr.head.sha, pr.html_url);
+            }
+

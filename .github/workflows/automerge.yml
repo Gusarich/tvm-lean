@@ -1,0 +1,371 @@
+name: Auto Merge
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  statuses: read
+
+concurrency:
+  group: automerge
+  cancel-in-progress: false
+
+jobs:
+  automerge:
+    name: Merge eligible PRs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Automerge codex PRs that meet requirements
+        uses: actions/github-script@v7
+        env:
+          TARGET_BRANCH: main
+          # Comma-separated list of required check names / status contexts.
+          REQUIRED_CHECKS: Lean,Collector (TypeScript),codex/approval
+          # Only auto-merge PRs whose head branch starts with this prefix. Set to empty to disable filtering.
+          HEAD_BRANCH_PREFIX: codex/
+          # If a PR is behind the base branch, try to update it and re-check on the next run.
+          UPDATE_BEHIND_BRANCHES: "true"
+          MAX_MERGES_PER_RUN: "10"
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const baseBranch = process.env.TARGET_BRANCH || "main";
+            const requiredChecks = (process.env.REQUIRED_CHECKS || "")
+              .split(",")
+              .map(s => s.trim())
+              .filter(Boolean);
+
+            const headPrefix = process.env.HEAD_BRANCH_PREFIX ?? "codex/";
+            const updateBehind = (process.env.UPDATE_BEHIND_BRANCHES || "false").toLowerCase() === "true";
+            const maxMerges = Number.parseInt(process.env.MAX_MERGES_PER_RUN || "10", 10);
+
+            const prQuery = `
+              query($owner:String!,$repo:String!,$base:String!,$cursor:String){
+                repository(owner:$owner,name:$repo){
+                  pullRequests(
+                    first:100
+                    after:$cursor
+                    states:OPEN
+                    baseRefName:$base
+                    orderBy:{field:CREATED_AT,direction:ASC}
+                  ){
+                    nodes{
+                      id
+                      number
+                      title
+                      url
+                      isDraft
+                      headRefName
+                      headRefOid
+                      mergeable
+                      mergeStateStatus
+                      commits(last:1){
+                        nodes{
+                          commit{
+                            oid
+                            statusCheckRollup{
+                              contexts(last:100){
+                                nodes{
+                                  __typename
+                                  ... on CheckRun{
+                                    name
+                                    status
+                                    conclusion
+                                    startedAt
+                                    completedAt
+                                  }
+                                  ... on StatusContext{
+                                    context
+                                    state
+                                    createdAt
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                    pageInfo{hasNextPage endCursor}
+                  }
+                }
+              }
+            `;
+
+            const prByNumberQuery = `
+              query($owner:String!,$repo:String!,$number:Int!){
+                repository(owner:$owner,name:$repo){
+                  pullRequest(number:$number){
+                    id
+                    number
+                    title
+                    url
+                    isDraft
+                    baseRefName
+                    headRefName
+                    headRefOid
+                    mergeable
+                    mergeStateStatus
+                    commits(last:1){
+                      nodes{
+                        commit{
+                          oid
+                          statusCheckRollup{
+                            contexts(last:100){
+                              nodes{
+                                __typename
+                                ... on CheckRun{
+                                  name
+                                  status
+                                  conclusion
+                                  startedAt
+                                  completedAt
+                                }
+                                ... on StatusContext{
+                                  context
+                                  state
+                                  createdAt
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            `;
+
+            const updateBranchMutation = `
+              mutation($prId:ID!,$expectedHeadOid:GitObjectID!){
+                updatePullRequestBranch(input:{pullRequestId:$prId,expectedHeadOid:$expectedHeadOid}){
+                  pullRequest{number}
+                }
+              }
+            `;
+
+            const mergeMutation = `
+              mutation($prId:ID!,$expectedHeadOid:GitObjectID!){
+                mergePullRequest(input:{pullRequestId:$prId,mergeMethod:SQUASH,expectedHeadOid:$expectedHeadOid}){
+                  pullRequest{number merged mergedAt}
+                }
+              }
+            `;
+
+            function shouldConsiderPR(pr) {
+              if (pr.isDraft) return false;
+              if (!headPrefix) return true;
+              return pr.headRefName?.startsWith(headPrefix);
+            }
+
+            function latestByName() {
+              /** @type {Map<string, {name:string, kind:"check"|"status", ok:boolean, pending:boolean, ts:string, raw:any}>} */
+              const map = new Map();
+              const toTs = (value) => (value ? String(value) : "");
+              const newer = (a, b) => (toTs(a) > toTs(b));
+
+              return {
+                upsert(name, entry) {
+                  const prev = map.get(name);
+                  if (!prev || newer(entry.ts, prev.ts)) {
+                    map.set(name, entry);
+                  }
+                },
+                get(name) {
+                  return map.get(name);
+                },
+                raw() {
+                  return map;
+                },
+              };
+            }
+
+            function extractContextStates(pr) {
+              const rollup = pr.commits?.nodes?.[0]?.commit?.statusCheckRollup;
+              const nodes = rollup?.contexts?.nodes || [];
+              const byName = latestByName();
+
+              for (const ctx of nodes) {
+                if (!ctx || !ctx.__typename) continue;
+
+                if (ctx.__typename === "CheckRun") {
+                  const name = ctx.name;
+                  const status = ctx.status; // QUEUED | IN_PROGRESS | COMPLETED
+                  const conclusion = ctx.conclusion; // SUCCESS | FAILURE | ...
+                  const ts = ctx.completedAt || ctx.startedAt || "";
+
+                  const pending = status !== "COMPLETED";
+                  const ok = status === "COMPLETED" && conclusion === "SUCCESS";
+                  byName.upsert(name, { name, kind: "check", ok, pending, ts, raw: ctx });
+                  continue;
+                }
+
+                if (ctx.__typename === "StatusContext") {
+                  const name = ctx.context;
+                  const state = ctx.state; // SUCCESS | FAILURE | PENDING | ERROR
+                  const ts = ctx.createdAt || "";
+
+                  const pending = state === "PENDING";
+                  const ok = state === "SUCCESS";
+                  byName.upsert(name, { name, kind: "status", ok, pending, ts, raw: ctx });
+                  continue;
+                }
+              }
+
+              return byName;
+            }
+
+            function summarizeRequiredChecks(byName) {
+              const missing = [];
+              const pending = [];
+              const failing = [];
+
+              for (const name of requiredChecks) {
+                const entry = byName.get(name);
+                if (!entry) {
+                  missing.push(name);
+                  continue;
+                }
+                if (entry.ok) continue;
+                if (entry.pending) {
+                  pending.push(name);
+                  continue;
+                }
+                failing.push(name);
+              }
+
+              return { missing, pending, failing };
+            }
+
+            async function listOpenPullRequests() {
+              const prs = [];
+              let cursor = null;
+              for (;;) {
+                const resp = await github.graphql(prQuery, {
+                  owner,
+                  repo,
+                  base: baseBranch,
+                  cursor,
+                });
+                const page = resp?.repository?.pullRequests;
+                if (!page) break;
+
+                prs.push(...(page.nodes || []));
+                if (!page.pageInfo?.hasNextPage) break;
+                cursor = page.pageInfo.endCursor;
+              }
+              return prs;
+            }
+
+            async function getPullRequestByNumber(number) {
+              const resp = await github.graphql(prByNumberQuery, {
+                owner,
+                repo,
+                number,
+              });
+              return resp?.repository?.pullRequest || null;
+            }
+
+            let prs = [];
+            if (context.eventName === "pull_request") {
+              const prNumber = context.payload?.pull_request?.number;
+              const prBase = context.payload?.pull_request?.base?.ref;
+              if (!prNumber || prBase !== baseBranch) {
+                core.info(`Event PR is not targeting ${baseBranch}; exiting.`);
+                return;
+              }
+              const pr = await getPullRequestByNumber(prNumber);
+              if (!pr) {
+                core.warning(`Failed to load PR #${prNumber} via GraphQL; exiting.`);
+                return;
+              }
+              prs = [pr];
+              core.info(`Checking PR #${prNumber}...`);
+            } else {
+              core.info(`Scanning open PRs targeting ${baseBranch}...`);
+              prs = await listOpenPullRequests();
+              core.info(`Found ${prs.length} open PR(s).`);
+            }
+
+            let mergedCount = 0;
+            for (const pr of prs) {
+              if (mergedCount >= maxMerges) {
+                core.info(`Reached MAX_MERGES_PER_RUN=${maxMerges}; stopping.`);
+                break;
+              }
+
+              if (!shouldConsiderPR(pr)) continue;
+
+              if (pr.mergeStateStatus === "DIRTY") {
+                core.info(`#${pr.number} has conflicts (DIRTY); skipping.`);
+                continue;
+              }
+
+              if (pr.mergeStateStatus === "BEHIND") {
+                core.info(`#${pr.number} is BEHIND ${baseBranch}.`);
+                if (!updateBehind) {
+                  core.info(`UPDATE_BEHIND_BRANCHES=false; skipping.`);
+                  continue;
+                }
+                try {
+                  await github.graphql(updateBranchMutation, {
+                    prId: pr.id,
+                    expectedHeadOid: pr.headRefOid,
+                  });
+                  core.info(`#${pr.number}: triggered branch update.`);
+                } catch (err) {
+                  core.warning(`#${pr.number}: failed to update branch: ${err?.message || err}`);
+                }
+                continue;
+              }
+
+              if (pr.mergeStateStatus !== "CLEAN") {
+                core.info(`#${pr.number} mergeStateStatus=${pr.mergeStateStatus}; skipping.`);
+                continue;
+              }
+
+              if (pr.mergeable !== "MERGEABLE") {
+                core.info(`#${pr.number} mergeable=${pr.mergeable}; skipping.`);
+                continue;
+              }
+
+              const byName = extractContextStates(pr);
+              const { missing, pending, failing } = summarizeRequiredChecks(byName);
+
+              if (missing.length || pending.length || failing.length) {
+                const parts = [];
+                if (missing.length) parts.push(`missing: ${missing.join(", ")}`);
+                if (pending.length) parts.push(`pending: ${pending.join(", ")}`);
+                if (failing.length) parts.push(`failing: ${failing.join(", ")}`);
+                core.info(`#${pr.number} not ready (${parts.join("; ")}); skipping.`);
+                continue;
+              }
+
+              core.info(`#${pr.number} looks ready; merging (SQUASH)...`);
+              try {
+                const res = await github.graphql(mergeMutation, {
+                  prId: pr.id,
+                  expectedHeadOid: pr.headRefOid,
+                });
+                if (res?.mergePullRequest?.pullRequest?.merged) {
+                  mergedCount += 1;
+                  core.info(`#${pr.number} merged.`);
+                } else {
+                  core.warning(`#${pr.number} merge mutation returned unexpected response.`);
+                }
+              } catch (err) {
+                core.warning(`#${pr.number}: merge failed: ${err?.message || err}`);
+              }
+            }
+
+            core.info(`Done. Merged ${mergedCount} PR(s) this run.`);
