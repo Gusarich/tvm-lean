@@ -101,3 +101,34 @@ Notes:
 
 - The script only targets tasks whose Codex `environment_label` contains `tvm-lean` (configurable via `--env-label-substr`).
 - Local state is stored in `.autopr/state.sqlite3` to avoid duplicate PR creation attempts.
+
+## Auto-merge PRs (local daemon)
+
+GitHub Actions scheduling is too coarse for “merge within ~1 minute”, and Codex approvals are currently signaled via
+GitHub reactions. This daemon enforces the rules locally and merges PRs automatically.
+
+Setup:
+
+```sh
+cp .env.example .env
+# set GITHUB_TOKEN=... in .env (kept local; gitignored)
+```
+
+One-shot run:
+
+```sh
+python3 tools/github_automerge.py --once --verbose
+```
+
+Daemon mode (recommended):
+
+```sh
+python3 tools/github_automerge.py --watch --interval-seconds 60 --verbose
+```
+
+Defaults (configurable via flags):
+
+- Only considers PRs whose head branch starts with `codex/` (set `--head-branch-prefix ''` to disable).
+- Requires `Lean` + `Collector (TypeScript)` checks to pass.
+- Requires a `+1` reaction from `chatgpt-codex-connector[bot]`.
+- If a PR is behind `main`, it triggers “Update branch” and re-checks on the next cycle.
