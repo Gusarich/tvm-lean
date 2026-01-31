@@ -72,3 +72,32 @@ Apply (bulk create missing subissues):
 ```sh
 python3 tools/linear_subissues.py --apply
 ```
+
+## Auto-create PRs for completed Codex tasks
+
+When issues are delegated to Codex via Linear, Codex will usually post a comment and create a cloud task, but **PR
+creation still requires a `/pr` call**. This helper automates that step.
+
+Setup:
+
+```sh
+cp .env.example .env
+# set CODEX_TOKEN=... in .env (kept local; gitignored)
+```
+
+One-shot run (recommended for cron):
+
+```sh
+python3 tools/codex_autopr.py --once
+```
+
+Daemon mode:
+
+```sh
+python3 tools/codex_autopr.py --watch --interval-seconds 60
+```
+
+Notes:
+
+- The script only targets tasks whose Codex `environment_label` contains `tvm-lean` (configurable via `--env-label-substr`).
+- Local state is stored in `.autopr/state.sqlite3` to avoid duplicate PR creation attempts.
