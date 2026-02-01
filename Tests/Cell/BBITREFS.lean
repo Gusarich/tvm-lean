@@ -19,8 +19,8 @@ def testBuilderBitRefs : IO Unit := do
       assert (exitCode == -1) s!"bbitrefs: unexpected exitCode={exitCode}"
       assert (st.stack.size == 2) s!"bbitrefs: unexpected stack size={st.stack.size}"
       match st.stack[0]!, st.stack[1]! with
-      | .int (.num refs), .int (.num bits) =>
-          assert (refs == 1 ∧ bits == 3) s!"bbitrefs: expected [refs=1,bits=3], got {Stack.pretty st.stack}"
+      | .int (.num bits), .int (.num refs) =>
+          assert (bits == 3 ∧ refs == 1) s!"bbitrefs: expected [bits=3,refs=1], got {Stack.pretty st.stack}"
       | _, _ =>
           throw (IO.userError s!"bbitrefs: unexpected stack {Stack.pretty st.stack}")
 
