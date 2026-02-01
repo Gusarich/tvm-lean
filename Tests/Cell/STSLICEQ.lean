@@ -4,8 +4,12 @@ import Tests.Registry
 open TvmLean Tests
 
 def testStSliceQ : IO Unit := do
-  let slice := Slice.ofCell (Cell.ofUInt 8 0xab)
-  let prog : List Instr := [ .pushSliceConst slice, .newc, .stSlice false true ]
+  -- Build a 1-byte cell/slice without relying on PUSHSLICE (not encodable in `assembleCp0`).
+  let prog : List Instr :=
+    [ .pushInt 0xab
+    , .newc, .stu 8, .endc, .ctos
+    , .newc, .stSlice false true
+    ]
   match (← runProg prog) with
   | .continue _ => throw (IO.userError "stsliceq: did not halt")
   | .halt exitCode st =>
