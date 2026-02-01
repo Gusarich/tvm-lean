@@ -1267,6 +1267,7 @@ inductive Instr : Type
   | greater
   | geq
   | cmp
+  | qcmp
   | sbits
   | srefs
   | sbitrefs
@@ -1698,6 +1699,7 @@ def Instr.pretty : Instr → String
   | .greater => "GREATER"
   | .geq => "GEQ"
   | .cmp => "CMP"
+  | .qcmp => "QCMP"
   | .sbits => "SBITS"
   | .srefs => "SREFS"
   | .sbitrefs => "SBITREFS"
@@ -1933,6 +1935,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .greater, .greater => true
   | .geq, .geq => true
   | .cmp, .cmp => true
+  | .qcmp, .qcmp => true
   | .sbits, .sbits => true
   | .srefs, .srefs => true
   | .sbitrefs, .sbitrefs => true
@@ -2989,6 +2992,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb7a3 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qnegate, 16, s16)
+    if w16 = 0xb7bf then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qcmp, 16, s16)
     -- PUSHPOW2 / PUSHNAN: 0x8300..0x83ff.
     if w16 &&& 0xff00 = 0x8300 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -5220,6 +5226,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xbe 8
   | .cmp =>
       return natToBits 0xbf 8
+  | .qcmp =>
+      return natToBits 0xb7bf 16
   | .sbits =>
       return natToBits 0xd749 16
   | .srefs =>
