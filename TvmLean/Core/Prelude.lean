@@ -1289,6 +1289,7 @@ inductive Instr : Type
   | sdCntTrail0        -- SDCNTTRAIL0
   | sdEq              -- SDEQ
   | sdPpfx            -- SDPPFX
+  | sdPfx             -- SDPFX
   | sdcutfirst        -- SDCUTFIRST
   | sdskipfirst       -- SDSKIPFIRST
   | sdcutlast         -- SDCUTLAST
@@ -1727,6 +1728,7 @@ def Instr.pretty : Instr → String
   | .sdCntTrail0 => "SDCNTTRAIL0"
   | .sdEq => "SDEQ"
   | .sdPpfx => "SDPPFX"
+  | .sdPfx => "SDPFX"
   | .sdcutfirst => "SDCUTFIRST"
   | .sdskipfirst => "SDSKIPFIRST"
   | .sdcutlast => "SDCUTLAST"
@@ -1966,6 +1968,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .sdCntTrail0, .sdCntTrail0 => true
   | .sdEq, .sdEq => true
   | .sdPpfx, .sdPpfx => true
+  | .sdPfx, .sdPfx => true
   | .sdcutfirst, .sdcutfirst => true
   | .sdskipfirst, .sdskipfirst => true
   | .sdcutlast, .sdcutlast => true
@@ -2984,6 +2987,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xc705 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdEq, 16, s16)
+    if w16 = 0xc708 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.sdPfx, 16, s16)
     if w16 = 0xc70a then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdPpfx, 16, s16)
@@ -5297,6 +5303,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xc705 16
   | .sdPpfx =>
       return natToBits 0xc70a 16
+  | .sdPfx =>
+      return natToBits 0xc708 16
   | .sdcutfirst =>
       return natToBits 0xd720 16
   | .sdskipfirst =>
