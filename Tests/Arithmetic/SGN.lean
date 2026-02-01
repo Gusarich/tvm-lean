@@ -34,8 +34,13 @@ def testSgn : IO Unit := do
       | .int (.num n) => assert (n == 0) s!"sgn(0): expected 0, got {n}"
       | v => throw (IO.userError s!"sgn(0): unexpected stack value {v.pretty}")
 
-  let progNan : List Instr := [ .pushInt .nan, .sgn ]
-  match (← runProg progNan) with
+  let codeCell ←
+    match assembleCp0 [ .sgn ] with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"sgn(nan): assembleCp0 failed: {reprStr e}")
+  let base := VmState.initial codeCell
+  let st0Nan : VmState := { base with stack := #[.int .nan] }
+  match VmState.run 20 st0Nan with
   | .continue _ => throw (IO.userError "sgn(nan): did not halt")
   | .halt exitCode st =>
       assert (exitCode == -1) s!"sgn(nan): unexpected exitCode={exitCode}"
