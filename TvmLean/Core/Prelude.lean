@@ -1207,6 +1207,7 @@ inductive Instr : Type
   | if_         -- IF
   | ifnot       -- IFNOT
   | inc
+  | qinc
   | dec
   | negate
   | qnegate
@@ -1545,6 +1546,7 @@ def Instr.pretty : Instr → String
   | .if_ => "IF"
   | .ifnot => "IFNOT"
   | .inc => "INC"
+  | .qinc => "QINC"
   | .dec => "DEC"
   | .negate => "NEGATE"
   | .qnegate => "QNEGATE"
@@ -1892,6 +1894,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .if_, .if_ => true
   | .ifnot, .ifnot => true
   | .inc, .inc => true
+  | .qinc, .qinc => true
   | .dec, .dec => true
   | .negate, .negate => true
   | .qnegate, .qnegate => true
@@ -2989,6 +2992,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb7a3 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qnegate, 16, s16)
+    if w16 = 0xb7a4 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qinc, 16, s16)
     -- PUSHPOW2 / PUSHNAN: 0x8300..0x83ff.
     if w16 &&& 0xff00 = 0x8300 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -5105,6 +5111,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xb7a3 16
   | .inc =>
       return natToBits 0xa4 8
+  | .qinc =>
+      return natToBits 0xb7a4 16
   | .dec =>
       return natToBits 0xa5 8
   | .add =>
