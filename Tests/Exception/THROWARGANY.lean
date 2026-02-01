@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction THROWARGANY (category: exception).
