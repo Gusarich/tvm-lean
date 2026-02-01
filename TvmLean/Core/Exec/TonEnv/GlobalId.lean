@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGlobalId (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .globalId =>
+  | .tonEnvOp .globalId =>
       -- Matches C++ `exec_get_global_id` (tonops.cpp) for global_version >= 6.
       let unpacked ← VM.getUnpackedConfigTuple
       match unpacked.get? 1 with

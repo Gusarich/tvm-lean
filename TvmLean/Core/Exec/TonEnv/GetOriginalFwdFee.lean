@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGetOriginalFwdFee (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .getOriginalFwdFee =>
+  | .tonEnvOp .getOriginalFwdFee =>
       -- Matches C++ `exec_get_original_fwd_fee` (tonops.cpp).
       -- Stack: ... fwd_fee is_masterchain -- ... original_fwd_fee
       let isMasterchain ← VM.popBool

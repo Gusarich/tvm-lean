@@ -4,4 +4,4 @@ import Tests.Registry
 open TvmLean
 
 initialize
-  Tests.registerRoundtrip (.chkSignS)
+  Tests.registerRoundtrip (.cryptoOp .chkSignS)

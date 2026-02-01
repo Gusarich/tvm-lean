@@ -1134,6 +1134,49 @@ inductive CellInstr : Type
   | bchk (needBits : Bool) (needRefs : Bool) (quiet : Bool) -- BCHK{BITS,REFS,BITREFS}{Q}
   deriving Repr
 
+inductive CryptoInstr : Type
+  | hashExt (hashId : Nat) (append : Bool) (rev : Bool) -- HASHEXT{A}{R} <hashId> (255 means from stack)
+  | hashCU   -- HASHCU
+  | hashSU   -- HASHSU
+  | chkSignU -- CHKSIGNU
+  | chkSignS -- CHKSIGNS
+  deriving Repr
+
+inductive TonEnvInstr : Type
+  | balance            -- BALANCE
+  | now                -- NOW
+  | getParam (idx : Nat) -- GETPARAM <idx>
+  | randu256           -- RANDU256
+  | rand               -- RAND
+  | setRand (mix : Bool) -- SETRAND / ADDRAND
+  | getGlobVar         -- GETGLOBVAR
+  | getGlob (idx : Nat) -- GETGLOB <idx>
+  | setGlobVar         -- SETGLOBVAR
+  | setGlob (idx : Nat) -- SETGLOB <idx>
+  | accept             -- ACCEPT
+  | setGasLimit        -- SETGASLIMIT
+  | gasConsumed        -- GASCONSUMED
+  | commit             -- COMMIT
+  | ldGrams            -- LDGRAMS
+  | stGrams            -- STGRAMS
+  | ldMsgAddr (quiet : Bool) -- LDMSGADDR{Q}
+  | rewriteStdAddr (quiet : Bool) -- REWRITESTDADDR{Q}
+  | globalId             -- GLOBALID
+  | getGasFee            -- GETGASFEE
+  | getStorageFee        -- GETSTORAGEFEE
+  | getGasFeeSimple      -- GETGASFEESIMPLE
+  | getForwardFee          -- GETFORWARDFEE
+  | getPrecompiledGas   -- GETPRECOMPILEDGAS
+  | getOriginalFwdFee  -- GETORIGINALFWDFEE
+  | getForwardFeeSimple    -- GETFORWARDFEESIMPLE
+  | inMsgParam (idx : Nat) -- INMSG_* / INMSGPARAM <idx>
+  | sendMsg            -- SENDMSG
+  | sendRawMsg         -- SENDRAWMSG
+  | rawReserve         -- RAWRESERVE
+  | rawReserveX        -- RAWRESERVEX
+  | setCode            -- SETCODE
+  deriving Repr
+
 inductive Instr : Type
   | nop
   | pushInt (n : IntVal)
@@ -1321,6 +1364,8 @@ inductive Instr : Type
   | nullRotrIfNot2    -- NULLROTRIFNOT2
   | tupleOp (op : TupleInstr)
   | cellOp (op : CellInstr)
+  | cryptoOp (op : CryptoInstr)
+  | tonEnvOp (op : TonEnvInstr)
   | blkdrop2 (x : Nat) (y : Nat) -- BLKDROP2 <x>,<y>
   | pushSliceConst (s : Slice) -- PUSHSLICE (inline constant slice)
   | pushCont (code : Slice) -- PUSHCONT (inline continuation)
@@ -1352,44 +1397,68 @@ inductive Instr : Type
   | while_             -- WHILE
   | blkdrop (n : Nat) -- BLKDROP <n>
   | drop2              -- 2DROP
-  | balance            -- BALANCE
-  | now                -- NOW (TON environment)
-  | getParam (idx : Nat) -- GETPARAM <idx> (0..15; TON environment)
-  | randu256           -- RANDU256
-  | rand               -- RAND
-  | setRand (mix : Bool) -- SETRAND / ADDRAND
-  | getGlobVar         -- GETGLOBVAR (c7[n])
-  | getGlob (idx : Nat) -- GETGLOB <idx> (5-bit immediate)
-  | setGlobVar         -- SETGLOBVAR (set c7[n])
-  | setGlob (idx : Nat) -- SETGLOB <idx> (5-bit immediate)
-  | accept             -- ACCEPT
-  | setGasLimit        -- SETGASLIMIT
-  | gasConsumed        -- GASCONSUMED
-  | commit             -- COMMIT
-  | ldGrams            -- LDGRAMS
-  | stGrams            -- STGRAMS
-  | ldMsgAddr (quiet : Bool) -- LDMSGADDR{Q}
-  | rewriteStdAddr (quiet : Bool) -- REWRITESTDADDR{Q}
-  | globalId             -- GLOBALID
-  | getGasFee            -- GETGASFEE
-  | getStorageFee        -- GETSTORAGEFEE
-  | getGasFeeSimple      -- GETGASFEESIMPLE
-  | getForwardFee          -- GETFORWARDFEE
-  | getPrecompiledGas   -- GETPRECOMPILEDGAS
-  | getOriginalFwdFee  -- GETORIGINALFWDFEE
-  | getForwardFeeSimple    -- GETFORWARDFEESIMPLE
-  | inMsgParam (idx : Nat) -- INMSG_* / INMSGPARAM <idx>
-  | hashExt (hashId : Nat) (append : Bool) (rev : Bool) -- HASHEXT{A}{R} <hashId> (255 means from stack)
-  | hashCU             -- HASHCU
-  | hashSU             -- HASHSU
-  | chkSignU           -- CHKSIGNU
-  | chkSignS           -- CHKSIGNS
-  | sendMsg            -- SENDMSG
-  | sendRawMsg         -- SENDRAWMSG
-  | rawReserve         -- RAWRESERVE
-  | rawReserveX        -- RAWRESERVEX
-  | setCode            -- SETCODE
   deriving Repr
+
+def CryptoInstr.pretty : CryptoInstr → String
+  | .hashExt hashId append rev =>
+      let a := if append then "A" else ""
+      let r := if rev then "R" else ""
+      let idStr := if hashId = 255 then "-1" else toString hashId
+      s!"HASHEXT{a}{r} {idStr}"
+  | .hashCU => "HASHCU"
+  | .hashSU => "HASHSU"
+  | .chkSignU => "CHKSIGNU"
+  | .chkSignS => "CHKSIGNS"
+
+def TonEnvInstr.pretty : TonEnvInstr → String
+  | .balance => "BALANCE"
+  | .now => "NOW"
+  | .getParam idx => s!"GETPARAM {idx}"
+  | .randu256 => "RANDU256"
+  | .rand => "RAND"
+  | .setRand mix => if mix then "ADDRAND" else "SETRAND"
+  | .getGlobVar => "GETGLOBVAR"
+  | .getGlob idx => s!"GETGLOB {idx}"
+  | .setGlobVar => "SETGLOBVAR"
+  | .setGlob idx => s!"SETGLOB {idx}"
+  | .accept => "ACCEPT"
+  | .setGasLimit => "SETGASLIMIT"
+  | .gasConsumed => "GASCONSUMED"
+  | .commit => "COMMIT"
+  | .ldGrams => "LDGRAMS"
+  | .stGrams => "STGRAMS"
+  | .ldMsgAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"LDMSGADDR{q}"
+  | .rewriteStdAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"REWRITESTDADDR{q}"
+  | .globalId => "GLOBALID"
+  | .getGasFee => "GETGASFEE"
+  | .getStorageFee => "GETSTORAGEFEE"
+  | .getGasFeeSimple => "GETGASFEESIMPLE"
+  | .getForwardFee => "GETFORWARDFEE"
+  | .getPrecompiledGas => "GETPRECOMPILEDGAS"
+  | .getOriginalFwdFee => "GETORIGINALFWDFEE"
+  | .getForwardFeeSimple => "GETFORWARDFEESIMPLE"
+  | .inMsgParam idx =>
+      match idx with
+      | 0 => "INMSG_BOUNCE"
+      | 1 => "INMSG_BOUNCED"
+      | 2 => "INMSG_SRC"
+      | 3 => "INMSG_FWDFEE"
+      | 4 => "INMSG_LT"
+      | 5 => "INMSG_UTIME"
+      | 6 => "INMSG_ORIGVALUE"
+      | 7 => "INMSG_VALUE"
+      | 8 => "INMSG_VALUEEXTRA"
+      | 9 => "INMSG_STATEINIT"
+      | _ => s!"INMSGPARAM {idx}"
+  | .sendMsg => "SENDMSG"
+  | .sendRawMsg => "SENDRAWMSG"
+  | .rawReserve => "RAWRESERVE"
+  | .rawReserveX => "RAWRESERVEX"
+  | .setCode => "SETCODE"
 
 def TupleInstr.pretty : TupleInstr → String
   | .mktuple n => s!"TUPLE {n}"
@@ -1773,6 +1842,8 @@ def Instr.pretty : Instr → String
   | .nullRotrIfNot2 => "NULLROTRIFNOT2"
   | .tupleOp op => op.pretty
   | .cellOp op => op.pretty
+  | .cryptoOp op => op.pretty
+  | .tonEnvOp op => op.pretty
   | .blkdrop2 x y => s!"BLKDROP2 {x},{y}"
   | .pushSliceConst s => s!"PUSHSLICE(bits={s.bitsRemaining},refs={s.refsRemaining})"
   | .pushCont code => s!"PUSHCONT(bits={code.bitsRemaining},refs={code.refsRemaining})"
@@ -1804,63 +1875,6 @@ def Instr.pretty : Instr → String
   | .while_ => "WHILE"
   | .blkdrop n => s!"BLKDROP {n}"
   | .drop2 => "2DROP"
-  | .balance => "BALANCE"
-  | .now => "NOW"
-  | .getParam idx => s!"GETPARAM {idx}"
-  | .randu256 => "RANDU256"
-  | .rand => "RAND"
-  | .setRand mix => if mix then "ADDRAND" else "SETRAND"
-  | .getGlobVar => "GETGLOBVAR"
-  | .getGlob idx => s!"GETGLOB {idx}"
-  | .setGlobVar => "SETGLOBVAR"
-  | .setGlob idx => s!"SETGLOB {idx}"
-  | .accept => "ACCEPT"
-  | .setGasLimit => "SETGASLIMIT"
-  | .gasConsumed => "GASCONSUMED"
-  | .commit => "COMMIT"
-  | .ldGrams => "LDGRAMS"
-  | .stGrams => "STGRAMS"
-  | .ldMsgAddr quiet =>
-      let q := if quiet then "Q" else ""
-      s!"LDMSGADDR{q}"
-  | .rewriteStdAddr quiet =>
-      let q := if quiet then "Q" else ""
-      s!"REWRITESTDADDR{q}"
-  | .globalId => "GLOBALID"
-  | .getGasFee => "GETGASFEE"
-  | .getStorageFee => "GETSTORAGEFEE"
-  | .getGasFeeSimple => "GETGASFEESIMPLE"
-  | .getForwardFee => "GETFORWARDFEE"
-  | .getPrecompiledGas => "GETPRECOMPILEDGAS"
-  | .getOriginalFwdFee => "GETORIGINALFWDFEE"
-  | .getForwardFeeSimple => "GETFORWARDFEESIMPLE"
-  | .inMsgParam idx =>
-      match idx with
-      | 0 => "INMSG_BOUNCE"
-      | 1 => "INMSG_BOUNCED"
-      | 2 => "INMSG_SRC"
-      | 3 => "INMSG_FWDFEE"
-      | 4 => "INMSG_LT"
-      | 5 => "INMSG_UTIME"
-      | 6 => "INMSG_ORIGVALUE"
-      | 7 => "INMSG_VALUE"
-      | 8 => "INMSG_VALUEEXTRA"
-      | 9 => "INMSG_STATEINIT"
-      | _ => s!"INMSGPARAM {idx}"
-  | .hashExt hashId append rev =>
-      let a := if append then "A" else ""
-      let r := if rev then "R" else ""
-      let idStr := if hashId = 255 then "-1" else toString hashId
-      s!"HASHEXT{a}{r} {idStr}"
-  | .hashCU => "HASHCU"
-  | .hashSU => "HASHSU"
-  | .chkSignU => "CHKSIGNU"
-  | .chkSignS => "CHKSIGNS"
-  | .sendMsg => "SENDMSG"
-  | .sendRawMsg => "SENDRAWMSG"
-  | .rawReserve => "RAWRESERVE"
-  | .rawReserveX => "RAWRESERVEX"
-  | .setCode => "SETCODE"
 
 instance : ToString Instr := ⟨Instr.pretty⟩
 
@@ -2498,7 +2512,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w24 >>> 8 = 0xf881 then
       let idx : Nat := w24 &&& 0xff
       let (_, s24) ← s.takeBitsAsNat 24
-      return (.getParam idx, 24, s24)
+      return (.tonEnvOp (.getParam idx), 24, s24)
     if 0xf4a400 ≤ w24 ∧ w24 < 0xf4a800 then
       if !s.haveRefs 1 then
         throw .invOpcode
@@ -2527,7 +2541,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let append : Bool := ((args10 >>> 9) &&& 1) = 1
       let hashId : Nat := args10 &&& 0xff
       let (_, s24) ← s.takeBitsAsNat 24
-      return (.hashExt hashId append rev, 24, s24)
+      return (.cryptoOp (.hashExt hashId append rev), 24, s24)
 
     -- {P}LDSLICE{Q} <bits> (24-bit): 14-bit prefix (0xd71c >> 2) + 10-bit args (flags2 + bits8).
     -- Matches C++ `exec_load_slice_fixed2`.
@@ -3210,94 +3224,94 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       return (.callDict idx, 16, s16)
     if w16 = 0xf800 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.accept, 16, s16)
+      return (.tonEnvOp .accept, 16, s16)
     if w16 = 0xf801 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.setGasLimit, 16, s16)
+      return (.tonEnvOp .setGasLimit, 16, s16)
     if w16 = 0xf810 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.randu256, 16, s16)
+      return (.tonEnvOp .randu256, 16, s16)
     if w16 = 0xf811 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.rand, 16, s16)
+      return (.tonEnvOp .rand, 16, s16)
     if w16 = 0xf807 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.gasConsumed, 16, s16)
+      return (.tonEnvOp .gasConsumed, 16, s16)
     if w16 = 0xf80f then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.commit, 16, s16)
+      return (.tonEnvOp .commit, 16, s16)
     if w16 = 0xf823 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.now, 16, s16)
+      return (.tonEnvOp .now, 16, s16)
     if w16 = 0xf827 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.balance, 16, s16)
+      return (.tonEnvOp .balance, 16, s16)
     if w16 = 0xf814 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.setRand false, 16, s16)
+      return (.tonEnvOp (.setRand false), 16, s16)
     if w16 = 0xf815 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.setRand true, 16, s16)
+      return (.tonEnvOp (.setRand true), 16, s16)
     if 0xf820 ≤ w16 ∧ w16 ≤ 0xf82f then
       let idx : Nat := w16 - 0xf820
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getParam idx, 16, s16)
+      return (.tonEnvOp (.getParam idx), 16, s16)
     if w16 = 0xf835 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.globalId, 16, s16)
+      return (.tonEnvOp .globalId, 16, s16)
     if w16 = 0xf836 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getGasFee, 16, s16)
+      return (.tonEnvOp .getGasFee, 16, s16)
     if w16 = 0xf837 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getStorageFee, 16, s16)
+      return (.tonEnvOp .getStorageFee, 16, s16)
     if w16 = 0xf839 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getPrecompiledGas, 16, s16)
+      return (.tonEnvOp .getPrecompiledGas, 16, s16)
     if w16 = 0xf838 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getForwardFee, 16, s16)
+      return (.tonEnvOp .getForwardFee, 16, s16)
     if w16 = 0xf83a then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getOriginalFwdFee, 16, s16)
+      return (.tonEnvOp .getOriginalFwdFee, 16, s16)
     if w16 = 0xf83b then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getGasFeeSimple, 16, s16)
+      return (.tonEnvOp .getGasFeeSimple, 16, s16)
     if w16 = 0xf83c then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getForwardFeeSimple, 16, s16)
+      return (.tonEnvOp .getForwardFeeSimple, 16, s16)
     if w16 = 0xf840 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getGlobVar, 16, s16)
+      return (.tonEnvOp .getGlobVar, 16, s16)
     if 0xf841 ≤ w16 ∧ w16 < 0xf860 then
       -- C++ `GETGLOB` immediate uses low 5 bits; the range 0xf841..0xf85f corresponds to 1..31.
       let idx : Nat := w16 &&& 0x1f
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.getGlob idx, 16, s16)
+      return (.tonEnvOp (.getGlob idx), 16, s16)
     if w16 = 0xf860 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.setGlobVar, 16, s16)
+      return (.tonEnvOp .setGlobVar, 16, s16)
     if 0xf861 ≤ w16 ∧ w16 < 0xf880 then
       -- C++ `SETGLOB` immediate uses low 5 bits; the range 0xf861..0xf87f corresponds to 1..31.
       let idx : Nat := w16 &&& 0x1f
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.setGlob idx, 16, s16)
+      return (.tonEnvOp (.setGlob idx), 16, s16)
     if 0xf890 ≤ w16 ∧ w16 < 0xf8a0 then
       let idx : Nat := w16 - 0xf890
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.inMsgParam idx, 16, s16)
+      return (.tonEnvOp (.inMsgParam idx), 16, s16)
     if w16 = 0xf900 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.hashCU, 16, s16)
+      return (.cryptoOp .hashCU, 16, s16)
     if w16 = 0xf901 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.hashSU, 16, s16)
+      return (.cryptoOp .hashSU, 16, s16)
     if w16 = 0xf910 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.chkSignU, 16, s16)
+      return (.cryptoOp .chkSignU, 16, s16)
     if w16 = 0xf911 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.chkSignS, 16, s16)
+      return (.cryptoOp .chkSignS, 16, s16)
     if w16 = 0xed11 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.setContVarArgs, 16, s16)
@@ -3347,37 +3361,37 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
 
     if w16 = 0xfa00 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.ldGrams, 16, s16)
+      return (.tonEnvOp .ldGrams, 16, s16)
     if w16 = 0xfa02 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.stGrams, 16, s16)
+      return (.tonEnvOp .stGrams, 16, s16)
     if w16 = 0xfa40 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.ldMsgAddr false, 16, s16)
+      return (.tonEnvOp (.ldMsgAddr false), 16, s16)
     if w16 = 0xfa41 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.ldMsgAddr true, 16, s16)
+      return (.tonEnvOp (.ldMsgAddr true), 16, s16)
     if w16 = 0xfa44 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.rewriteStdAddr false, 16, s16)
+      return (.tonEnvOp (.rewriteStdAddr false), 16, s16)
     if w16 = 0xfa45 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.rewriteStdAddr true, 16, s16)
+      return (.tonEnvOp (.rewriteStdAddr true), 16, s16)
     if w16 = 0xfb00 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.sendRawMsg, 16, s16)
+      return (.tonEnvOp .sendRawMsg, 16, s16)
     if w16 = 0xfb02 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.rawReserve, 16, s16)
+      return (.tonEnvOp .rawReserve, 16, s16)
     if w16 = 0xfb03 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.rawReserveX, 16, s16)
+      return (.tonEnvOp .rawReserveX, 16, s16)
     if w16 = 0xfb04 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.setCode, 16, s16)
+      return (.tonEnvOp .setCode, 16, s16)
     if w16 = 0xfb08 then
       let (_, s16) ← s.takeBitsAsNat 16
-      return (.sendMsg, 16, s16)
+      return (.tonEnvOp .sendMsg, 16, s16)
 
     if w16 = 0xe302 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -4846,6 +4860,107 @@ def encodeCellInstr (op : CellInstr) : Except Excno BitString := do
         throw .invOpcode
       return natToBits base 16
 
+def encodeCryptoInstr (op : CryptoInstr) : Except Excno BitString := do
+  match op with
+  | .hashExt hashId append rev =>
+      if hashId > 255 then
+        throw .rangeChk
+      let args10 : Nat :=
+        (hashId &&& 0xff) +
+          (if rev then (1 <<< 8) else 0) +
+            (if append then (1 <<< 9) else 0)
+      let word24 : Nat := ((0xf904 >>> 2) <<< 10) + (args10 &&& 0x3ff)
+      return natToBits word24 24
+  | .hashCU =>
+      return natToBits 0xf900 16
+  | .hashSU =>
+      return natToBits 0xf901 16
+  | .chkSignU =>
+      return natToBits 0xf910 16
+  | .chkSignS =>
+      return natToBits 0xf911 16
+
+def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
+  match op with
+  | .balance =>
+      return natToBits 0xf827 16
+  | .now =>
+      return natToBits 0xf823 16
+  | .getParam idx =>
+      if idx ≤ 15 then
+        return natToBits (0xf820 + idx) 16
+      else if idx ≤ 255 then
+        return natToBits (0xf88100 + idx) 24
+      else
+        throw .rangeChk
+  | .randu256 =>
+      return natToBits 0xf810 16
+  | .rand =>
+      return natToBits 0xf811 16
+  | .setRand mix =>
+      return natToBits (if mix then 0xf815 else 0xf814) 16
+  | .getGlobVar =>
+      return natToBits 0xf840 16
+  | .getGlob idx =>
+      if idx = 0 ∨ idx > 31 then
+        throw .rangeChk
+      else
+        return natToBits (0xf840 + idx) 16
+  | .setGlobVar =>
+      return natToBits 0xf860 16
+  | .setGlob idx =>
+      if idx = 0 ∨ idx > 31 then
+        throw .rangeChk
+      else
+        return natToBits (0xf860 + idx) 16
+  | .accept =>
+      return natToBits 0xf800 16
+  | .setGasLimit =>
+      return natToBits 0xf801 16
+  | .gasConsumed =>
+      return natToBits 0xf807 16
+  | .commit =>
+      return natToBits 0xf80f 16
+  | .ldGrams =>
+      return natToBits 0xfa00 16
+  | .stGrams =>
+      return natToBits 0xfa02 16
+  | .ldMsgAddr quiet =>
+      return natToBits (if quiet then 0xfa41 else 0xfa40) 16
+  | .rewriteStdAddr quiet =>
+      return natToBits (if quiet then 0xfa45 else 0xfa44) 16
+  | .globalId =>
+      return natToBits 0xf835 16
+  | .getGasFee =>
+      return natToBits 0xf836 16
+  | .getStorageFee =>
+      return natToBits 0xf837 16
+  | .getForwardFee =>
+      return natToBits 0xf838 16
+  | .getPrecompiledGas =>
+      return natToBits 0xf839 16
+  | .getOriginalFwdFee =>
+      return natToBits 0xf83a 16
+  | .getGasFeeSimple =>
+      return natToBits 0xf83b 16
+  | .getForwardFeeSimple =>
+      return natToBits 0xf83c 16
+  | .inMsgParam idx =>
+      if idx ≤ 15 then
+        return natToBits (0xf890 + idx) 16
+      else
+        throw .rangeChk
+  | .sendMsg =>
+      return natToBits 0xfb08 16
+  | .sendRawMsg =>
+      return natToBits 0xfb00 16
+  | .rawReserve =>
+      return natToBits 0xfb02 16
+  | .rawReserveX =>
+      return natToBits 0xfb03 16
+  | .setCode =>
+      return natToBits 0xfb04 16
+
 def encodeCp0 (i : Instr) : Except Excno BitString := do
   match i with
   | .nop =>
@@ -5443,6 +5558,10 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       encodeTupleInstr op
   | .cellOp op =>
       encodeCellInstr op
+  | .cryptoOp op =>
+      encodeCryptoInstr op
+  | .tonEnvOp op =>
+      encodeTonEnvInstr op
   | .blkdrop2 x y =>
       if x ≤ 15 ∧ y ≤ 15 then
         let args : Nat := (x <<< 4) + y
@@ -5533,101 +5652,6 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         throw .rangeChk
   | .drop2 =>
       return natToBits 0x5b 8
-  | .balance =>
-      return natToBits 0xf827 16
-  | .now =>
-      return natToBits 0xf823 16
-  | .getParam idx =>
-      if idx ≤ 15 then
-        return natToBits (0xf820 + idx) 16
-      else if idx ≤ 255 then
-        return natToBits (0xf88100 + idx) 24
-      else
-        throw .rangeChk
-  | .randu256 =>
-      return natToBits 0xf810 16
-  | .rand =>
-      return natToBits 0xf811 16
-  | .setRand mix =>
-      return natToBits (if mix then 0xf815 else 0xf814) 16
-  | .getGlobVar =>
-      return natToBits 0xf840 16
-  | .getGlob idx =>
-      if idx = 0 ∨ idx > 31 then
-        throw .rangeChk
-      else
-        return natToBits (0xf840 + idx) 16
-  | .setGlobVar =>
-      return natToBits 0xf860 16
-  | .setGlob idx =>
-      if idx = 0 ∨ idx > 31 then
-        throw .rangeChk
-      else
-        return natToBits (0xf860 + idx) 16
-  | .accept =>
-      return natToBits 0xf800 16
-  | .setGasLimit =>
-      return natToBits 0xf801 16
-  | .gasConsumed =>
-      return natToBits 0xf807 16
-  | .commit =>
-      return natToBits 0xf80f 16
-  | .globalId =>
-      return natToBits 0xf835 16
-  | .getGasFee =>
-      return natToBits 0xf836 16
-  | .getStorageFee =>
-      return natToBits 0xf837 16
-  | .getForwardFee =>
-      return natToBits 0xf838 16
-  | .getPrecompiledGas =>
-      return natToBits 0xf839 16
-  | .getOriginalFwdFee =>
-      return natToBits 0xf83a 16
-  | .getGasFeeSimple =>
-      return natToBits 0xf83b 16
-  | .getForwardFeeSimple =>
-      return natToBits 0xf83c 16
-  | .inMsgParam idx =>
-      if idx ≤ 15 then
-        return natToBits (0xf890 + idx) 16
-      else
-        throw .rangeChk
-  | .ldGrams =>
-      return natToBits 0xfa00 16
-  | .stGrams =>
-      return natToBits 0xfa02 16
-  | .ldMsgAddr quiet =>
-      return natToBits (if quiet then 0xfa41 else 0xfa40) 16
-  | .rewriteStdAddr quiet =>
-      return natToBits (if quiet then 0xfa45 else 0xfa44) 16
-  | .hashExt hashId append rev =>
-      if hashId > 255 then
-        throw .rangeChk
-      let args10 : Nat :=
-        (hashId &&& 0xff) +
-          (if rev then (1 <<< 8) else 0) +
-            (if append then (1 <<< 9) else 0)
-      let word24 : Nat := ((0xf904 >>> 2) <<< 10) + (args10 &&& 0x3ff)
-      return natToBits word24 24
-  | .hashCU =>
-      return natToBits 0xf900 16
-  | .hashSU =>
-      return natToBits 0xf901 16
-  | .chkSignU =>
-      return natToBits 0xf910 16
-  | .chkSignS =>
-      return natToBits 0xf911 16
-  | .sendMsg =>
-      return natToBits 0xfb08 16
-  | .sendRawMsg =>
-      return natToBits 0xfb00 16
-  | .rawReserve =>
-      return natToBits 0xfb02 16
-  | .rawReserveX =>
-      return natToBits 0xfb03 16
-  | .setCode =>
-      return natToBits 0xfb04 16
   | .throw exc =>
       if exc < 0 then throw .rangeChk
       if exc ≤ 63 then

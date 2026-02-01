@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGetPrecompiledGas (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .getPrecompiledGas =>
+  | .tonEnvOp .getPrecompiledGas =>
       -- Same semantics as `GETPARAM 16` in the TON opcode table.
       let st ← get
       if 0 < st.regs.c7.size then

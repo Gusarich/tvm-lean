@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvLdGrams (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .ldGrams =>
+  | .tonEnvOp .ldGrams =>
       let csr0 ← VM.popSlice
       let (len, csr1) ← csr0.takeBitsAsNatCellUnd 4
       let dataBits : Nat := len * 8

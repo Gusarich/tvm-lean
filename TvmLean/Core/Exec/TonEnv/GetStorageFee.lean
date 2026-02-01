@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGetStorageFee (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .getStorageFee =>
+  | .tonEnvOp .getStorageFee =>
       -- Matches C++ `exec_get_storage_fee` / `calculate_storage_fee` (tonops.cpp),
       -- using the already-selected `StoragePrices` entry from `UNPACKEDCONFIGTUPLE[0]`
       -- (computed outside TVM in `Config::get_unpacked_config_tuple`).

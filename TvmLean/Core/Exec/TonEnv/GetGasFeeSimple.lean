@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGetGasFeeSimple (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .getGasFeeSimple =>
+  | .tonEnvOp .getGasFeeSimple =>
       -- Matches C++ `exec_get_gas_fee_simple` (tonops.cpp).
       -- Stack: ... gas_used is_masterchain -- ... gas_fee_simple
       let isMasterchain ← VM.popBool

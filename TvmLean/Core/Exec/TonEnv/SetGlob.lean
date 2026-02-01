@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvSetGlob (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .setGlob idx =>
+  | .tonEnvOp (.setGlob idx) =>
       let x ← VM.pop
       let st ← get
       let (t', pay) := tupleExtendSetIndex st.regs.c7 idx x

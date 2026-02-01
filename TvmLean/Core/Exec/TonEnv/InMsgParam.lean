@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvInMsgParam (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .inMsgParam idx =>
+  | .tonEnvOp (.inMsgParam idx) =>
       -- Matches C++ `exec_get_in_msg_param` / `exec_get_var_in_msg_param` (tonops.cpp).
       -- Stack: ... -- ... value
       let st ← get

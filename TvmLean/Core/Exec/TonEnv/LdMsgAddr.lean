@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvLdMsgAddr (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .ldMsgAddr quiet =>
+  | .tonEnvOp (.ldMsgAddr quiet) =>
       let csr0 ← VM.popSlice
       match csr0.skipMessageAddr with
       | .ok csr1 =>

@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvNow (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .now =>
+  | .tonEnvOp .now =>
       -- NOW is `GETPARAM 3` in the TON opcode table; it reads `c7[0]` as the "params" tuple.
       let st ← get
       if h : 0 < st.regs.c7.size then

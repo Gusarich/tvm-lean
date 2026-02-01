@@ -27,7 +27,7 @@ def testChkSignU : IO Unit := do
   let sigSlice : Slice := Slice.ofCell (cellOfBytes sigBa.data)
 
   let codeCell ←
-    match assembleCp0 [ .chkSignU ] with
+    match assembleCp0 [ .cryptoOp .chkSignU ] with
     | .ok c => pure c
     | .error e => throw (IO.userError s!"assembleCp0 failed: {reprStr e}")
   let base := VmState.initial codeCell
@@ -60,4 +60,4 @@ def testChkSignU : IO Unit := do
 
 initialize
   Tests.registerTest "crypto/chksignu" testChkSignU
-  Tests.registerRoundtrip (.chkSignU)
+  Tests.registerRoundtrip (.cryptoOp .chkSignU)

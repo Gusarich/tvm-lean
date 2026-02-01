@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .sendMsg =>
+  | .tonEnvOp .sendMsg =>
       -- Matches C++ `exec_send_message` (tonops.cpp) for modern TVM (global_version >= 12).
       -- Stack: ... msg_cell mode -- ... total_fees
       --

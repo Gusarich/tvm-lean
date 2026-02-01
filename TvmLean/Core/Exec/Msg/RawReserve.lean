@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrMsgRawReserve (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .rawReserve =>
+  | .tonEnvOp .rawReserve =>
       let f ← VM.popNatUpTo 31
       let x ← VM.popIntFinite
       if x < 0 then

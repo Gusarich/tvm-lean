@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrCryptoChkSignU (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .chkSignU =>
+  | .cryptoOp .chkSignU =>
       let key ← VM.popInt
       let sigSlice ← VM.popSlice
       let hash ← VM.popInt
