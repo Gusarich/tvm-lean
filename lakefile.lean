@@ -14,6 +14,9 @@ package "tvm-lean" where
 lean_lib «TvmLean» where
   -- add library configuration options here
 
+lean_lib «Tests» where
+  -- Test modules under `Tests/`
+
 target tvmlean_crypto.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto.o"
   let srcJob ← inputTextFile <| pkg.dir / "c" / "tvmlean_crypto.c"
