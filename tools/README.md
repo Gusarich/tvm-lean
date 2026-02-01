@@ -132,3 +132,33 @@ Defaults (configurable via flags):
 - Requires `Lean` + `Collector (TypeScript)` checks to pass.
 - Requires a `+1` reaction from `chatgpt-codex-connector[bot]`.
 - If a PR is behind `main`, it triggers “Update branch” and re-checks on the next cycle.
+
+## GitHub → Linear backflow (close PR as “not planned”)
+
+If you close a PR as “not planned”, it usually means the corresponding Linear issue should go back to `Todo` and be
+unassigned from Codex.
+
+Setup:
+
+```sh
+cp .env.example .env
+# set LINEAR_API_KEY=... and GITHUB_TOKEN=... in .env (kept local; gitignored)
+```
+
+One-shot run:
+
+```sh
+python3 tools/github_linear_backflow.py --once --verbose
+```
+
+Daemon mode:
+
+```sh
+python3 tools/github_linear_backflow.py --watch --interval-seconds 60 --verbose
+```
+
+Notes:
+
+- Only scans PRs whose head branch starts with `codex/` by default (set `--head-branch-prefix ''` to disable).
+- Detects the Linear issue id from the PR title / branch (e.g. `TVM-5997`).
+- Resets the Linear issue state to `Todo` and clears assignee/delegate if it looks like Codex.
