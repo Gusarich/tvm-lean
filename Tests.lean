@@ -307,6 +307,27 @@ def testSub : IO Unit := do
       | .int (.num n) => assert (n == -8) s!"sub(neg): expected -8, got {n}"
       | v => throw (IO.userError s!"sub(neg): unexpected stack value {v.pretty}")
 
+def testSubr : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 5), .pushInt (.num 2), .subr ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "subr: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"subr: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"subr: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == -3) s!"subr: expected -3, got {n}"
+      | v => throw (IO.userError s!"subr: unexpected stack value {v.pretty}")
+
+  let progNeg : List Instr := [ .pushInt (.num (-7)), .pushInt (.num 4), .subr ]
+  match (← runProg progNeg) with
+  | .continue _ => throw (IO.userError "subr(neg): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"subr(neg): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"subr(neg): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 11) s!"subr(neg): expected 11, got {n}"
+      | v => throw (IO.userError s!"subr(neg): unexpected stack value {v.pretty}")
+
 def testTuplePush : IO Unit := do
   let prog : List Instr :=
     [ .pushInt (.num 1)
@@ -537,6 +558,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.endc)
   roundtrip (.inc)
   roundtrip (.equal)
+  roundtrip (.subr)
   roundtrip (.throwIfNot 0)
   roundtrip (.throwIfNot 63)
   roundtrip (.throwIfNot 1000)
@@ -570,6 +592,7 @@ def main (_args : List String) : IO Unit := do
   testDec
   testAdd
   testSub
+  testSubr
   testTuplePush
   testBuilderBits
   testInc
