@@ -6,40 +6,50 @@ open TvmLean Tests
 def testAbs : IO Unit := do
   let progPos : List Instr := [ .pushInt (.num 7), .abs false ]
   match (← runProg progPos) with
-  | .continue _ => throw (IO.userError "abs(pos): did not halt")
+  | .continue _ => throw (IO.userError "abs(7): did not halt")
   | .halt exitCode st =>
-      assert (exitCode == -1) s!"abs(pos): unexpected exitCode={exitCode}"
-      assert (st.stack.size == 1) s!"abs(pos): unexpected stack size={st.stack.size}"
+      assert (exitCode == -1) s!"abs(7): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"abs(7): unexpected stack size={st.stack.size}"
       match st.stack[0]! with
-      | .int (.num n) => assert (n == 7) s!"abs(pos): expected 7, got {n}"
-      | v => throw (IO.userError s!"abs(pos): unexpected stack value {v.pretty}")
+      | .int (.num n) => assert (n == 7) s!"abs(7): expected 7, got {n}"
+      | v => throw (IO.userError s!"abs(7): unexpected stack value {v.pretty}")
 
-  let progNeg : List Instr := [ .pushInt (.num (-13)), .abs false ]
-  match (← runProg progNeg) with
-  | .continue _ => throw (IO.userError "abs(neg): did not halt")
+  let progNeg13 : List Instr := [ .pushInt (.num (-13)), .abs false ]
+  match (← runProg progNeg13) with
+  | .continue _ => throw (IO.userError "abs(-13): did not halt")
   | .halt exitCode st =>
-      assert (exitCode == -1) s!"abs(neg): unexpected exitCode={exitCode}"
-      assert (st.stack.size == 1) s!"abs(neg): unexpected stack size={st.stack.size}"
+      assert (exitCode == -1) s!"abs(-13): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"abs(-13): unexpected stack size={st.stack.size}"
       match st.stack[0]! with
-      | .int (.num n) => assert (n == 13) s!"abs(neg): expected 13, got {n}"
-      | v => throw (IO.userError s!"abs(neg): unexpected stack value {v.pretty}")
+      | .int (.num n) => assert (n == 13) s!"abs(-13): expected 13, got {n}"
+      | v => throw (IO.userError s!"abs(-13): unexpected stack value {v.pretty}")
 
-  let overflow : Int := -intPow2 256
-  let progOverflow : List Instr := [ .pushInt (.num overflow), .abs false ]
+  let progNeg7 : List Instr := [ .pushInt (.num (-7)), .abs false ]
+  match (← runProg progNeg7) with
+  | .continue _ => throw (IO.userError "abs(-7): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"abs(-7): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"abs(-7): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 7) s!"abs(-7): expected 7, got {n}"
+      | v => throw (IO.userError s!"abs(-7): unexpected stack value {v.pretty}")
+
+  let overflowVal : Int := -intPow2 256
+  let progOverflow : List Instr := [ .pushInt (.num overflowVal), .abs false ]
   match (← runProg progOverflow) with
   | .continue _ => throw (IO.userError "abs(overflow): did not halt")
   | .halt exitCode _ =>
       assert (exitCode == -5) s!"abs(overflow): expected exitCode=-5, got {exitCode}"
 
-  let progQuiet : List Instr := [ .pushInt (.num overflow), .abs true ]
-  match (← runProg progQuiet) with
+  let progQabs : List Instr := [ .pushInt (.num overflowVal), .abs true ]
+  match (← runProg progQabs) with
   | .continue _ => throw (IO.userError "qabs(overflow): did not halt")
   | .halt exitCode st =>
       assert (exitCode == -1) s!"qabs(overflow): unexpected exitCode={exitCode}"
       assert (st.stack.size == 1) s!"qabs(overflow): unexpected stack size={st.stack.size}"
       match st.stack[0]! with
       | .int .nan => pure ()
-      | v => throw (IO.userError s!"qabs(overflow): expected NaN, got {v.pretty}")
+      | v => throw (IO.userError s!"qabs(overflow): unexpected stack value {v.pretty}")
 
 initialize
   Tests.registerTest "arith/abs" testAbs

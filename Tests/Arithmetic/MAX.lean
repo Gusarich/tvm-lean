@@ -24,6 +24,21 @@ def testMax : IO Unit := do
       | .int (.num n) => assert (n == -5) s!"max(negative): expected -5, got {n}"
       | v => throw (IO.userError s!"max(negative): unexpected stack value {v.pretty}")
 
+  let codeCell ←
+    match assembleCp0 [ .max ] with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"max(nan): assembleCp0 failed: {reprStr e}")
+  let base := VmState.initial codeCell
+  let st0Nan : VmState := { base with stack := #[.int .nan, .int (.num 5)] }
+  match VmState.run 20 st0Nan with
+  | .continue _ => throw (IO.userError "max(nan): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"max(nan): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"max(nan): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int .nan => pure ()
+      | v => throw (IO.userError s!"max(nan): unexpected stack value {v.pretty}")
+
 initialize
   Tests.registerTest "arith/max" testMax
   Tests.registerRoundtrip (.max)
