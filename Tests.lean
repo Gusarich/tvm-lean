@@ -380,6 +380,27 @@ def testMax : IO Unit := do
       | .int (.num n) => assert (n == -5) s!"max(negative): expected -5, got {n}"
       | v => throw (IO.userError s!"max(negative): unexpected stack value {v.pretty}")
 
+def testMul : IO Unit := do
+  let progPos : List Instr := [ .pushInt (.num 6), .pushInt (.num 7), .mul ]
+  match (← runProg progPos) with
+  | .continue _ => throw (IO.userError "mul(pos): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"mul(pos): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"mul(pos): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 42) s!"mul(pos): expected 42, got {n}"
+      | v => throw (IO.userError s!"mul(pos): unexpected stack value {v.pretty}")
+
+  let progNeg : List Instr := [ .pushInt (.num 6), .pushInt (.num (-7)), .mul ]
+  match (← runProg progNeg) with
+  | .continue _ => throw (IO.userError "mul(neg): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"mul(neg): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"mul(neg): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == -42) s!"mul(neg): expected -42, got {n}"
+      | v => throw (IO.userError s!"mul(neg): unexpected stack value {v.pretty}")
+
 def testTuplePush : IO Unit := do
   let prog : List Instr :=
     [ .pushInt (.num 1)
@@ -630,6 +651,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.newc)
   roundtrip (.endc)
   roundtrip (.inc)
+  roundtrip (.mul)
   roundtrip (.equal)
   roundtrip (.subr)
   roundtrip (.throwIfNot 0)
@@ -671,6 +693,7 @@ def main (_args : List String) : IO Unit := do
   testSubr
   testNegate
   testMax
+  testMul
   testTuplePush
   testBuilderBits
   testInc
