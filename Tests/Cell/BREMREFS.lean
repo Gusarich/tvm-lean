@@ -8,7 +8,7 @@ def testBuilderRemRefs : IO Unit := do
     [ .newc
     , .newc
     , .endc
-    , .xchg 0 1
+    , .xchg0 1
     , .stref
     , .cellOp .bremrefs
     ]
