@@ -1229,6 +1229,7 @@ inductive Instr : Type
   | qmul
   | min
   | max
+  | qmax
   | minmax
   | qminmax
   | abs (quiet : Bool) -- ABS / QABS
@@ -1576,6 +1577,7 @@ def Instr.pretty : Instr → String
   | .qmul => "QMUL"
   | .min => "MIN"
   | .max => "MAX"
+  | .qmax => "QMAX"
   | .minmax => "MINMAX"
   | .qminmax => "QMINMAX"
   | .abs quiet => if quiet then "QABS" else "ABS"
@@ -1929,6 +1931,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .qmul, .qmul => true
   | .min, .min => true
   | .max, .max => true
+  | .qmax, .qmax => true
   | .minmax, .minmax => true
   | .bitsize, .bitsize => true
   | .qminmax, .qminmax => true
@@ -2526,6 +2529,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let bits : Nat := (w24 &&& 0xff) + 1
       let (_, s24) ← s.takeBitsAsNat 24
       return (.rshiftConst true bits, 24, s24)
+    if w24 = 0xb7b609 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.qmax, 24, s24)
     if w24 = 0xb7b60b then
       let (_, s24) ← s.takeBitsAsNat 24
       return (.abs true, 24, s24)
@@ -5199,6 +5205,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xb608 16
   | .max =>
       return natToBits 0xb609 16
+  | .qmax =>
+      return natToBits 0xb7b609 24
   | .minmax =>
       return natToBits 0xb60a 16
   | .qminmax =>
