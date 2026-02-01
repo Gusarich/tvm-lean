@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction STREF_ALT (category: cell).
