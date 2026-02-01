@@ -3,12 +3,12 @@ import TvmLean.Core.Exec.Common
 namespace TvmLean
 
 set_option maxHeartbeats 1000000 in
-def execInstrArithMin (i : Instr) (next : VM Unit) : VM Unit := do
+def execInstrArithQmul (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .min =>
+  | .qmul =>
       let y ← VM.popInt
       let x ← VM.popInt
-      VM.pushIntQuiet (x.min y) false
+      VM.pushIntQuiet (x.mul y) true
   | _ => next
 
 end TvmLean
