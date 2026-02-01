@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction STREF2CONST (category: cell).
