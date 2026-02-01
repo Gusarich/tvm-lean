@@ -436,6 +436,17 @@ def testBuilderBits : IO Unit := do
       | .int (.num n) => assert (n == 1) s!"bbits: expected 1, got {n}"
       | v => throw (IO.userError s!"bbits: unexpected stack value {v.pretty}")
 
+def testBuilderRemainingBits : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 1), .newc, .stu 1, .cellOp .brembits ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "brembits: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"brembits: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"brembits: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 1022) s!"brembits: expected 1022, got {n}"
+      | v => throw (IO.userError s!"brembits: unexpected stack value {v.pretty}")
+
 def testInc : IO Unit := do
   let progPos : List Instr := [ .pushInt (.num 41), .inc ]
   match (← runProg progPos) with
@@ -696,6 +707,7 @@ def main (_args : List String) : IO Unit := do
   testMul
   testTuplePush
   testBuilderBits
+  testBuilderRemainingBits
   testInc
   testMin
   testXctosIsSpecial
