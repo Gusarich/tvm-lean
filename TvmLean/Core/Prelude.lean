@@ -1179,6 +1179,7 @@ inductive Instr : Type
   | xctos
   | newc
   | endc
+  | endcst
   | ends
   | ldu (bits : Nat)
   | loadInt (unsigned : Bool) (prefetch : Bool) (quiet : Bool) (bits : Nat)
@@ -1486,6 +1487,7 @@ def Instr.pretty : Instr → String
   | .xctos => "XCTOS"
   | .newc => "NEWC"
   | .endc => "ENDC"
+  | .endcst => "ENDCST"
   | .ends => "ENDS"
   | .ldu bits => s!"LDU {bits}"
   | .loadInt unsigned prefetch quiet bits =>
@@ -3784,7 +3786,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   -- ENDCST: 0xcd (8). Alias for STBREFR (non-quiet).
   if b8 = 0xcd then
     let (_, s') ← s.takeBitsAsNat 8
-    return (.stbRef true false, 8, s')
+    return (.endcst, 8, s')
   if b8 = 0xce then
     let (_, s') ← s.takeBitsAsNat 8
     return (.stSlice false false, 8, s')
@@ -4991,6 +4993,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xc8 8
   | .endc =>
       return natToBits 0xc9 8
+  | .endcst =>
+      return natToBits 0xcd 8
   | .ends =>
       return natToBits 0xd1 8
   | .ldu bits =>
