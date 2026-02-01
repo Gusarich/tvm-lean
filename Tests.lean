@@ -380,6 +380,16 @@ def testMax : IO Unit := do
       | .int (.num n) => assert (n == -5) s!"max(negative): expected -5, got {n}"
       | v => throw (IO.userError s!"max(negative): unexpected stack value {v.pretty}")
 
+  let progNan : List Instr := [ .pushInt .nan, .pushInt (.num 5), .max ]
+  match (← runProg progNan) with
+  | .continue _ => throw (IO.userError "max(nan): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"max(nan): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"max(nan): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int .nan => pure ()
+      | v => throw (IO.userError s!"max(nan): unexpected stack value {v.pretty}")
+
 def testMul : IO Unit := do
   let progPos : List Instr := [ .pushInt (.num 6), .pushInt (.num 7), .mul ]
   match (← runProg progPos) with
