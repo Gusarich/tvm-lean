@@ -4,7 +4,7 @@ import Tests.Registry
 open TvmLean Tests
 
 def testBuilderRemBitRefs : IO Unit := do
-  let prog : List Instr := [ .pushInt (.num 1), .newc, .stu 1, .brembitrefs ]
+  let prog : List Instr := [ .pushInt (.num 1), .newc, .stu 1, .cellOp .brembitrefs ]
   match (← runProg prog) with
   | .continue _ => throw (IO.userError "brembitrefs: did not halt")
   | .halt exitCode st =>
@@ -18,4 +18,4 @@ def testBuilderRemBitRefs : IO Unit := do
 
 initialize
   Tests.registerTest "cell/brembitrefs" testBuilderRemBitRefs
-  Tests.registerRoundtrip (.brembitrefs)
+  Tests.registerRoundtrip (.cellOp .brembitrefs)
