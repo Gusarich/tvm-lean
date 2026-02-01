@@ -12,6 +12,7 @@ import TvmLean.Core.Exec.Arith.Qsub
 import TvmLean.Core.Exec.Arith.Subr
 import TvmLean.Core.Exec.Arith.MulInt
 import TvmLean.Core.Exec.Arith.Mul
+import TvmLean.Core.Exec.Arith.Qmul
 import TvmLean.Core.Exec.Arith.Min
 import TvmLean.Core.Exec.Arith.Max
 import TvmLean.Core.Exec.Arith.Minmax
@@ -67,6 +68,7 @@ def execInstrArith (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrArithSubr i <|
   execInstrArithMulInt i <|
   execInstrArithMul i <|
+  execInstrArithQmul i <|
   execInstrArithMin i <|
   execInstrArithMax i <|
   execInstrArithMinmax i <|
