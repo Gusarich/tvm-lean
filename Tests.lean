@@ -307,6 +307,17 @@ def testSub : IO Unit := do
       | .int (.num n) => assert (n == -8) s!"sub(neg): expected -8, got {n}"
       | v => throw (IO.userError s!"sub(neg): unexpected stack value {v.pretty}")
 
+def testQsub : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 12), .pushInt (.num 7), .qsub ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "qsub: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"qsub: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"qsub: unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 5) s!"qsub: expected 5, got {n}"
+      | v => throw (IO.userError s!"qsub: unexpected stack value {v.pretty}")
+
 def testSubr : IO Unit := do
   let prog : List Instr := [ .pushInt (.num 5), .pushInt (.num 2), .subr ]
   match (← runProg prog) with
@@ -674,6 +685,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.min)
   roundtrip (.try_)
   roundtrip (.sub)
+  roundtrip (.qsub)
   roundtrip (.chkSignU)
   roundtrip (.chkSignS)
   roundtrip (.getOriginalFwdFee)
@@ -690,6 +702,7 @@ def main (_args : List String) : IO Unit := do
   testDec
   testAdd
   testSub
+  testQsub
   testSubr
   testNegate
   testMax
