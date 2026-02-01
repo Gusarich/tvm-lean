@@ -436,6 +436,31 @@ def testBuilderBits : IO Unit := do
       | .int (.num n) => assert (n == 1) s!"bbits: expected 1, got {n}"
       | v => throw (IO.userError s!"bbits: unexpected stack value {v.pretty}")
 
+def testStbr : IO Unit := do
+  let prog : List Instr :=
+    [ .pushInt (.num 1)
+    , .newc
+    , .stu 1
+    , .pushInt (.num 0)
+    , .newc
+    , .stu 1
+    , .stb true false
+    , .endc
+    , .ctos
+    , .ldu 2
+    ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "stbr: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"stbr: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 2) s!"stbr: unexpected stack size={st.stack.size}"
+      match st.stack[0]!, st.stack[1]! with
+      | .slice s, .int (.num n) =>
+          assert (n == 2) s!"stbr: expected 2, got {n}"
+          assert (s.bitsRemaining == 0) s!"stbr: expected empty slice, got bitsRemaining={s.bitsRemaining}"
+      | v0, v1 =>
+          throw (IO.userError s!"stbr: unexpected stack values {v0.pretty}, {v1.pretty}")
+
 def testInc : IO Unit := do
   let progPos : List Instr := [ .pushInt (.num 41), .inc ]
   match (← runProg progPos) with
@@ -696,6 +721,7 @@ def main (_args : List String) : IO Unit := do
   testMul
   testTuplePush
   testBuilderBits
+  testStbr
   testInc
   testMin
   testXctosIsSpecial
