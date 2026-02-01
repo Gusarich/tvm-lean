@@ -206,6 +206,20 @@ def testEqual : IO Unit := do
       | .int (.num n) => assert (n == -1) s!"equal: expected -1, got {n}"
       | v => throw (IO.userError s!"equal: unexpected stack value {v.pretty}")
 
+def testGreater : IO Unit := do
+  let runCase (x y expected : Int) : IO Unit := do
+    let prog : List Instr := [ .pushInt (.num x), .pushInt (.num y), .greater ]
+    match (← runProg prog) with
+    | .continue _ => throw (IO.userError "greater: did not halt")
+    | .halt exitCode st =>
+        assert (exitCode == -1) s!"greater: unexpected exitCode={exitCode}"
+        assert (st.stack.size == 1) s!"greater: unexpected stack size={st.stack.size}"
+        match st.stack[0]! with
+        | .int (.num n) => assert (n == expected) s!"greater: expected {expected}, got {n}"
+        | v => throw (IO.userError s!"greater: unexpected stack value {v.pretty}")
+  runCase 10 5 (-1)
+  runCase 5 10 0
+
 def testIfNotRet : IO Unit := do
   -- IFNOTRET returns when flag is false (0); the following PUSHINT must not execute.
   let prog : List Instr := [ .pushInt (.num 0), .ifnotret, .pushInt (.num 99) ]
@@ -653,6 +667,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.inc)
   roundtrip (.mul)
   roundtrip (.equal)
+  roundtrip (.greater)
   roundtrip (.subr)
   roundtrip (.throwIfNot 0)
   roundtrip (.throwIfNot 63)
@@ -684,6 +699,7 @@ def main (_args : List String) : IO Unit := do
   testBocParseSamples
   testBocSerializeMatchesCanonical
   testEqual
+  testGreater
   testIfNotRet
   testSetCp
   testShifts
