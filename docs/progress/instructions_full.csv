@@ -1,6 +1,6 @@
 kind,name,category,sub_category,implemented,tested,notes
 tvm,PUSHNAN,arithmetic,int_const,false,false,
-tvm,ADD,arithmetic,add_mul,true,false,
+tvm,ADD,arithmetic,add_mul,true,true,
 tvm,SUB,arithmetic,add_mul,true,false,
 tvm,SUBR,arithmetic,add_mul,false,false,
 tvm,NEGATE,arithmetic,add_mul,true,false,

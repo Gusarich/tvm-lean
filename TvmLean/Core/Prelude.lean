@@ -114,6 +114,11 @@ def IntVal.mul (x y : IntVal) : IntVal :=
   | .num a, .num b => .num (a * b)
   | _, _ => .nan
 
+def IntVal.min (x y : IntVal) : IntVal :=
+  match x, y with
+  | .num a, .num b => .num (if a ≤ b then a else b)
+  | _, _ => .nan
+
 def IntVal.inc (x : IntVal) : IntVal :=
   x.add (.num 1)
 
@@ -1179,6 +1184,7 @@ inductive Instr : Type
   | xctos
   | newc
   | endc
+  | endcst
   | ends
   | ldu (bits : Nat)
   | loadInt (unsigned : Bool) (prefetch : Bool) (quiet : Bool) (bits : Nat)
@@ -1209,6 +1215,7 @@ inductive Instr : Type
   | inc
   | qinc
   | dec
+  | qdec
   | negate
   | qnegate
   | add
@@ -1216,13 +1223,18 @@ inductive Instr : Type
   | addInt (n : Int) -- ADDINT <tinyint8>
   | sub
   | qsub
+  | qsubr
   | subr
   | mulInt (n : Int) -- MULINT <tinyint8>
   | mul
+  | qmul
   | min
   | max
+  | qmax
   | minmax
+  | qminmax
   | abs (quiet : Bool) -- ABS / QABS
+  | bitsize -- BITSIZE
   | mulShrModConst (d : Nat) (roundMode : Int) (z : Nat) -- MUL{RSHIFT,MODPOW2,RSHIFTMOD}# <z>
   | divMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) -- {Q}{ADD}{DIV,MOD,DIVMOD}{R,C}
   | mulDivMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) -- {Q}{MUL,MULADD}{DIV,MOD,DIVMOD}{R,C}
@@ -1268,6 +1280,7 @@ inductive Instr : Type
   | greater
   | geq
   | cmp
+  | qcmp
   | sbits
   | srefs
   | sbitrefs
@@ -1278,6 +1291,8 @@ inductive Instr : Type
   | sdCntLead0         -- SDCNTLEAD0
   | sdCntTrail0        -- SDCNTTRAIL0
   | sdEq              -- SDEQ
+  | sdPpfx            -- SDPPFX
+  | sdPfx             -- SDPFX
   | sdcutfirst        -- SDCUTFIRST
   | sdskipfirst       -- SDSKIPFIRST
   | sdcutlast         -- SDCUTLAST
@@ -1438,7 +1453,7 @@ def CellInstr.pretty : CellInstr → String
 
 def Instr.pretty : Instr → String
   | .nop => "NOP"
-  | .pushInt .nan => "PUSHINT NaN"
+  | .pushInt .nan => "PUSHNAN"
   | .pushInt (.num n) => s!"PUSHINT {n}"
   | .pushPow2 exp => s!"PUSHPOW2 {exp}"
   | .pushPow2Dec exp => s!"PUSHPOW2DEC {exp}"
@@ -1487,6 +1502,7 @@ def Instr.pretty : Instr → String
   | .xctos => "XCTOS"
   | .newc => "NEWC"
   | .endc => "ENDC"
+  | .endcst => "ENDCST"
   | .ends => "ENDS"
   | .ldu bits => s!"LDU {bits}"
   | .loadInt unsigned prefetch quiet bits =>
@@ -1548,6 +1564,7 @@ def Instr.pretty : Instr → String
   | .inc => "INC"
   | .qinc => "QINC"
   | .dec => "DEC"
+  | .qdec => "QDEC"
   | .negate => "NEGATE"
   | .qnegate => "QNEGATE"
   | .add => "ADD"
@@ -1555,13 +1572,18 @@ def Instr.pretty : Instr → String
   | .addInt n => s!"ADDINT {n}"
   | .sub => "SUB"
   | .qsub => "QSUB"
+  | .qsubr => "QSUBR"
   | .subr => "SUBR"
   | .mulInt n => s!"MULINT {n}"
   | .mul => "MUL"
+  | .qmul => "QMUL"
   | .min => "MIN"
   | .max => "MAX"
+  | .qmax => "QMAX"
   | .minmax => "MINMAX"
+  | .qminmax => "QMINMAX"
   | .abs quiet => if quiet then "QABS" else "ABS"
+  | .bitsize => "BITSIZE"
   | .mulShrModConst d roundMode z =>
       let base :=
         match d with
@@ -1700,6 +1722,7 @@ def Instr.pretty : Instr → String
   | .greater => "GREATER"
   | .geq => "GEQ"
   | .cmp => "CMP"
+  | .qcmp => "QCMP"
   | .sbits => "SBITS"
   | .srefs => "SREFS"
   | .sbitrefs => "SBITREFS"
@@ -1710,6 +1733,8 @@ def Instr.pretty : Instr → String
   | .sdCntLead0 => "SDCNTLEAD0"
   | .sdCntTrail0 => "SDCNTTRAIL0"
   | .sdEq => "SDEQ"
+  | .sdPpfx => "SDPPFX"
+  | .sdPfx => "SDPFX"
   | .sdcutfirst => "SDCUTFIRST"
   | .sdskipfirst => "SDSKIPFIRST"
   | .sdcutlast => "SDCUTLAST"
@@ -1896,16 +1921,23 @@ instance : BEq Instr := ⟨fun a b =>
   | .inc, .inc => true
   | .qinc, .qinc => true
   | .dec, .dec => true
+  | .qdec, .qdec => true
   | .negate, .negate => true
   | .qnegate, .qnegate => true
   | .add, .add => true
   | .sub, .sub => true
+  | .qsub, .qsub => true
+  | .qsubr, .qsubr => true
   | .subr, .subr => true
   | .mulInt x, .mulInt y => x == y
   | .mul, .mul => true
+  | .qmul, .qmul => true
   | .min, .min => true
   | .max, .max => true
+  | .qmax, .qmax => true
   | .minmax, .minmax => true
+  | .bitsize, .bitsize => true
+  | .qminmax, .qminmax => true
   | .mulShrModConst dx rx zx, .mulShrModConst dy ry zy => dx == dy && rx == ry && zx == zy
   | .divMod dx rx ax qx, .divMod dy ry ay qy => dx == dy && rx == ry && ax == ay && qx == qy
   | .lshiftConst qx bx, .lshiftConst qy by_ => qx == qy && bx == by_
@@ -1936,6 +1968,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .greater, .greater => true
   | .geq, .geq => true
   | .cmp, .cmp => true
+  | .qcmp, .qcmp => true
   | .sbits, .sbits => true
   | .srefs, .srefs => true
   | .sbitrefs, .sbitrefs => true
@@ -1944,6 +1977,8 @@ instance : BEq Instr := ⟨fun a b =>
   | .srempty, .srempty => true
   | .sdCntTrail0, .sdCntTrail0 => true
   | .sdEq, .sdEq => true
+  | .sdPpfx, .sdPpfx => true
+  | .sdPfx, .sdPfx => true
   | .sdcutfirst, .sdcutfirst => true
   | .sdskipfirst, .sdskipfirst => true
   | .sdcutlast, .sdcutlast => true
@@ -2497,9 +2532,15 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let bits : Nat := (w24 &&& 0xff) + 1
       let (_, s24) ← s.takeBitsAsNat 24
       return (.rshiftConst true bits, 24, s24)
+    if w24 = 0xb7b609 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.qmax, 24, s24)
     if w24 = 0xb7b60b then
       let (_, s24) ← s.takeBitsAsNat 24
       return (.abs true, 24, s24)
+    if w24 = 0xb7b60a then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.qminmax, 24, s24)
 
     -- QDIV/MOD family (24-bit): 20-bit prefix 0xb7a90 + 4-bit args.
     let p20 := w24 >>> 4
@@ -2959,6 +3000,12 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xc705 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdEq, 16, s16)
+    if w16 = 0xc708 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.sdPfx, 16, s16)
+    if w16 = 0xc70a then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.sdPpfx, 16, s16)
     if w16 = 0xd720 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdcutfirst, 16, s16)
@@ -2980,6 +3027,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb60a then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.minmax, 16, s16)
+    if w16 = 0xb602 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.bitsize, 16, s16)
     if w16 = 0xb60b then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.abs false, 16, s16)
@@ -2989,12 +3039,24 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb7a1 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qsub, 16, s16)
+    if w16 = 0xb7a2 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qsubr, 16, s16)
+    if w16 = 0xb7a8 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qmul, 16, s16)
     if w16 = 0xb7a3 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qnegate, 16, s16)
     if w16 = 0xb7a4 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qinc, 16, s16)
+    if w16 = 0xb7a5 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qdec, 16, s16)
+    if w16 = 0xb7bf then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qcmp, 16, s16)
     -- PUSHPOW2 / PUSHNAN: 0x8300..0x83ff.
     if w16 &&& 0xff00 = 0x8300 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -3790,7 +3852,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   -- ENDCST: 0xcd (8). Alias for STBREFR (non-quiet).
   if b8 = 0xcd then
     let (_, s') ← s.takeBitsAsNat 8
-    return (.stbRef true false, 8, s')
+    return (.endcst, 8, s')
   if b8 = 0xce then
     let (_, s') ← s.takeBitsAsNat 8
     return (.stSlice false false, 8, s')
@@ -4751,7 +4813,7 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
   | .nop =>
       return natToBits 0x00 8
   | .pushInt .nan =>
-      throw .invOpcode
+      return natToBits 0x83ff 16
   | .pushInt (.num n) =>
       if (-5 ≤ n ∧ n ≤ 10) then
         let imm : Nat :=
@@ -4997,6 +5059,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xc8 8
   | .endc =>
       return natToBits 0xc9 8
+  | .endcst =>
+      return natToBits 0xcd 8
   | .ends =>
       return natToBits 0xd1 8
   | .ldu bits =>
@@ -5115,6 +5179,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xb7a4 16
   | .dec =>
       return natToBits 0xa5 8
+  | .qdec =>
+      return natToBits 0xb7a5 16
   | .add =>
       return natToBits 0xa0 8
   | .qadd =>
@@ -5129,6 +5195,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xa1 8
   | .qsub =>
       return natToBits 0xb7a1 16
+  | .qsubr =>
+      return natToBits 0xb7a2 16
   | .subr =>
       return natToBits 0xa2 8
   | .mulInt n =>
@@ -5139,17 +5207,25 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         throw .rangeChk
   | .mul =>
       return natToBits 0xa8 8
+  | .qmul =>
+      return natToBits 0xb7a8 16
   | .min =>
       return natToBits 0xb608 16
   | .max =>
       return natToBits 0xb609 16
+  | .qmax =>
+      return natToBits 0xb7b609 24
   | .minmax =>
       return natToBits 0xb60a 16
+  | .qminmax =>
+      return natToBits 0xb7b60a 24
   | .abs quiet =>
       if quiet then
         return natToBits 0xb7b60b 24
       else
         return natToBits 0xb60b 16
+  | .bitsize =>
+      return natToBits 0xb602 16
   | .mulShrModConst _ _ _ =>
       throw .invOpcode
   | .divMod d roundMode addMode quiet =>
@@ -5228,6 +5304,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xbe 8
   | .cmp =>
       return natToBits 0xbf 8
+  | .qcmp =>
+      return natToBits 0xb7bf 16
   | .sbits =>
       return natToBits 0xd749 16
   | .srefs =>
@@ -5248,6 +5326,10 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xc712 16
   | .sdEq =>
       return natToBits 0xc705 16
+  | .sdPpfx =>
+      return natToBits 0xc70a 16
+  | .sdPfx =>
+      return natToBits 0xc708 16
   | .sdcutfirst =>
       return natToBits 0xd720 16
   | .sdskipfirst =>
