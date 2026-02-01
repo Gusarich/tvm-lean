@@ -1223,6 +1223,7 @@ inductive Instr : Type
   | subr
   | mulInt (n : Int) -- MULINT <tinyint8>
   | mul
+  | qmul
   | min
   | max
   | minmax
@@ -1563,6 +1564,7 @@ def Instr.pretty : Instr → String
   | .subr => "SUBR"
   | .mulInt n => s!"MULINT {n}"
   | .mul => "MUL"
+  | .qmul => "QMUL"
   | .min => "MIN"
   | .max => "MAX"
   | .minmax => "MINMAX"
@@ -1909,6 +1911,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .subr, .subr => true
   | .mulInt x, .mulInt y => x == y
   | .mul, .mul => true
+  | .qmul, .qmul => true
   | .min, .min => true
   | .max, .max => true
   | .minmax, .minmax => true
@@ -3000,6 +3003,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb7a1 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qsub, 16, s16)
+    if w16 = 0xb7a8 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qmul, 16, s16)
     if w16 = 0xb7a3 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qnegate, 16, s16)
@@ -5148,6 +5154,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         throw .rangeChk
   | .mul =>
       return natToBits 0xa8 8
+  | .qmul =>
+      return natToBits 0xb7a8 16
   | .min =>
       return natToBits 0xb608 16
   | .max =>
