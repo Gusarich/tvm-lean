@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction NULLSWAPIF2 (category: tuple).
