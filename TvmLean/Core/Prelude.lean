@@ -1222,6 +1222,7 @@ inductive Instr : Type
   | addInt (n : Int) -- ADDINT <tinyint8>
   | sub
   | qsub
+  | qsubr
   | subr
   | mulInt (n : Int) -- MULINT <tinyint8>
   | mul
@@ -1568,6 +1569,7 @@ def Instr.pretty : Instr → String
   | .addInt n => s!"ADDINT {n}"
   | .sub => "SUB"
   | .qsub => "QSUB"
+  | .qsubr => "QSUBR"
   | .subr => "SUBR"
   | .mulInt n => s!"MULINT {n}"
   | .mul => "MUL"
@@ -1919,6 +1921,8 @@ instance : BEq Instr := ⟨fun a b =>
   | .qnegate, .qnegate => true
   | .add, .add => true
   | .sub, .sub => true
+  | .qsub, .qsub => true
+  | .qsubr, .qsubr => true
   | .subr, .subr => true
   | .mulInt x, .mulInt y => x == y
   | .mul, .mul => true
@@ -3026,6 +3030,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb7a1 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qsub, 16, s16)
+    if w16 = 0xb7a2 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.qsubr, 16, s16)
     if w16 = 0xb7a8 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qmul, 16, s16)
@@ -5174,6 +5181,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xa1 8
   | .qsub =>
       return natToBits 0xb7a1 16
+  | .qsubr =>
+      return natToBits 0xb7a2 16
   | .subr =>
       return natToBits 0xa2 8
   | .mulInt n =>
