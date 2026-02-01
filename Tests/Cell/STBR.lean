@@ -22,7 +22,7 @@ def testStbr : IO Unit := do
       assert (exitCode == -1) s!"stbr: unexpected exitCode={exitCode}"
       assert (st.stack.size == 2) s!"stbr: unexpected stack size={st.stack.size}"
       match st.stack[0]!, st.stack[1]! with
-      | .slice s, .int (.num n) =>
+      | .int (.num n), .slice s =>
           assert (n == 2) s!"stbr: expected 2, got {n}"
           assert (s.bitsRemaining == 0) s!"stbr: expected empty slice, got bitsRemaining={s.bitsRemaining}"
       | v0, v1 =>
