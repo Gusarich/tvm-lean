@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction MODPOW2R (category: arithmetic).
