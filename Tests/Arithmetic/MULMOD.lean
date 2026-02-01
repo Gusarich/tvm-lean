@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction MULMOD (category: arithmetic).
