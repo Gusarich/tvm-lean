@@ -8,7 +8,11 @@ def execInstrArithEqual (i : Instr) (next : VM Unit) : VM Unit := do
   | .equal =>
       let y ← VM.popInt
       let x ← VM.popInt
-      VM.pushIntQuiet (x.equalResult y) false
+      match x, y with
+      | .nan, _ => VM.pushIntQuiet .nan false
+      | _, .nan => VM.pushIntQuiet .nan false
+      | .num a, .num b =>
+          VM.pushSmallInt (if a = b then -1 else 0)
   | _ => next
 
 end TvmLean
