@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGetParam (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .getParam idx =>
+  | .tonEnvOp (.getParam idx) =>
       let st ← get
       if 0 < st.regs.c7.size then
         match st.regs.c7[0]! with

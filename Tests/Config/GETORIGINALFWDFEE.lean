@@ -17,7 +17,7 @@ def msgForwardPricesCell (firstFrac : Nat) : Cell :=
   Cell.mkOrdinary bits #[]
 
 def testGetOriginalFwdFee : IO Unit := do
-  let prog : List Instr := [ .getOriginalFwdFee ]
+  let prog : List Instr := [ .tonEnvOp .getOriginalFwdFee ]
   let codeCell ←
     match assembleCp0 prog with
     | .ok c => pure c
@@ -62,4 +62,4 @@ def testGetOriginalFwdFee : IO Unit := do
 
 initialize
   Tests.registerTest "config/getoriginalfwdfee" testGetOriginalFwdFee
-  Tests.registerRoundtrip (.getOriginalFwdFee)
+  Tests.registerRoundtrip (.tonEnvOp .getOriginalFwdFee)

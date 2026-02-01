@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvGetForwardFeeSimple (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .getForwardFeeSimple =>
+  | .tonEnvOp .getForwardFeeSimple =>
       -- Matches C++ `exec_get_forward_fee_simple` (tonops.cpp).
       -- Stack: ... cells bits is_masterchain -- ... fwd_fee_simple
       let isMasterchain ← VM.popBool

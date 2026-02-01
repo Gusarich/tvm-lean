@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrMsgRawReserveX (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .rawReserveX =>
+  | .tonEnvOp .rawReserveX =>
       -- Matches C++ `exec_reserve_raw` (mode=1; tonops.cpp).
       let f ← VM.popNatUpTo 31
       let y? ← VM.popMaybeCell

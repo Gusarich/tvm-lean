@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrCryptoHashExt (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .hashExt hashId0 append rev =>
+  | .cryptoOp (.hashExt hashId0 append rev) =>
       -- Mirrors C++ `exec_hash_ext` (tonops.cpp).
       -- Args: hash_id8 + rev(bit8) + append(bit9). If hash_id8 = 255, read hash_id from stack.
       -- Stack (append=false):  ... x[cnt-1] ... x[0] cnt  -- ... hash

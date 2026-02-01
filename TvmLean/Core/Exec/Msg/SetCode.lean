@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrMsgSetCode (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .setCode =>
+  | .tonEnvOp .setCode =>
       let codeCell ← VM.popCell
       modify fun st => st.consumeGas cellCreateGasPrice
       let st ← get

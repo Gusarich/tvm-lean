@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvSetRand (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .setRand mix =>
+  | .tonEnvOp (.setRand mix) =>
       let x ← VM.popIntFinite
       if decide (x < 0 ∨ x ≥ intPow2 256) then
         throw .rangeChk

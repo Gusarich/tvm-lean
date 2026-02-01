@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrTonEnvRewriteStdAddr (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .rewriteStdAddr quiet =>
+  | .tonEnvOp (.rewriteStdAddr quiet) =>
       let csr0 ← VM.popSlice
       let parsed : Except Excno (Int × Nat) := do
         let (tag, s2) ← csr0.takeBitsAsNatCellUnd 2
