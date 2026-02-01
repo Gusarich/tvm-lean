@@ -244,6 +244,27 @@ def testShifts : IO Unit := do
       | .int (.num n) => assert (n == 1) s!"rshift: expected 1, got {n}"
       | v => throw (IO.userError s!"rshift: unexpected stack value {v.pretty}")
 
+def testDec : IO Unit := do
+  let progPos : List Instr := [ .pushInt (.num 10), .dec ]
+  match (← runProg progPos) with
+  | .continue _ => throw (IO.userError "dec(pos): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"dec(pos): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"dec(pos): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 9) s!"dec(pos): expected 9, got {n}"
+      | v => throw (IO.userError s!"dec(pos): unexpected stack value {v.pretty}")
+
+  let progNeg : List Instr := [ .pushInt (.num (-1)), .dec ]
+  match (← runProg progNeg) with
+  | .continue _ => throw (IO.userError "dec(neg): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"dec(neg): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"dec(neg): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == -2) s!"dec(neg): expected -2, got {n}"
+      | v => throw (IO.userError s!"dec(neg): unexpected stack value {v.pretty}")
+
 def testTuplePush : IO Unit := do
   let prog : List Instr :=
     [ .pushInt (.num 1)
@@ -278,6 +299,27 @@ def testBuilderBits : IO Unit := do
       match st.stack[0]! with
       | .int (.num n) => assert (n == 1) s!"bbits: expected 1, got {n}"
       | v => throw (IO.userError s!"bbits: unexpected stack value {v.pretty}")
+
+def testInc : IO Unit := do
+  let progPos : List Instr := [ .pushInt (.num 41), .inc ]
+  match (← runProg progPos) with
+  | .continue _ => throw (IO.userError "inc(pos): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"inc(pos): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"inc(pos): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 42) s!"inc(pos): expected 42, got {n}"
+      | v => throw (IO.userError s!"inc(pos): unexpected stack value {v.pretty}")
+
+  let progNeg : List Instr := [ .pushInt (.num (-2)), .inc ]
+  match (← runProg progNeg) with
+  | .continue _ => throw (IO.userError "inc(neg): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"inc(neg): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"inc(neg): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == -1) s!"inc(neg): expected -1, got {n}"
+      | v => throw (IO.userError s!"inc(neg): unexpected stack value {v.pretty}")
 
 def cellOfBytes (bs : Array UInt8) : Cell :=
   Id.run do
@@ -466,6 +508,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.boolOr)
   roundtrip (.composBoth)
   roundtrip (.bbits)
+  roundtrip (.dec)
   roundtrip (.try_)
   roundtrip (.chkSignU)
   roundtrip (.chkSignS)
@@ -480,8 +523,10 @@ def main (_args : List String) : IO Unit := do
   testIfNotRet
   testSetCp
   testShifts
+  testDec
   testTuplePush
   testBuilderBits
+  testInc
   testXctosIsSpecial
   testChkSignU
   testGetOriginalFwdFee
