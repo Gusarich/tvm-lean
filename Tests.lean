@@ -436,6 +436,22 @@ def testBuilderBits : IO Unit := do
       | .int (.num n) => assert (n == 1) s!"bbits: expected 1, got {n}"
       | v => throw (IO.userError s!"bbits: unexpected stack value {v.pretty}")
 
+def testStSliceQ : IO Unit := do
+  let slice := Slice.ofCell (Cell.ofUInt 8 0xab)
+  let prog : List Instr := [ .pushSliceConst slice, .newc, .stSlice false true ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "stsliceq: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"stsliceq: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 2) s!"stsliceq: unexpected stack size={st.stack.size}"
+      match st.stack[0]!, st.stack[1]! with
+      | .builder b, .int (.num status) =>
+          assert (status == 0) s!"stsliceq: expected status=0, got {status}"
+          assert (b.bits == natToBits 0xab 8) s!"stsliceq: unexpected builder bits"
+          assert (b.refs.size == 0) s!"stsliceq: unexpected builder refs={b.refs.size}"
+      | v0, v1 =>
+          throw (IO.userError s!"stsliceq: unexpected stack values {v0.pretty}, {v1.pretty}")
+
 def testInc : IO Unit := do
   let progPos : List Instr := [ .pushInt (.num 41), .inc ]
   match (← runProg progPos) with
@@ -677,6 +693,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.chkSignU)
   roundtrip (.chkSignS)
   roundtrip (.getOriginalFwdFee)
+  roundtrip (.stSlice false true)
   testCounter
   testBocCounter
   testBocArithSample
@@ -696,6 +713,7 @@ def main (_args : List String) : IO Unit := do
   testMul
   testTuplePush
   testBuilderBits
+  testStSliceQ
   testInc
   testMin
   testXctosIsSpecial
