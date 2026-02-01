@@ -1,6 +1,7 @@
 import TvmLean.Core.Exec.Common
 import TvmLean.Core.Exec.Arith.Inc
 import TvmLean.Core.Exec.Arith.Dec
+import TvmLean.Core.Exec.Arith.Qdec
 import TvmLean.Core.Exec.Arith.Negate
 import TvmLean.Core.Exec.Arith.Qnegate
 import TvmLean.Core.Exec.Arith.Add
@@ -11,10 +12,12 @@ import TvmLean.Core.Exec.Arith.Qsub
 import TvmLean.Core.Exec.Arith.Subr
 import TvmLean.Core.Exec.Arith.MulInt
 import TvmLean.Core.Exec.Arith.Mul
+import TvmLean.Core.Exec.Arith.Qmul
 import TvmLean.Core.Exec.Arith.Min
 import TvmLean.Core.Exec.Arith.Max
 import TvmLean.Core.Exec.Arith.Minmax
 import TvmLean.Core.Exec.Arith.Abs
+import TvmLean.Core.Exec.Arith.Bitsize
 import TvmLean.Core.Exec.Arith.MulShrModConst
 import TvmLean.Core.Exec.Arith.DivMod
 import TvmLean.Core.Exec.Arith.MulDivMod
@@ -55,6 +58,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrArith (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrArithInc i <|
   execInstrArithDec i <|
+  execInstrArithQdec i <|
   execInstrArithNegate i <|
   execInstrArithQnegate i <|
   execInstrArithAdd i <|
@@ -65,10 +69,12 @@ def execInstrArith (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrArithSubr i <|
   execInstrArithMulInt i <|
   execInstrArithMul i <|
+  execInstrArithQmul i <|
   execInstrArithMin i <|
   execInstrArithMax i <|
   execInstrArithMinmax i <|
   execInstrArithAbs i <|
+  execInstrArithBitsize i <|
   execInstrArithMulShrModConst i <|
   execInstrArithDivMod i <|
   execInstrArithMulDivMod i <|
