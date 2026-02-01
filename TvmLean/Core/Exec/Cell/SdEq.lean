@@ -8,10 +8,10 @@ def execInstrCellSdEq (i : Instr) (next : VM Unit) : VM Unit := do
   | .sdEq =>
       let s2 ← VM.popSlice
       let s1 ← VM.popSlice
-      -- Matches C++ `CellSlice::lex_cmp`: compare only remaining bits (ignore refs).
-      let b1 := s1.readBits s1.bitsRemaining
-      let b2 := s2.readBits s2.bitsRemaining
-      VM.pushSmallInt (if b1 == b2 then -1 else 0)
+      -- Matches C++ `CellSlice::lex_cmp` equality: compare remaining bits and refs.
+      let c1 := s1.toCellRemaining
+      let c2 := s2.toCellRemaining
+      VM.pushSmallInt (if c1 == c2 then -1 else 0)
   | _ => next
 
 end TvmLean

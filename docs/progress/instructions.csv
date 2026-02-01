@@ -58,7 +58,7 @@ AND,true,false
 PLDU,true,false
 IFELSE,true,false
 STI,true,false
-ADD,true,false
+ADD,true,true
 BLKSWAP,true,false
 THROWIF,true,false
 IFJMPREF,true,false
