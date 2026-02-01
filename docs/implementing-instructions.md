@@ -26,15 +26,19 @@ In the issue description:
 
 ## 2) Find the relevant Lean code
 
-Most opcode work touches `TvmLean/Core.lean`:
+Most opcode work touches `TvmLean/Core.lean` (a thin re-export), but the real definitions live in:
 
-- `inductive Instr` — instruction AST
-- `def Instr.pretty` — mnemonic formatting (useful for grepping and traces)
-- `def decodeCp0WithBits` / `def decodeCp0` — cp0 bitcode decoder
-- `def encodeCp0` / `def assembleCp0` — encoder/assembler helpers
-- `def execInstr` — semantics (stack/register/memory effects)
+- `TvmLean/Core/Prelude.lean`
+  - `inductive Instr` — instruction AST
+  - `def Instr.pretty` — mnemonic formatting (useful for grepping and traces)
+  - `def decodeCp0WithBits` / `def decodeCp0` — cp0 bitcode decoder
+  - `def encodeCp0` / `def assembleCp0` — encoder/assembler helpers
+- `TvmLean/Core/Exec.lean`
+  - `def execInstr` — top-level semantics dispatcher
+- `TvmLean/Core/Exec/<Category>/<Opcode>.lean`
+  - per-opcode semantics (this is what you usually edit for “implement opcode X” work)
 
-Tip: if the Linear issue mnemonic is `FOO`, start with `rg -n \"\\bFOO\\b\" TvmLean/Core.lean` and/or search inside `Instr.pretty`.
+Tip: if the Linear issue mnemonic is `FOO`, start with `rg -n \"\\bFOO\\b\" TvmLean/Core` and/or search inside `Instr.pretty` (in `TvmLean/Core/Prelude.lean`).
 
 ## 3) Implement (typical workflow)
 
@@ -46,7 +50,7 @@ Tip: if the Linear issue mnemonic is `FOO`, start with `rg -n \"\\bFOO\\b\" TvmL
    - Otherwise add a new constructor, then update `Instr.pretty`, `decodeCp0WithBits`, and `encodeCp0`.
    - Keep decode/encode symmetric; add/extend a roundtrip test in `Tests.lean` when possible.
 3. **Semantics**
-   - Implement the opcode in `execInstr` to match TON C++ behavior (including TVM exception codes / gas rules where relevant).
+   - Implement the opcode in `TvmLean/Core/Exec/<Category>/<Opcode>.lean` to match TON C++ behavior (including TVM exception codes / gas rules where relevant).
 4. **Tests**
    - Add a focused unit test in `Tests.lean` (use `runProg` for tiny programs when possible).
    - If the opcode is exercised in diff fixtures, run `tvm-lean-diff-test` locally and fix mismatches.

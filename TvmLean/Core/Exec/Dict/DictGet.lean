@@ -1,0 +1,48 @@
+import TvmLean.Core.Exec.Common
+
+namespace TvmLean
+
+set_option maxHeartbeats 1000000 in
+def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
+  match i with
+  | .dictGet intKey unsigned byRef =>
+      let n ← VM.popNatUpTo 1023
+      let dictCell? ← VM.popMaybeCell
+      let keyBits? : Option BitString ←
+        if intKey then
+          let idx ← VM.popIntFinite
+          pure (dictKeyBits? idx n unsigned)
+        else
+          let keySlice ← VM.popSlice
+          if keySlice.haveBits n then
+            pure (some (keySlice.readBits n))
+          else
+            throw .cellUnd
+      match keyBits? with
+      | none =>
+          -- Dictionary index out of bounds: behave like "not found".
+          VM.pushSmallInt 0
+      | some keyBits =>
+          match dictLookupWithCells dictCell? keyBits with
+          | .error e =>
+              throw e
+          | .ok (none, loaded) =>
+              for c in loaded do
+                modify fun st => st.registerCellLoad c
+              VM.pushSmallInt 0
+          | .ok (some valueSlice, loaded) =>
+              for c in loaded do
+                modify fun st => st.registerCellLoad c
+              if byRef then
+                if valueSlice.bitsRemaining == 0 && valueSlice.refsRemaining == 1 then
+                  let c := valueSlice.cell.refs[valueSlice.refPos]!
+                  VM.push (.cell c)
+                  VM.pushSmallInt (-1)
+                else
+                  throw .dictErr
+              else
+                VM.push (.slice valueSlice)
+                VM.pushSmallInt (-1)
+  | _ => next
+
+end TvmLean
