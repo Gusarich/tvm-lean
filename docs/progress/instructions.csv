@@ -82,7 +82,7 @@ HASHCU,true,false
 NULL,true,false
 PUSHPOW2DEC,true,false
 PUXCPU,true,false
-NEGATE,true,false
+NEGATE,true,true
 MUL,true,false
 THROWANY,true,false
 XC2PU,true,false
