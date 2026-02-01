@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction QLSHIFT_VAR (category: arithmetic).
