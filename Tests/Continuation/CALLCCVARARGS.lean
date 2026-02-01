@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction CALLCCVARARGS (category: continuation).

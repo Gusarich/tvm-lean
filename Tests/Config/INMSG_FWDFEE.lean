@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction INMSG_FWDFEE (category: config).
