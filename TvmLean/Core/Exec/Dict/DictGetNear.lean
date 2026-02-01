@@ -1,0 +1,68 @@
+import TvmLean.Core.Exec.Common
+
+namespace TvmLean
+
+set_option maxHeartbeats 1000000 in
+def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
+  match i with
+  | .dictGetNear args4 =>
+      -- Matches C++ `exec_dict_getnear` (dictops.cpp).
+      let allowEq : Bool := (args4 &&& 1) = 1
+      let goUp : Bool := (args4 &&& 2) = 0
+      let intKey : Bool := (args4 &&& 8) = 8
+      let unsigned : Bool := intKey && ((args4 &&& 4) = 4)
+      let sgnd : Bool := intKey && !unsigned
+      let maxN : Nat := if intKey then (if unsigned then 256 else 257) else 1023
+      let n ← VM.popNatUpTo maxN
+      let dictCell? ← VM.popMaybeCell
+      if intKey then
+        let key ← VM.popIntFinite
+        let mut res : Except Excno (Option (Slice × BitString) × Array Cell) := do
+          match dictKeyBits? key n unsigned with
+          | some hintBits =>
+              dictNearestWithCells dictCell? hintBits goUp allowEq sgnd
+          | none =>
+              let cond : Bool := (decide (0 ≤ key)) != goUp
+              if cond then
+                dictMinMaxWithCells dictCell? n (!goUp) sgnd
+              else
+                return (none, #[])
+        match res with
+        | .error e => throw e
+        | .ok (none, loaded) =>
+            for c in loaded do
+              modify fun st => st.registerCellLoad c
+            VM.pushSmallInt 0
+        | .ok (some (val, keyBits), loaded) =>
+            for c in loaded do
+              modify fun st => st.registerCellLoad c
+            VM.push (.slice val)
+            let keyOut : Int :=
+              if sgnd then
+                bitsToIntSignedTwos keyBits
+              else
+                Int.ofNat (bitsToNat keyBits)
+            VM.pushIntQuiet (.num keyOut) false
+            VM.pushSmallInt (-1)
+      else
+        let keyHint ← VM.popSlice
+        if !keyHint.haveBits n then
+          throw .cellUnd
+        let hintBits : BitString := keyHint.readBits n
+        match dictNearestWithCells dictCell? hintBits goUp allowEq false with
+        | .error e => throw e
+        | .ok (none, loaded) =>
+            for c in loaded do
+              modify fun st => st.registerCellLoad c
+            VM.pushSmallInt 0
+        | .ok (some (val, keyBits), loaded) =>
+            for c in loaded do
+              modify fun st => st.registerCellLoad c
+            VM.push (.slice val)
+            modify fun st => st.consumeGas cellCreateGasPrice
+            let keyCell : Cell := Cell.mkOrdinary keyBits #[]
+            VM.push (.slice (Slice.ofCell keyCell))
+            VM.pushSmallInt (-1)
+  | _ => next
+
+end TvmLean

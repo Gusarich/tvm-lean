@@ -681,14 +681,27 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--dry-run", action="store_true", help="Print actions without updating Linear.")
     parser.add_argument("--verbose", action="store_true", help="Verbose logs to stderr.")
 
-    parser.add_argument("--github-token", default=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or "", help="GitHub token.")
+    parser.add_argument(
+        "--github-token",
+        default="",
+        help="GitHub token (optional). If omitted, uses GITHUB_TOKEN/GH_TOKEN or falls back to `gh auth token`.",
+    )
     parser.add_argument("--linear-token", default=os.environ.get("LINEAR_API_KEY") or "", help="Linear API key.")
 
     args = parser.parse_args(argv)
 
-    github_token = args.github_token.strip()
+    github_token = args.github_token.strip() or os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN") or ""
     if not github_token:
-        print("error: missing GitHub token (set GITHUB_TOKEN or GH_TOKEN).", file=sys.stderr)
+        # Convenience fallback: reuse `gh` auth if available.
+        try:
+            github_token = subprocess.check_output(["gh", "auth", "token"], text=True).strip()
+        except Exception:
+            github_token = ""
+    if not github_token:
+        print(
+            "error: missing GitHub token (set GITHUB_TOKEN/GH_TOKEN, or authenticate via `gh auth login`).",
+            file=sys.stderr,
+        )
         return 2
 
     linear_token = args.linear_token.strip()

@@ -42,7 +42,7 @@ lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
 
 ## Repo map
 
-- `TvmLean/Core.lean`: instruction AST (`Instr`), cp0 decode/encode, and execution (`execInstr` / `VmState.step` / `VmState.run`)
+- `TvmLean/Core.lean`: thin re-export of the core VM model (see `TvmLean/Core/Prelude.lean`, `TvmLean/Core/Exec.lean`, `TvmLean/Core/Step.lean`)
 - `TvmLean/Boc.lean`: BOC parsing/serialization (“untrusted input layer”)
 - `Tests.lean`: small unit tests + encode/decode roundtrip checks
 - `TvmLean/DiffTest.lean`, `DiffTestMain.lean`: mainnet diff-test runner for JSON fixtures
@@ -56,4 +56,3 @@ lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
 - Spec pin + mapping to TON C++: `docs/spec-and-ton-context.md`
 
 To start implementing opcodes, use: `docs/implementing-instructions.md`
-

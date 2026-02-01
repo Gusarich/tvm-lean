@@ -111,7 +111,7 @@ Setup:
 
 ```sh
 cp .env.example .env
-# set GITHUB_TOKEN=... in .env (kept local; gitignored)
+# GitHub auth: set GITHUB_TOKEN=... in .env, or rely on an existing GitHub CLI login (`gh auth login`).
 ```
 
 One-shot run:
@@ -142,7 +142,8 @@ Setup:
 
 ```sh
 cp .env.example .env
-# set LINEAR_API_KEY=... and GITHUB_TOKEN=... in .env (kept local; gitignored)
+# set LINEAR_API_KEY=... in .env (kept local; gitignored)
+# GitHub auth: set GITHUB_TOKEN=... in .env, or rely on an existing GitHub CLI login (`gh auth login`).
 ```
 
 One-shot run:
