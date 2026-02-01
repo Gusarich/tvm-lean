@@ -5,7 +5,7 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrArithCmp (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .cmp =>
+  | .cmp | .qcmp =>
       let y ← VM.popInt
       let x ← VM.popInt
       match x, y with
