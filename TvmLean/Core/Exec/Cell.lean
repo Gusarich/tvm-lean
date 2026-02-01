@@ -14,6 +14,10 @@ import TvmLean.Core.Exec.Cell.Srempty
 import TvmLean.Core.Exec.Cell.SdCntLead0
 import TvmLean.Core.Exec.Cell.SdCntTrail0
 import TvmLean.Core.Exec.Cell.SdEq
+import TvmLean.Core.Exec.Cell.SdPpfx
+import TvmLean.Core.Exec.Cell.SdPpfxRev
+import TvmLean.Core.Exec.Cell.SdPfx
+import TvmLean.Core.Exec.Cell.SdPfxRev
 import TvmLean.Core.Exec.Cell.Sdcutfirst
 import TvmLean.Core.Exec.Cell.Sdskipfirst
 import TvmLean.Core.Exec.Cell.Sdcutlast
@@ -61,6 +65,10 @@ def execInstrCell (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrCellSdCntLead0 i <|
   execInstrCellSdCntTrail0 i <|
   execInstrCellSdEq i <|
+  execInstrCellSdPpfx i <|
+  execInstrCellSdPpfxRev i <|
+  execInstrCellSdPfx i <|
+  execInstrCellSdPfxRev i <|
   execInstrCellSdcutfirst i <|
   execInstrCellSdskipfirst i <|
   execInstrCellSdcutlast i <|
