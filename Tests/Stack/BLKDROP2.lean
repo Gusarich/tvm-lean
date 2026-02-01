@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction BLKDROP2 (category: stack).

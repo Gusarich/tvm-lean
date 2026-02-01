@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction 2DUP (category: stack).
