@@ -4,8 +4,28 @@ import Tests.Registry
 open TvmLean Tests
 
 def testAbs : IO Unit := do
-  let progPos : List Instr := [ .pushInt (.num (-7)), .abs false ]
+  let progPos : List Instr := [ .pushInt (.num 7), .abs false ]
   match (← runProg progPos) with
+  | .continue _ => throw (IO.userError "abs(7): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"abs(7): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"abs(7): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 7) s!"abs(7): expected 7, got {n}"
+      | v => throw (IO.userError s!"abs(7): unexpected stack value {v.pretty}")
+
+  let progNeg13 : List Instr := [ .pushInt (.num (-13)), .abs false ]
+  match (← runProg progNeg13) with
+  | .continue _ => throw (IO.userError "abs(-13): did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"abs(-13): unexpected exitCode={exitCode}"
+      assert (st.stack.size == 1) s!"abs(-13): unexpected stack size={st.stack.size}"
+      match st.stack[0]! with
+      | .int (.num n) => assert (n == 13) s!"abs(-13): expected 13, got {n}"
+      | v => throw (IO.userError s!"abs(-13): unexpected stack value {v.pretty}")
+
+  let progNeg7 : List Instr := [ .pushInt (.num (-7)), .abs false ]
+  match (← runProg progNeg7) with
   | .continue _ => throw (IO.userError "abs(-7): did not halt")
   | .halt exitCode st =>
       assert (exitCode == -1) s!"abs(-7): unexpected exitCode={exitCode}"
