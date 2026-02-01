@@ -6,7 +6,7 @@ open TvmLean Tests
 def testStSliceQ : IO Unit := do
   -- Build a 1-byte cell/slice without relying on PUSHSLICE (not encodable in `assembleCp0`).
   let prog : List Instr :=
-    [ .pushInt 0xab
+    [ .pushInt (.num 0xab)
     , .newc, .stu 8, .endc, .ctos
     , .newc, .stSlice false true
     ]
