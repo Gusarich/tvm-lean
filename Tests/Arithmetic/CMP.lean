@@ -34,8 +34,13 @@ def testCmp : IO Unit := do
       | .int (.num n) => assert (n == 1) s!"cmp(gt): expected 1, got {n}"
       | v => throw (IO.userError s!"cmp(gt): unexpected stack value {v.pretty}")
 
-  let progNan : List Instr := [ .pushInt .nan, .pushInt (.num 1), .cmp ]
-  match (← runProg progNan) with
+  let codeCell ←
+    match assembleCp0 [ .cmp ] with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"cmp(nan): assembleCp0 failed: {reprStr e}")
+  let base := VmState.initial codeCell
+  let st0Nan : VmState := { base with stack := #[.int .nan, .int (.num 1)] }
+  match VmState.run 20 st0Nan with
   | .continue _ => throw (IO.userError "cmp(nan): did not halt")
   | .halt exitCode st =>
       assert (exitCode == -1) s!"cmp(nan): unexpected exitCode={exitCode}"
