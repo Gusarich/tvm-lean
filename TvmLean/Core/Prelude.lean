@@ -114,6 +114,11 @@ def IntVal.mul (x y : IntVal) : IntVal :=
   | .num a, .num b => .num (a * b)
   | _, _ => .nan
 
+def IntVal.min (x y : IntVal) : IntVal :=
+  match x, y with
+  | .num a, .num b => .num (if a ≤ b then a else b)
+  | _, _ => .nan
+
 def IntVal.inc (x : IntVal) : IntVal :=
   x.add (.num 1)
 
