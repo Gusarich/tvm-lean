@@ -436,6 +436,19 @@ def testBuilderBits : IO Unit := do
       | .int (.num n) => assert (n == 1) s!"bbits: expected 1, got {n}"
       | v => throw (IO.userError s!"bbits: unexpected stack value {v.pretty}")
 
+def testBuilderRemBitRefs : IO Unit := do
+  let prog : List Instr := [ .pushInt (.num 1), .newc, .stu 1, .brembitrefs ]
+  match (← runProg prog) with
+  | .continue _ => throw (IO.userError "brembitrefs: did not halt")
+  | .halt exitCode st =>
+      assert (exitCode == -1) s!"brembitrefs: unexpected exitCode={exitCode}"
+      assert (st.stack.size == 2) s!"brembitrefs: unexpected stack size={st.stack.size}"
+      match st.stack[0]!, st.stack[1]! with
+      | .int (.num bits), .int (.num refs) =>
+          assert (bits == 1022 ∧ refs == 4) s!"brembitrefs: expected [1022,4], got {Stack.pretty st.stack}"
+      | _, _ =>
+          throw (IO.userError s!"brembitrefs: unexpected stack value {Stack.pretty st.stack}")
+
 def testInc : IO Unit := do
   let progPos : List Instr := [ .pushInt (.num 41), .inc ]
   match (← runProg progPos) with
@@ -670,6 +683,7 @@ def main (_args : List String) : IO Unit := do
   roundtrip (.boolOr)
   roundtrip (.composBoth)
   roundtrip (.bbits)
+  roundtrip (.brembitrefs)
   roundtrip (.dec)
   roundtrip (.min)
   roundtrip (.try_)
@@ -696,6 +710,7 @@ def main (_args : List String) : IO Unit := do
   testMul
   testTuplePush
   testBuilderBits
+  testBuilderRemBitRefs
   testInc
   testMin
   testXctosIsSpecial
