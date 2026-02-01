@@ -1222,6 +1222,7 @@ inductive Instr : Type
   | max
   | minmax
   | abs (quiet : Bool) -- ABS / QABS
+  | ubitsize (quiet : Bool) -- UBITSIZE / QUBITSIZE
   | mulShrModConst (d : Nat) (roundMode : Int) (z : Nat) -- MUL{RSHIFT,MODPOW2,RSHIFTMOD}# <z>
   | divMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) -- {Q}{ADD}{DIV,MOD,DIVMOD}{R,C}
   | mulDivMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) -- {Q}{MUL,MULADD}{DIV,MOD,DIVMOD}{R,C}
@@ -1560,6 +1561,7 @@ def Instr.pretty : Instr → String
   | .max => "MAX"
   | .minmax => "MINMAX"
   | .abs quiet => if quiet then "QABS" else "ABS"
+  | .ubitsize quiet => if quiet then "QUBITSIZE" else "UBITSIZE"
   | .mulShrModConst d roundMode z =>
       let base :=
         match d with
@@ -2494,6 +2496,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let bits : Nat := (w24 &&& 0xff) + 1
       let (_, s24) ← s.takeBitsAsNat 24
       return (.rshiftConst true bits, 24, s24)
+    if w24 = 0xb7b603 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.ubitsize true, 24, s24)
     if w24 = 0xb7b60b then
       let (_, s24) ← s.takeBitsAsNat 24
       return (.abs true, 24, s24)
@@ -2980,6 +2985,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb60b then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.abs false, 16, s16)
+    if w16 = 0xb603 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.ubitsize false, 16, s16)
     if w16 = 0xb7a0 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qadd, 16, s16)
@@ -5142,6 +5150,11 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         return natToBits 0xb7b60b 24
       else
         return natToBits 0xb60b 16
+  | .ubitsize quiet =>
+      if quiet then
+        return natToBits 0xb7b603 24
+      else
+        return natToBits 0xb603 16
   | .mulShrModConst _ _ _ =>
       throw .invOpcode
   | .divMod d roundMode addMode quiet =>
