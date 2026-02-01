@@ -1437,7 +1437,7 @@ def CellInstr.pretty : CellInstr → String
 
 def Instr.pretty : Instr → String
   | .nop => "NOP"
-  | .pushInt .nan => "PUSHINT NaN"
+  | .pushInt .nan => "PUSHNAN"
   | .pushInt (.num n) => s!"PUSHINT {n}"
   | .pushPow2 exp => s!"PUSHPOW2 {exp}"
   | .pushPow2Dec exp => s!"PUSHPOW2DEC {exp}"
@@ -4745,7 +4745,7 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
   | .nop =>
       return natToBits 0x00 8
   | .pushInt .nan =>
-      throw .invOpcode
+      return natToBits 0x83ff 16
   | .pushInt (.num n) =>
       if (-5 ≤ n ∧ n ≤ 10) then
         let imm : Nat :=
