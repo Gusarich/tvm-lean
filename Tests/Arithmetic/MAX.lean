@@ -24,8 +24,13 @@ def testMax : IO Unit := do
       | .int (.num n) => assert (n == -5) s!"max(negative): expected -5, got {n}"
       | v => throw (IO.userError s!"max(negative): unexpected stack value {v.pretty}")
 
-  let progNan : List Instr := [ .pushInt .nan, .pushInt (.num 5), .max ]
-  match (← runProg progNan) with
+  let codeCell ←
+    match assembleCp0 [ .max ] with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"max(nan): assembleCp0 failed: {reprStr e}")
+  let base := VmState.initial codeCell
+  let st0Nan : VmState := { base with stack := #[.int .nan, .int (.num 5)] }
+  match VmState.run 20 st0Nan with
   | .continue _ => throw (IO.userError "max(nan): did not halt")
   | .halt exitCode st =>
       assert (exitCode == -1) s!"max(nan): unexpected exitCode={exitCode}"
