@@ -1206,6 +1206,7 @@ inductive Instr : Type
   | stOnes   -- STONES
   | stSame   -- STSAME
   | stref -- STREF
+  | strefq -- STREFQ
   | bbits -- BBITS
   | setcp (cp : Int)
   | ifret
@@ -1555,6 +1556,7 @@ def Instr.pretty : Instr → String
   | .stOnes => "STONES"
   | .stSame => "STSAME"
   | .stref => "STREF"
+  | .strefq => "STREFQ"
   | .bbits => "BBITS"
   | .setcp cp => s!"SETCP {cp}"
   | .ifret => "IFRET"
@@ -1913,6 +1915,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .stOnes, .stOnes => true
   | .stSame, .stSame => true
   | .stref, .stref => true
+  | .strefq, .strefq => true
   | .setcp x, .setcp y => x == y
   | .ifret, .ifret => true
   | .ifnotret, .ifnotret => true
@@ -3157,6 +3160,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xcf1f then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.stb true true, 16, s16)
+    if w16 = 0xcf18 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.strefq, 16, s16)
     if w16 = 0xcf40 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.stZeroes, 16, s16)
@@ -5147,6 +5153,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xcf42 16
   | .stref =>
       return natToBits 0xcc 8
+  | .strefq =>
+      return natToBits 0xcf18 16
   | .bbits =>
       return natToBits 0xcf31 16
   | .setcp cp =>
