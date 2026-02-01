@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction BLS_G2_MUL (category: crypto).

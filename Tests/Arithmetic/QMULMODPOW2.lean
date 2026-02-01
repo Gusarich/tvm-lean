@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction QMULMODPOW2 (category: arithmetic).

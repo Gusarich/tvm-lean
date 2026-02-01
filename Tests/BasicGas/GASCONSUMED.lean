@@ -1,0 +1,1 @@
+-- Auto-generated stub for TVM instruction GASCONSUMED (category: basic_gas).
