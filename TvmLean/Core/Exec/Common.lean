@@ -2,6 +2,11 @@ import TvmLean.Core.Prelude
 
 namespace TvmLean
 
+def VM.checkUnderflow (n : Nat) : VM Unit := do
+  let st ← get
+  if st.stack.size < n then
+    throw .stkUnd
+
 def VM.execNullSwapIf (cond : Bool) (depth : Nat) (count : Nat) : VM Unit := do
   -- Matches C++ `exec_null_swap_if` / `exec_null_swap_if_many` (tupleops.cpp).
   let st ← get

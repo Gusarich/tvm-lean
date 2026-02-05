@@ -15,7 +15,10 @@ def execInstrArithUbitsize (i : Instr) (next : VM Unit) : VM Unit := do
             throw .rangeChk
       | .num n =>
           if n < 0 then
-            throw .rangeChk
+            if quiet then
+              VM.pushIntQuiet .nan true
+            else
+              throw .rangeChk
           else
             let width : Nat := natLenBits n.toNat
             VM.pushSmallInt (Int.ofNat width)

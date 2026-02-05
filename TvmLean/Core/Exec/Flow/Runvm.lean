@@ -388,9 +388,6 @@ def runChildVm (parent : VmState) (mode : Nat) : VM VmState := do
   let isolateGas : Bool := (mode &&& 128) = 128
   let hasRetVals : Bool := (mode &&& 256) = 256
 
-  if push0 && !sameC3 then
-    throw .rangeChk
-
   let gasMax0 : Int ←
     if hasHardMax then
       popGasRange

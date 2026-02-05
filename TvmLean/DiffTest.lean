@@ -1188,7 +1188,9 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                                 | .error e => mismatches := mismatches.push s!"expected.c4_boc parse: {e}"
                                 | .ok exp =>
                                     if !(finalC4 == exp) then
-                                      mismatches := mismatches.push "c4 mismatch"
+                                      mismatches :=
+                                        mismatches.push
+                                          s!"c4 mismatch expected={cellHashHex exp} actual={cellHashHex finalC4}"
                         | none => pure ()
 
                         match tc.expected.c5_boc with
@@ -1200,7 +1202,9 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                                 | .error e => mismatches := mismatches.push s!"expected.c5_boc parse: {e}"
                                 | .ok exp =>
                                     if !(finalC5 == exp) then
-                                      mismatches := mismatches.push "c5 mismatch"
+                                      mismatches :=
+                                        mismatches.push
+                                          s!"c5 mismatch expected={cellHashHex exp} actual={cellHashHex finalC5}"
                         | none => pure ()
 
                         match tc.expected.c7 with

@@ -1,0 +1,217 @@
+// TON TVM oracle runner library (via `fift` / `runvmx`).
+//
+// Provides:
+//   - `push-token` to build initial stack values from compact tokens
+//   - deterministic `default-c7` context (so TON env/config ops are meaningful)
+//   - `oracle-run` word:
+//       ( x1 .. xn code_boc_hex$ -- )
+//     where x1..xn are initial stack entries (bottom -> top), and `code_boc_hex$`
+//     is a hex-encoded BOC of a code cell.
+//     Prints TSV:
+//       EXIT  <exit_code>
+//       GAS   <gas_used>
+//       C4    <hash256>
+//       C5    <hash256>
+//       DEPTH <stack_depth>
+//       STACK <idx_from_top> <val>
+
+variable code_cs
+variable code_cell
+variable exit_code
+variable gas_used
+variable data_cell
+variable actions_cell
+variable stack_i
+
+{ (number) 1- abort"integer expected" } : parse-int
+
+{ B>x } : bytes>hex$
+{ hashB bytes>hex$ } : cell>hash$
+{ s>c cell>hash$ } : slice>hash$
+{ b> cell>hash$ } : builder>hash$
+
+{ swap type 9 emit type cr } : print-kv
+{ "STACK" type 9 emit swap (.) type 9 emit type cr } : print-stack
+
+// ( maybe_cell -- hex256 )
+// Normalize "null" and the special "C{null}" stack entry (cell-typed null Ref) to the empty cell hash.
+{
+  dup null? {
+    drop <b b> cell>hash$
+  } {
+    dup (dump) "C{null}" $= { drop <b b> cell>hash$ } { cell>hash$ } cond
+  } cond
+} : maybe-cell>hash$
+
+{  // pushes Value
+  dup "CB:" $pos 0= { 3 $| nip x>B B>boc } {
+  dup "SB:" $pos 0= { 3 $| nip x>B B>boc <s } {
+  dup "C2" $= { drop <b 10 4 u, b> } {
+  dup "C1" $= { drop <b 1 1 u, b> } {
+  dup "S2" $= { drop <b 10 4 u, b> <s } {
+  dup "S1" $= { drop <b 1 1 u, b> <s } {
+  dup "B2" $= { drop <b 10 4 u, } {
+  dup "B1" $= { drop <b 1 1 u, } {
+  dup "T2" $= { drop 1 2 2 tuple } {
+  dup "T1" $= { drop 1 1 tuple } {
+  dup "K2" $= { drop <b 8 4 u, 2 32 i, b> <s vmcont@ swap drop } {
+  dup "K1" $= { drop <b 8 4 u, 1 32 i, b> <s vmcont@ swap drop } {
+  dup "I" $= { drop 0 } {
+  dup "N" $= { drop null } {
+  dup "C" $= { drop <b b> } {
+  dup "S" $= { drop <b b> <s } {
+  dup "B" $= { drop <b } {
+  dup "T" $= { drop nil } {
+	  dup "K" $= { drop <b 8 4 u, 0 32 i, b> <s vmcont@ swap drop } {
+	    parse-int
+	  } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond
+} : push-token
+
+// ( header$ tuple n i conv acc$ -- header$ conv acc$ )
+recursive tuple-elems>$ {
+  // base case: i == n
+  3 pick 3 pick = {
+    2swap 2drop rot drop
+  } {
+    // elem := tuple[i]
+    4 pick 3 pick [] 2 pick execute
+    // sep := (i > 0 ? "," : "")
+    3 pick 0> { "," } { "" } cond
+    // acc := acc + sep + elem$
+    swap $+ $+
+    // i := i + 1
+    rot 1+ -rot
+    tuple-elems>$
+  } cond
+} swap !
+
+// ( tuple conv -- val$ )
+{ over count dup (.) "tuple[" swap $+ "]{" $+
+  3 -roll swap
+  0 swap "" tuple-elems>$
+  nip
+  $+ "}" $+
+} : tuple>$
+
+// Any TVM stack entry -> canonical string (consumes the entry)
+recursive val>$ {
+  dup null? {
+    drop "null"
+  } {
+    dup integer? {
+      (dump) dup "NaN" $= { drop "nan" } { "int:" swap $+ } cond
+    } {
+      dup tuple? {
+        { val>$ } tuple>$
+      } {
+        dup (dump)
+        dup "C{null}" $= { 2drop "null" } {
+        dup "C{" $pos 0= { drop cell>hash$ "cell:" swap $+ } {
+          dup "CS{" $pos 0= { drop slice>hash$ "slice:" swap $+ } {
+            dup "BC{" $pos 0= { drop builder>hash$ "builder:" swap $+ } {
+              dup "Cont{" $pos 0= { swap drop "cont:" swap $+ } {
+                swap drop "unk:" swap $+
+              } cond
+            } cond
+          } cond
+        } cond } cond
+      } cond
+    } cond
+  } cond
+} swap !
+
+// --- standard c7 context ---
+// Deterministic, small environment tuple (c7[0]) so TON env/config opcodes are meaningful.
+// (Based on a stable mainnet fixture snapshot; values are arbitrary but valid.)
+
+// Base64-encoded BOCs for selected ConfigParams.
+"te6cckEBAQEABgAACP///xHmo3/3" constant CFG_GLOBAL_ID_BOC
+"te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAD0JA3gAAAAAnEAAAAAAAAAAPQkAAAAAABCwdgAAAAAAAACcQAAAAAAAmJaAAAAAABfXhAAAAAAA7msoAKm2gQw==" constant CFG_MC_GAS_PRICES_BOC
+"te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAAJxA3gAAAAABkAAAAAAAAAAPQkAAAAAAAA9CQAAAAAAAACcQAAAAAACYloAAAAAABfXhAAAAAAA7msoAGR7wcQ==" constant CFG_GAS_PRICES_BOC
+"te6cckEBAQEAIwAAQuoAAAAAAJiWgAAAAAAnEAAAAAAAD0JAAAAAAYAAVVVVVX2jQy8=" constant CFG_MC_FWD_PRICES_BOC
+"te6cckEBAQEAIwAAQuoAAAAAAAYagAAAAAABkAAAAAAAAJxAAAAAAYAAVVVVVXYlR3Q=" constant CFG_FWD_PRICES_BOC
+
+// Base64-encoded BOC for a sample MYADDR slice.
+"te6cckEBAQEAJAAAQ4AX+ASE+Zkibqtx1QAAadKu7Lvas3CH7AqhX7mcYqQbudAC/Bvd" constant MYADDR_BOC
+
+{ base64>B B>boc <s } : base64boc>s
+
+// ( -- env_tuple )
+{
+  // [0..2] magic, actions, msgs_sent
+  0x076ef1ea
+  0
+  0
+  // [3..6] now, blocklt, ltime, randseed
+  1769644811
+  66317877000000
+  66317877000005
+  0
+  // [7] balance tuple
+  50062889874 null 2 tuple
+  // [8] myaddr slice
+  MYADDR_BOC base64boc>s
+  // [9] config_root (null => CONFIGPARAM behaves deterministically)
+  null
+  // [10] mycode cell (the actual executed code)
+  code_cell @
+  // [11] incoming_value tuple
+  13000000000 null 2 tuple
+  // [12] storage_fees
+  7
+  // [13] prev_blocks_info (unused in most unit tests)
+  null
+  // [14] unpacked_config_tuple[0..6]
+  null
+  CFG_GLOBAL_ID_BOC base64boc>s
+  CFG_MC_GAS_PRICES_BOC base64boc>s
+  CFG_GAS_PRICES_BOC base64boc>s
+  CFG_MC_FWD_PRICES_BOC base64boc>s
+  CFG_FWD_PRICES_BOC base64boc>s
+  null
+  7 tuple
+  // [15] due_payment
+  0
+  // [16] precompiled_gas (Maybe Integer)
+  null
+  // [17] in_msg_params (10-tuple, mostly null; enough for INMSGPARAM to be well-typed)
+  0 0 MYADDR_BOC base64boc>s 266669 66317877000004 1769644811 13000000000 13000000000 null null 10 tuple
+  18 tuple
+} : default-env-tuple
+
+{ default-env-tuple 1 tuple } : default-c7
+
+// ( x1 .. xn code_boc_hex$ -- )
+// Runs runvmx(mode=60) and prints canonicalized results (consumes the stack).
+{
+  // load code
+  x>B B>boc dup code_cell ! <s code_cs !
+
+  // stack=[init..., code_cs, data_cell, c7, gas_limit, mode]
+  code_cs @
+  <b b> data_cell !
+  data_cell @
+  default-c7
+  1000000
+  60
+  runvmx
+
+  // stack=[final..., exit_code, data_cell, actions_cell, gas_used]
+  gas_used !
+  actions_cell !
+  data_cell !
+  exit_code !
+
+  "EXIT" exit_code @ (.) print-kv
+  "GAS" gas_used @ (.) print-kv
+  "C4" data_cell @ maybe-cell>hash$ print-kv
+  "C5" actions_cell @ maybe-cell>hash$ print-kv
+
+  depth dup (.) "DEPTH" swap print-kv
+
+  0 stack_i !
+  {
+    val>$ stack_i @ swap print-stack
+    stack_i @ 1+ stack_i !
+  } swap times
+} : oracle-run

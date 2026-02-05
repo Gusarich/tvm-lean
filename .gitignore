@@ -28,3 +28,7 @@ __pycache__/
 /diff-test/fixtures-local*/
 /diff-test/collector/node_modules/
 /diff-test/collector/dist/
+
+# Oracle instruction validation (local runs)
+/oracle/_runs/
+/oracle/_tmp/

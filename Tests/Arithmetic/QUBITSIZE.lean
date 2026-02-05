@@ -18,8 +18,12 @@ def testQubitsize : IO Unit := do
   | .int .nan => pure ()
   | v => throw (IO.userError s!"qubitsize(nan): expected NaN, got {v.pretty}")
 
-  let (exitCodeNeg, _) ← expectHalt (← runProg [ .pushInt (.num (-1)), .ubitsize true ])
-  expectExitExc "qubitsize(-1)" .rangeChk exitCodeNeg
+  let (exitCodeNeg, stNeg) ← expectHalt (← runProg [ .pushInt (.num (-1)), .ubitsize true ])
+  expectExitOk "qubitsize(-1)" exitCodeNeg
+  assert (stNeg.stack.size == 1) s!"qubitsize(-1): unexpected stack size={stNeg.stack.size}"
+  match stNeg.stack[0]! with
+  | .int .nan => pure ()
+  | v => throw (IO.userError s!"qubitsize(-1): expected NaN, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/qubitsize" testQubitsize

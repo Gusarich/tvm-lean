@@ -40,6 +40,47 @@ Run offline diff regression tests (curated mainnet fixtures):
 lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
 ```
 
+## C++ oracle instruction validation (per-opcode)
+
+For instruction-level correctness, there is an oracle-based validator that runs each TVM opcode:
+
+- once in the **TON C++ reference TVM** (via `fift` + `runvmx`)
+- once in **Lean**
+- then compares exit code, gas used, `c4`/`c5` hashes, and canonicalized stack
+
+This is deterministic (no fuzz/random) and is meant for generating 10–20 meaningful cases per opcode.
+
+Prereqs:
+
+- local TON repo built with `fift` available at `/Users/daniil/Coding/ton/build/crypto/fift`
+  - or set `TON_FIFT_BIN` / `TON_FIFT_LIB`
+
+Build the oracle validator:
+
+```sh
+lake build tvm-lean-oracle-validate
+```
+
+Run a single opcode:
+
+```sh
+./.lake/build/bin/tvm-lean-oracle-validate --only ADDINT --variants 20 --code-variants 8 --cases 20 --verbose
+```
+
+Run a sweep in parallel and store logs:
+
+```sh
+tools/run_oracle_validate.sh --jobs 12 --variants 20 --code-variants 8 --cases 20 --out oracle/_runs/latest
+```
+
+Optional env overrides:
+
+```sh
+TON_FIFT_BIN=/Users/daniil/Coding/ton/build/crypto/fift
+TON_FIFT_LIB=/Users/daniil/Coding/ton/crypto/fift/lib
+TVMLEANTON_ORACLE_LIB_FIF=tools/ton_oracle_runvm_lib.fif
+```
+
 ## Mainnet diff tests (collecting fixtures)
 
 You can diff-test against real mainnet transactions by collecting JSON fixtures from Toncenter, then running

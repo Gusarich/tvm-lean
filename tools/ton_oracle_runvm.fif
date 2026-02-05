@@ -14,114 +14,21 @@
 //   B   -> push empty builder
 //   T   -> push empty tuple (nil)
 //   K   -> push quit continuation (exit_code=0)
+//   CB:<boc_hex> -> push Cell from hex-encoded BOC
+//   SB:<boc_hex> -> push Slice from hex-encoded BOC
 //   <n> -> push integer parsed from decimal string (e.g. "-3", "10")
 //
-// Output (TSV):
+// Output is produced by `oracle-run` from `tools/ton_oracle_runvm_lib.fif`:
 //   EXIT  <exit_code>
 //   GAS   <gas_used>
+//   C4    <hash256>
+//   C5    <hash256>
 //   DEPTH <stack_depth>
 //   STACK <idx_from_top> <val>
-//
-// Canonical values:
-//   null
-//   nan
-//   int:<decimal>
-//   cell:<hex256>         (cell hash, lowercase, no 0x prefix)
-//   slice:<hex256>        (hash of the remaining slice stored into a fresh cell)
-//   builder:<hex256>      (hash of finalized builder cell)
-//   tuple[n]{...}
-//   cont:<dump>
-//   unk:<dump>
 
-variable code_cs
+"tools/ton_oracle_runvm_lib.fif" include
+
 variable argi
-variable exit_code
-variable gas_used
-variable stack_i
-
-{ (number) 1- abort"integer expected" } : parse-int
-
-{ B>x } : bytes>hex$
-{ hashB bytes>hex$ } : cell>hash$
-{ s>c cell>hash$ } : slice>hash$
-{ b> cell>hash$ } : builder>hash$
-
-{ swap type 9 emit type cr } : print-kv
-{ "STACK" type 9 emit swap (.) type 9 emit type cr } : print-stack
-
-{  // pushes Value
-  dup "C1" $= { drop <b 1 1 u, b> } {
-  dup "S1" $= { drop <b 1 1 u, b> <s } {
-  dup "B1" $= { drop <b 1 1 u, } {
-  dup "T1" $= { drop 1 1 tuple } {
-  dup "K1" $= { drop <b 8 4 u, 1 32 i, b> <s vmcont@ swap drop } {
-  dup "I" $= { drop 0 } {
-  dup "N" $= { drop null } {
-  dup "C" $= { drop <b b> } {
-  dup "S" $= { drop <b b> <s } {
-  dup "B" $= { drop <b } {
-  dup "T" $= { drop nil } {
-  dup "K" $= { drop <b 8 4 u, 0 32 i, b> <s vmcont@ swap drop } {
-    parse-int
-  } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond
-} : push-token
-
-// ( header$ tuple n i conv acc$ -- header$ conv acc$ )
-recursive tuple-elems>$ {
-  // base case: i == n
-  3 pick 3 pick = {
-    2swap 2drop rot drop
-  } {
-    // elem := tuple[i]
-    4 pick 3 pick [] 2 pick execute
-    // sep := (i > 0 ? "," : "")
-    3 pick 0> { "," } { "" } cond
-    // acc := acc + sep + elem$
-    swap $+ $+
-    // i := i + 1
-    rot 1+ -rot
-    tuple-elems>$
-  } cond
-} swap !
-
-// ( tuple conv -- val$ )
-{ over count dup (.) "tuple[" swap $+ "]{" $+
-  3 -roll swap
-  0 swap "" tuple-elems>$
-  nip
-  $+ "}" $+
-} : tuple>$
-
-// Any TVM stack entry -> canonical string (consumes the entry)
-recursive val>$ {
-  dup null? {
-    drop "null"
-  } {
-    dup integer? {
-      (dump) dup "NaN" $= { drop "nan" } { "int:" swap $+ } cond
-    } {
-      dup tuple? {
-        { val>$ } tuple>$
-      } {
-        dup (dump)
-        dup "C{" $pos 0= { drop cell>hash$ "cell:" swap $+ } {
-          dup "CS{" $pos 0= { drop slice>hash$ "slice:" swap $+ } {
-            dup "BC{" $pos 0= { drop builder>hash$ "builder:" swap $+ } {
-              dup "Cont{" $pos 0= { swap drop "cont:" swap $+ } {
-                swap drop "unk:" swap $+
-              } cond
-            } cond
-          } cond
-        } cond
-      } cond
-    } cond
-  } cond
-} swap !
-
-// --- main ---
-
-// $1: code_boc_hex
-$1 x>B B>boc <s code_cs !
 
 // Push initial stack args from $2..$#
 2 argi !
@@ -130,25 +37,8 @@ $# 1- {
   argi @ 1+ argi !
 } swap times
 
-// stack=[init..., code_cs, gas_limit, mode]
-code_cs @
-1000000
-8
-runvmx
-
-// stack=[final..., exit_code, gas_used]
-gas_used !
-exit_code !
-
-"EXIT" exit_code @ (.) print-kv
-"GAS" gas_used @ (.) print-kv
-
-depth dup (.) "DEPTH" swap print-kv
-
-0 stack_i !
-{
-  val>$ stack_i @ swap print-stack
-  stack_i @ 1+ stack_i !
-} swap times
+// Run and print
+$1 oracle-run
 
 bye
+

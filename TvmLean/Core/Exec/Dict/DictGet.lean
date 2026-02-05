@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .dictGet intKey unsigned byRef =>
+      VM.checkUnderflow 3
       let n ← VM.popNatUpTo 1023
       let dictCell? ← VM.popMaybeCell
       let keyBits? : Option BitString ←

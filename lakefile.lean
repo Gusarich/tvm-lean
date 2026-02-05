@@ -43,17 +43,29 @@ target tvmlean_hash.o pkg : FilePath := do
 
 target tvmlean_crypto_ext.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto_ext.o"
-  let srcJob ← inputTextFile <| pkg.dir / "c" / "tvmlean_crypto_ext.c"
+  let leanIncludeDir := (← getLeanIncludeDir).toString
+  let srcPath :=
+    if System.Platform.isOSX then
+      pkg.dir / "c" / "tvmlean_crypto_ext.c"
+    else
+      pkg.dir / "c" / "tvmlean_crypto_ext_stub.c"
+  let srcJob ← inputTextFile srcPath
   let weakArgs :=
-    #[
-      "-I", (← getLeanIncludeDir).toString,
-      "-I", (pkg.dir / "c").toString,
-      "-I", "/opt/homebrew/include",
-      "-I", "/usr/local/include",
-      "-I", "/Users/daniil/Coding/ton/build/third-party/secp256k1/include",
-      "-I", "/Users/daniil/Coding/ton/build/third-party/openssl/include",
-      "-I", "/Users/daniil/Coding/ton/third-party/blst/bindings"
-    ]
+    if System.Platform.isOSX then
+      #[
+        "-I", leanIncludeDir,
+        "-I", (pkg.dir / "c").toString,
+        "-I", "/opt/homebrew/include",
+        "-I", "/usr/local/include",
+        "-I", "/Users/daniil/Coding/ton/build/third-party/secp256k1/include",
+        "-I", "/Users/daniil/Coding/ton/build/third-party/openssl/include",
+        "-I", "/Users/daniil/Coding/ton/third-party/blst/bindings"
+      ]
+    else
+      #[
+        "-I", leanIncludeDir,
+        "-I", (pkg.dir / "c").toString
+      ]
   buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
 
 target tvmlean_keccak.o pkg : FilePath := do
