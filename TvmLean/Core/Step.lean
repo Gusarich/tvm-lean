@@ -67,6 +67,8 @@ def VmState.ccSummary (cc : Continuation) : String :=
   | .whileCond _ _ _ => "whileCond"
   | .whileBody _ _ _ => "whileBody"
   | .untilBody _ _ => "untilBody"
+  | .repeatBody _ _ _ => "repeatBody"
+  | .againBody _ => "againBody"
   | .envelope _ _ _ => "envelope"
   | .ordinary code _ _ _ =>
       s!"ord(bitPos={code.bitPos},refPos={code.refPos},bitsRem={code.bitsRemaining},refsRem={code.refsRemaining},next8={code.peekByteHex},next16={code.peekWord16Hex})"
@@ -182,6 +184,23 @@ def VmState.step (st : VmState) : StepResult :=
             stExcGas.outOfGasHalt
           else
             .continue stExcGas
+  | .repeatBody body after count =>
+      if count = 0 then
+        match after with
+        | .ordinary code saved cregs cdata =>
+            .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+        | _ =>
+            .continue { st with cc := after }
+      else if body.hasC0 then
+        .continue { st with cc := body }
+      else
+        let count' := count - 1
+        .continue { st with regs := { st.regs with c0 := .repeatBody body after count' }, cc := body }
+  | .againBody body =>
+      if body.hasC0 then
+        .continue { st with cc := body }
+      else
+        .continue { st with regs := { st.regs with c0 := .againBody body }, cc := body }
   | .envelope ext cregs cdata =>
       -- Mirrors C++ `ArgContExt::jump`: apply saved control regs, closure stack and nargs, then jump to `ext`.
       let st := st.applyCregsCdata cregs cdata
@@ -362,6 +381,28 @@ def VmState.stepTrace (st : VmState) (step : Nat) : TraceEntry × StepResult :=
         | .continue st' => st'
         | .halt _ st' => st'
       mk event stAfter res
+  | .repeatBody body after count =>
+      let (event, st1) :=
+        if count = 0 then
+          match after with
+          | .ordinary code saved cregs cdata =>
+              ("repeat_body(done)", { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata })
+          | _ =>
+              ("repeat_body(done)", { st with cc := after })
+        else if body.hasC0 then
+          ("repeat_body(body_has_c0)", { st with cc := body })
+        else
+          ("repeat_body(step)", { st with regs := { st.regs with c0 := .repeatBody body after (count - 1) }, cc := body })
+      let res := StepResult.continue st1
+      mk event st1 res
+  | .againBody body =>
+      let (event, st1) :=
+        if body.hasC0 then
+          ("again_body(body_has_c0)", { st with cc := body })
+        else
+          ("again_body(step)", { st with regs := { st.regs with c0 := .againBody body }, cc := body })
+      let res := StepResult.continue st1
+      mk event st1 res
   | .envelope ext cregs cdata =>
       let st1 := st.applyCregsCdata cregs cdata
       let stAfter := { st1 with cc := ext }

@@ -7,7 +7,7 @@ def execInstrFlowJmpx (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .jmpx =>
       let cont ← VM.popCont
-      modify fun st => st.jumpTo cont
+      VM.jump cont
   | _ => next
 
 end TvmLean

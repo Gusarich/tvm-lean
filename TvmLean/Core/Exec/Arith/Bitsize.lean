@@ -3,7 +3,9 @@ import TvmLean.Core.Exec.Common
 namespace TvmLean
 
 def signedBitsize (n : Int) : Nat :=
-  if n >= 0 then
+  if n = 0 then
+    0
+  else if n > 0 then
     natLenBits n.toNat + 1
   else
     let m : Int := -n - 1

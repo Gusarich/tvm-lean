@@ -7,6 +7,9 @@ structure CliOpts where
   casePath? : Option System.FilePath := none
   dirPath? : Option System.FilePath := none
   maxCases : Nat := 0
+  progressEvery : Nat := 0
+  shard : Nat := 0
+  shards : Nat := 1
   fuel : Nat := 1_000_000
   gasLimit : Int := 1_000_000
   skipUnsupported : Bool := false
@@ -28,6 +31,20 @@ partial def parseArgs (args : List String) (opts : CliOpts := {}) : IO CliOpts :
       match n.toNat? with
       | some v => parseArgs rest { opts with maxCases := v }
       | none => throw (IO.userError s!"invalid --max-cases {n}")
+  | "--progress" :: rest =>
+      parseArgs rest { opts with progressEvery := (if opts.progressEvery > 0 then opts.progressEvery else 100) }
+  | "--progress-every" :: n :: rest =>
+      match n.toNat? with
+      | some v => parseArgs rest { opts with progressEvery := v }
+      | none => throw (IO.userError s!"invalid --progress-every {n}")
+  | "--shard" :: n :: rest =>
+      match n.toNat? with
+      | some v => parseArgs rest { opts with shard := v }
+      | none => throw (IO.userError s!"invalid --shard {n}")
+  | "--shards" :: n :: rest =>
+      match n.toNat? with
+      | some v => parseArgs rest { opts with shards := v }
+      | none => throw (IO.userError s!"invalid --shards {n}")
   | "--fuel" :: n :: rest =>
       match n.toNat? with
       | some v => parseArgs rest { opts with fuel := v }
@@ -78,9 +95,24 @@ def isJsonFile (p : System.FilePath) : Bool :=
   | some name => p.extension == some "json" && !name.startsWith "_" && !hasHiddenSegment p
   | none => false
 
+def percentStr (num denom : Nat) : String :=
+  if denom = 0 then
+    "0.00%"
+  else
+    let bp : Nat := num * 10000 / denom
+    let whole : Nat := bp / 100
+    let frac : Nat := bp % 100
+    let fracStr := if frac < 10 then s!"0{frac}" else toString frac
+    s!"{whole}.{fracStr}%"
+
 def main (args : List String) : IO Unit := do
   let opts ← parseArgs args
   let mut results : Array TestResult := #[]
+
+  if opts.shards = 0 then
+    throw (IO.userError "invalid --shards 0")
+  if opts.shard ≥ opts.shards then
+    throw (IO.userError s!"invalid shard index: --shard {opts.shard} must be < --shards {opts.shards}")
 
   match opts.casePath?, opts.dirPath? with
   | some casePath, none =>
@@ -88,17 +120,45 @@ def main (args : List String) : IO Unit := do
       results := results.push r
   | none, some dirPath =>
       let files ← dirPath.walkDir
-      let mut i : Nat := 0
-      while i < files.size do
-        let f := files[i]!
-        if isJsonFile f then
-          results := results.push (← runOne opts f)
-          if opts.maxCases > 0 ∧ results.size ≥ opts.maxCases then
-            i := files.size
-          else
-            i := i + 1
+      let jsonFiles := (files.filter isJsonFile).qsort (fun a b => toString a < toString b)
+      let shardedFiles :=
+        if opts.shards = 1 then
+          jsonFiles
         else
-          i := i + 1
+          Id.run do
+            let mut out : Array System.FilePath := #[]
+            for i in [0:jsonFiles.size] do
+              if i % opts.shards = opts.shard then
+                out := out.push jsonFiles[i]!
+            return out
+
+      let totalAll := shardedFiles.size
+      let total :=
+        if opts.maxCases > 0 then
+          Nat.min opts.maxCases totalAll
+        else
+          totalAll
+
+      let mut i : Nat := 0
+      let mut pass : Nat := 0
+      let mut fail : Nat := 0
+      let mut skip : Nat := 0
+      let mut err : Nat := 0
+
+      while i < total do
+        let f := shardedFiles[i]!
+        let r ← runOne opts f
+        results := results.push r
+        match r.status with
+        | .pass => pass := pass + 1
+        | .fail => fail := fail + 1
+        | .skip => skip := skip + 1
+        | .error => err := err + 1
+
+        i := i + 1
+        if opts.progressEvery > 0 && (i % opts.progressEvery = 0 || i = total) then
+          let passPct := percentStr pass i
+          IO.println s!"progress: {i}/{total} pass={pass} fail={fail} skip={skip} error={err} pass%={passPct}"
   | some _, some _ =>
       throw (IO.userError "use only one of --case or --dir")
   | none, none =>

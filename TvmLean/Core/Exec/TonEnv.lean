@@ -1,11 +1,16 @@
 import TvmLean.Core.Exec.Common
 import TvmLean.Core.Exec.TonEnv.Balance
 import TvmLean.Core.Exec.TonEnv.Now
+import TvmLean.Core.Exec.TonEnv.GetParamAliases
 import TvmLean.Core.Exec.TonEnv.GetParam
+import TvmLean.Core.Exec.TonEnv.ConfigDict
+import TvmLean.Core.Exec.TonEnv.ConfigParam
+import TvmLean.Core.Exec.TonEnv.PrevBlocksInfo
 import TvmLean.Core.Exec.TonEnv.GetPrecompiledGas
 import TvmLean.Core.Exec.TonEnv.Randu256
 import TvmLean.Core.Exec.TonEnv.Rand
 import TvmLean.Core.Exec.TonEnv.SetRand
+import TvmLean.Core.Exec.TonEnv.GetExtraBalance
 import TvmLean.Core.Exec.TonEnv.GetGlobVar
 import TvmLean.Core.Exec.TonEnv.GetGlob
 import TvmLean.Core.Exec.TonEnv.SetGlobVar
@@ -17,7 +22,10 @@ import TvmLean.Core.Exec.TonEnv.Commit
 import TvmLean.Core.Exec.TonEnv.LdGrams
 import TvmLean.Core.Exec.TonEnv.StGrams
 import TvmLean.Core.Exec.TonEnv.LdMsgAddr
+import TvmLean.Core.Exec.TonEnv.ParseMsgAddr
 import TvmLean.Core.Exec.TonEnv.RewriteStdAddr
+import TvmLean.Core.Exec.TonEnv.RewriteVarAddr
+import TvmLean.Core.Exec.TonEnv.StdAddr
 import TvmLean.Core.Exec.TonEnv.GlobalId
 import TvmLean.Core.Exec.TonEnv.GetGasFee
 import TvmLean.Core.Exec.TonEnv.GetStorageFee
@@ -33,11 +41,16 @@ set_option maxHeartbeats 1000000 in
 def execInstrTonEnv (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrTonEnvBalance i <|
   execInstrTonEnvNow i <|
+  execInstrTonEnvGetParamAliases i <|
   execInstrTonEnvGetParam i <|
+  execInstrTonEnvConfigDict i <|
+  execInstrTonEnvConfigParam i <|
+  execInstrTonEnvPrevBlocksInfo i <|
   execInstrTonEnvGetPrecompiledGas i <|
   execInstrTonEnvRandu256 i <|
   execInstrTonEnvRand i <|
   execInstrTonEnvSetRand i <|
+  execInstrTonEnvGetExtraBalance i <|
   execInstrTonEnvGetGlobVar i <|
   execInstrTonEnvGetGlob i <|
   execInstrTonEnvSetGlobVar i <|
@@ -49,7 +62,10 @@ def execInstrTonEnv (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrTonEnvLdGrams i <|
   execInstrTonEnvStGrams i <|
   execInstrTonEnvLdMsgAddr i <|
+  execInstrTonEnvParseMsgAddr i <|
   execInstrTonEnvRewriteStdAddr i <|
+  execInstrTonEnvRewriteVarAddr i <|
+  execInstrTonEnvStdAddr i <|
   execInstrTonEnvGlobalId i <|
   execInstrTonEnvGetGasFee i <|
   execInstrTonEnvGetStorageFee i <|

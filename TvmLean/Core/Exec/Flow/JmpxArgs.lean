@@ -16,7 +16,7 @@ def execInstrFlowJmpxArgs (i : Instr) (next : VM Unit) : VM Unit := do
       set { st with stack := args }
       -- C++ `jump(..., pass_args=params)` charges stack gas for the new stack depth.
       modify fun st => st.consumeStackGas args.size
-      modify fun st => st.jumpTo cont
+      VM.jump cont (Int.ofNat params)
   | _ => next
 
 end TvmLean

@@ -4,6 +4,8 @@ import TvmLean.Core.Exec.Msg.SendRawMsg
 import TvmLean.Core.Exec.Msg.RawReserve
 import TvmLean.Core.Exec.Msg.RawReserveX
 import TvmLean.Core.Exec.Msg.SetCode
+import TvmLean.Core.Exec.Msg.SetLibCode
+import TvmLean.Core.Exec.Msg.ChangeLib
 
 namespace TvmLean
 
@@ -14,6 +16,8 @@ def execInstrMsg (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrMsgRawReserve i <|
   execInstrMsgRawReserveX i <|
   execInstrMsgSetCode i <|
+  execInstrMsgSetLibCode i <|
+  execInstrMsgChangeLib i <|
     next
 
 end TvmLean

@@ -9,6 +9,7 @@ import TvmLean.Core.Exec.Dict.DictSet
 import TvmLean.Core.Exec.Dict.DictSetB
 import TvmLean.Core.Exec.Dict.DictReplaceB
 import TvmLean.Core.Exec.Dict.DictGetExec
+import TvmLean.Core.Exec.Dict.Ext
 import TvmLean.Core.Exec.Dict.Lddict
 
 namespace TvmLean
@@ -25,6 +26,7 @@ def execInstrDict (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrDictDictSetB i <|
   execInstrDictDictReplaceB i <|
   execInstrDictDictGetExec i <|
+  execInstrDictExt i <|
   execInstrDictLddict i <|
     next
 

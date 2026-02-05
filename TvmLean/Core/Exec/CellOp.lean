@@ -1,4 +1,5 @@
 import TvmLean.Core.Exec.Common
+import TvmLean.Core.Exec.CellOp.Ext
 import TvmLean.Core.Exec.CellOp.Subslice
 import TvmLean.Core.Exec.CellOp.Split
 import TvmLean.Core.Exec.CellOp.PldRefVar
@@ -31,6 +32,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellOp (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .cellOp op =>
+      execCellOpExt op <|
       execCellOpSubslice op <|
       execCellOpSplit op <|
       execCellOpPldRefVar op <|

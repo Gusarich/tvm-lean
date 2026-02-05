@@ -11,11 +11,9 @@ def execInstrTonEnvSetGasLimit (i : Instr) (next : VM Unit) : VM Unit := do
       let newLimit : Int :=
         if n > 0 then
           if n < gas63 then n else GasLimits.infty
-        else
-          0
+      else
+        0
       let st ← get
-      if newLimit < st.gas.gasConsumed then
-        throw .outOfGas
       set { st with gas := st.gas.changeLimit newLimit }
   | _ => next
 

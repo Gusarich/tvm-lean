@@ -46,6 +46,7 @@ import TvmLean.Core.Exec.Cell.StSliceConst
 import TvmLean.Core.Exec.Cell.StZeroes
 import TvmLean.Core.Exec.Cell.StOnes
 import TvmLean.Core.Exec.Cell.StSame
+import TvmLean.Core.Exec.Cell.Ext
 
 namespace TvmLean
 
@@ -98,6 +99,7 @@ def execInstrCell (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrCellStZeroes i <|
   execInstrCellStOnes i <|
   execInstrCellStSame i <|
+  execInstrCellExt i <|
     next
 
 end TvmLean

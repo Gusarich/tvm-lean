@@ -16,9 +16,16 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
       let maxN : Nat := if intKey then (if unsigned then 256 else 257) else 1023
       let n ← VM.popNatUpTo maxN
       let dictCell? ← VM.popMaybeCell
+      match dictCell? with
+      | some c => modify fun st => st.registerCellLoad c
+      | none => pure ()
       match dictMinMaxWithCells dictCell? n fetchMax invertFirst with
       | .error e => throw e
       | .ok (none, loaded) =>
+          let loaded :=
+            match dictCell? with
+            | none => loaded
+            | some root => loaded.filter (fun c => c != root)
           for c in loaded do
             modify fun st => st.registerCellLoad c
           if remove then
@@ -27,6 +34,10 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
             | some c => VM.push (.cell c)
           VM.pushSmallInt 0
       | .ok (some (val0, keyBits), loaded0) =>
+          let loaded0 :=
+            match dictCell? with
+            | none => loaded0
+            | some root => loaded0.filter (fun c => c != root)
           for c in loaded0 do
             modify fun st => st.registerCellLoad c
           let mut val := val0

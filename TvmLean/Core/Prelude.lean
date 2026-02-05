@@ -67,6 +67,102 @@ instance : ToString Excno := ⟨fun
 @[extern "tvmlean_ed25519_verify"]
 opaque ed25519Verify (msg pk sig : ByteArray) : Bool
 
+@[extern "tvmlean_secp256k1_ecrecover"]
+opaque secp256k1Ecrecover (hash sig : ByteArray) : ByteArray
+
+@[extern "tvmlean_secp256k1_xonly_pubkey_tweak_add"]
+opaque secp256k1XonlyPubkeyTweakAdd (key tweak : ByteArray) : ByteArray
+
+@[extern "tvmlean_p256_verify"]
+opaque p256Verify (data pk sig : ByteArray) : Bool
+
+@[extern "tvmlean_rist255_from_hash"]
+opaque rist255FromHash (x1 x2 : ByteArray) : ByteArray
+
+@[extern "tvmlean_rist255_is_valid_point"]
+opaque rist255IsValidPoint (x : ByteArray) : Bool
+
+@[extern "tvmlean_rist255_add"]
+opaque rist255AddBytes (x y : ByteArray) : ByteArray
+
+@[extern "tvmlean_rist255_sub"]
+opaque rist255SubBytes (x y : ByteArray) : ByteArray
+
+@[extern "tvmlean_rist255_mul"]
+opaque rist255MulBytes (nLe x : ByteArray) : ByteArray
+
+@[extern "tvmlean_rist255_mul_base"]
+opaque rist255MulBaseBytes (nLe : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_verify"]
+opaque blsVerify (pub msg sig : ByteArray) : Bool
+
+@[extern "tvmlean_bls_aggregate"]
+opaque blsAggregate (sigs : Array ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_fast_aggregate_verify"]
+opaque blsFastAggregateVerify (pubs : Array ByteArray) (msg sig : ByteArray) : Bool
+
+@[extern "tvmlean_bls_aggregate_verify"]
+opaque blsAggregateVerify (pubs msgs : Array ByteArray) (sig : ByteArray) : Bool
+
+@[extern "tvmlean_bls_g1_add"]
+opaque blsG1AddBytes (a b : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g1_sub"]
+opaque blsG1SubBytes (a b : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g1_neg"]
+opaque blsG1NegBytes (a : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g1_mul"]
+opaque blsG1MulBytes (p x : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g1_multiexp"]
+opaque blsG1MultiExpBytes (ps xs : Array ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g1_zero"]
+opaque blsG1ZeroBytes (_ : Unit) : ByteArray
+
+@[extern "tvmlean_bls_map_to_g1"]
+opaque blsMapToG1Bytes (a : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g1_in_group"]
+opaque blsG1InGroup (a : ByteArray) : Bool
+
+@[extern "tvmlean_bls_g1_is_zero"]
+opaque blsG1IsZero (a : ByteArray) : Bool
+
+@[extern "tvmlean_bls_g2_add"]
+opaque blsG2AddBytes (a b : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g2_sub"]
+opaque blsG2SubBytes (a b : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g2_neg"]
+opaque blsG2NegBytes (a : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g2_mul"]
+opaque blsG2MulBytes (p x : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g2_multiexp"]
+opaque blsG2MultiExpBytes (ps xs : Array ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g2_zero"]
+opaque blsG2ZeroBytes (_ : Unit) : ByteArray
+
+@[extern "tvmlean_bls_map_to_g2"]
+opaque blsMapToG2Bytes (a : ByteArray) : ByteArray
+
+@[extern "tvmlean_bls_g2_in_group"]
+opaque blsG2InGroup (a : ByteArray) : Bool
+
+@[extern "tvmlean_bls_g2_is_zero"]
+opaque blsG2IsZero (a : ByteArray) : Bool
+
+@[extern "tvmlean_bls_pairing"]
+opaque blsPairing (p1s p2s : Array ByteArray) : UInt8
+
 @[extern "tvmlean_hash_sha256"]
 opaque hashSha256 (data : ByteArray) : ByteArray
 
@@ -166,6 +262,13 @@ def intSignedFitsBits (n : Int) (bits : Nat) : Bool :=
   else
     let half : Int := intPow2 (bits - 1)
     decide (-half ≤ n ∧ n < half)
+
+def intUnsignedFitsBits (n : Int) (bits : Nat) : Bool :=
+  if bits == 0 then
+    n == 0
+  else
+    let hi : Int := intPow2 bits
+    decide (0 ≤ n ∧ n < hi)
 
 def floorDivPow2 (n : Int) (bits : Nat) : Int :=
   if bits == 0 then
@@ -1073,11 +1176,60 @@ def Builder.storeBits (b : Builder) (bs : BitString) : Builder :=
 def Builder.finalize (b : Builder) : Cell :=
   Cell.mkOrdinary b.bits b.refs
 
+def Builder.finalizeCopy (b : Builder) (special : Bool := false) : Except Excno Cell := do
+  if !special then
+    return b.finalize
+
+  -- We emulate C++ `vm::DataCell::create(..., is_special=true)` validation by
+  -- searching for the unique level mask that makes the exotic cell well-formed.
+  -- If none work, TON throws `cell_ov`.
+  for m in [0:8] do
+    let c : Cell :=
+      { bits := b.bits
+      , refs := b.refs
+      , special := true
+      , levelMask := m
+      }
+    match Cell.computeLevelInfo? c with
+    | .ok _ => return c
+    | .error _ => continue
+  throw .cellOv
+
 inductive DictSetMode : Type
   | set
   | replace
   | add
   deriving DecidableEq, Repr
+
+/-! Additional dictionary opcodes (mostly newer TVM versions). -/
+
+inductive DictMutMode : Type
+  | set
+  | replace
+  | add
+  | del
+  deriving DecidableEq, Repr
+
+inductive PfxDictGetKind : Type
+  | getQ
+  | get
+  | getJmp
+  | getExec
+  deriving DecidableEq, Repr
+
+inductive DictExtInstr : Type
+  | lddicts (preload : Bool) -- LDDICTS / PLDDICTS
+  | mutGet (intKey : Bool) (unsigned : Bool) (byRef : Bool) (mode : DictMutMode) -- DICT*{SET,REPLACE,ADD,DEL}GET{REF?}
+  | mutGetB (intKey : Bool) (unsigned : Bool) (mode : DictSetMode) -- DICT*{SET,REPLACE,ADD}GETB
+  | del (intKey : Bool) (unsigned : Bool) -- DICT{I,U}?DEL
+  | getOptRef (intKey : Bool) (unsigned : Bool) -- DICT{I,U}?GETOPTREF
+  | setGetOptRef (intKey : Bool) (unsigned : Bool) -- DICT{I,U}?SETGETOPTREF
+  | subdictGet (intKey : Bool) (unsigned : Bool) (rp : Bool) -- SUBDICT*GET / SUBDICT*RPGET
+  | pfxSet (mode : DictSetMode) -- PFXDICT{SET,REPLACE,ADD}
+  | pfxDel -- PFXDICTDEL
+  | pfxGet (kind : PfxDictGetKind) -- PFXDICTGET{Q,JMP,EXEC}
+  | pfxSwitch (dict : Cell) (keyLen : Nat) -- PFXDICTSWITCH (const dict ref + key_len)
+  deriving Repr
 
 inductive TupleInstr : Type
   | mktuple (n : Nat) -- TUPLE <n>
@@ -1107,6 +1259,20 @@ inductive TupleInstr : Type
   deriving Repr
 
 inductive CellInstr : Type
+  | sdFirst -- SDFIRST
+  | sdSfx -- SDSFX
+  | sdSfxRev -- SDSFXREV
+  | sdPsfx -- SDPSFX
+  | sdPsfxRev -- SDPSFXREV
+  | sdCntLead1 -- SDCNTLEAD1
+  | sdCntTrail1 -- SDCNTTRAIL1
+  | strefR (quiet : Bool) -- STREFR / STREFRQ
+  | endxc -- ENDXC
+  | sdSubstr -- SDSUBSTR
+  | scutfirst -- SCUTFIRST
+  | sskipfirst -- SSKIPFIRST
+  | scutlast -- SCUTLAST
+  | sskiplast -- SSKIPLAST
   | subslice -- SUBSLICE
   | split (quiet : Bool) -- SPLIT / SPLITQ
   | pldRefVar -- PLDREFVAR
@@ -1134,17 +1300,80 @@ inductive CellInstr : Type
   | bchk (needBits : Bool) (needRefs : Bool) (quiet : Bool) -- BCHK{BITS,REFS,BITREFS}{Q}
   deriving Repr
 
+/-! Extra crypto opcodes (mostly newer TVM versions). -/
+
+inductive CryptoExtInstr : Type
+  | ecrecover
+  | secp256k1XonlyPubkeyTweakAdd
+  | p256ChkSignU
+  | p256ChkSignS
+  | rist255FromHash
+  | rist255Validate
+  | rist255Add
+  | rist255Sub
+  | rist255Mul
+  | rist255MulBase
+  | rist255PushL
+  | rist255Qvalidate
+  | rist255Qadd
+  | rist255Qsub
+  | rist255Qmul
+  | rist255QmulBase
+  | blsVerify
+  | blsAggregate
+  | blsFastAggregateVerify
+  | blsAggregateVerify
+  | blsG1Add
+  | blsG1Sub
+  | blsG1Neg
+  | blsG1Mul
+  | blsG1MultiExp
+  | blsG1Zero
+  | blsMapToG1
+  | blsG1InGroup
+  | blsG1IsZero
+  | blsG2Add
+  | blsG2Sub
+  | blsG2Neg
+  | blsG2Mul
+  | blsG2MultiExp
+  | blsG2Zero
+  | blsMapToG2
+  | blsG2InGroup
+  | blsG2IsZero
+  | blsPairing
+  | blsPushR
+  deriving Repr
+
 inductive CryptoInstr : Type
   | hashExt (hashId : Nat) (append : Bool) (rev : Bool) -- HASHEXT{A}{R} <hashId> (255 means from stack)
   | hashCU   -- HASHCU
   | hashSU   -- HASHSU
+  | sha256U  -- SHA256U
   | chkSignU -- CHKSIGNU
   | chkSignS -- CHKSIGNS
+  | ext (op : CryptoExtInstr)
   deriving Repr
 
 inductive TonEnvInstr : Type
   | balance            -- BALANCE
   | now                -- NOW
+  | blockLt            -- BLOCKLT
+  | lTime              -- LTIME
+  | randSeed           -- RANDSEED
+  | myAddr             -- MYADDR
+  | configRoot         -- CONFIGROOT
+  | configDict         -- CONFIGDICT
+  | configParam (opt : Bool) -- CONFIGPARAM / CONFIGOPTPARAM
+  | myCode             -- MYCODE
+  | incomingValue      -- INCOMINGVALUE
+  | storageFees        -- STORAGEFEES
+  | prevBlocksInfoTuple -- PREVBLOCKSINFOTUPLE
+  | prevMcBlocks       -- PREVMCBLOCKS
+  | prevKeyBlock       -- PREVKEYBLOCK
+  | prevMcBlocks100    -- PREVMCBLOCKS_100
+  | unpackedConfigTuple -- UNPACKEDCONFIGTUPLE
+  | duePayment         -- DUEPAYMENT
   | getParam (idx : Nat) -- GETPARAM <idx>
   | randu256           -- RANDU256
   | rand               -- RAND
@@ -1160,7 +1389,13 @@ inductive TonEnvInstr : Type
   | ldGrams            -- LDGRAMS
   | stGrams            -- STGRAMS
   | ldMsgAddr (quiet : Bool) -- LDMSGADDR{Q}
+  | parseMsgAddr (quiet : Bool) -- PARSEMSGADDR{Q}
   | rewriteStdAddr (quiet : Bool) -- REWRITESTDADDR{Q}
+  | rewriteVarAddr (quiet : Bool) -- REWRITEVARADDR{Q}
+  | ldStdAddr (quiet : Bool) -- LDSTDADDR{Q}
+  | ldOptStdAddr (quiet : Bool) -- LDOPTSTDADDR{Q}
+  | stStdAddr (quiet : Bool) -- STSTDADDR{Q}
+  | stOptStdAddr (quiet : Bool) -- STOPTSTDADDR{Q}
   | globalId             -- GLOBALID
   | getGasFee            -- GETGASFEE
   | getStorageFee        -- GETSTORAGEFEE
@@ -1169,12 +1404,115 @@ inductive TonEnvInstr : Type
   | getPrecompiledGas   -- GETPRECOMPILEDGAS
   | getOriginalFwdFee  -- GETORIGINALFWDFEE
   | getForwardFeeSimple    -- GETFORWARDFEESIMPLE
+  | getExtraBalance       -- GETEXTRABALANCE
   | inMsgParam (idx : Nat) -- INMSG_* / INMSGPARAM <idx>
   | sendMsg            -- SENDMSG
   | sendRawMsg         -- SENDRAWMSG
   | rawReserve         -- RAWRESERVE
   | rawReserveX        -- RAWRESERVEX
   | setCode            -- SETCODE
+  | setLibCode         -- SETLIBCODE
+  | changeLib          -- CHANGELIB
+  deriving Repr
+
+inductive DebugInstr : Type
+  | dumpStk            -- DUMPSTK
+  | strDump            -- STRDUMP
+  | dump (idx : Nat)   -- DUMP <idx>
+  | debug (i : Nat)    -- DEBUG <i> (0x01..0x13)
+  | debug1 (t : Nat)   -- DEBUG_1 <t> (0x15..0x1f)
+  | debug2 (t : Nat)   -- DEBUG_2 <t> (0x30..0xef)
+  | debugStr (s : Slice) -- DEBUGSTR <s> (inline bytes)
+  | extCall (id : Nat) -- EXTCALL <id>
+  deriving Repr
+
+inductive ContExtInstr : Type
+  | condSel               -- CONDSEL
+  | condSelChk            -- CONDSELCHK
+  | ifretAlt              -- IFRETALT
+  | ifnotretAlt           -- IFNOTRETALT
+  | ifbitjmp (i : Nat)    -- IFBITJMP <i>
+  | ifnbitjmp (i : Nat)   -- IFNBITJMP <i>
+  | ifbitjmpref (i : Nat) (code : Slice)  -- IFBITJMPREF <i> (1 ref)
+  | ifnbitjmpref (i : Nat) (code : Slice) -- IFNBITJMPREF <i> (1 ref)
+  | pow2                  -- POW2
+  | fitsx                 -- FITSX
+  | ufitsx                -- UFITSX
+  | qand                  -- QAND
+  | qor                   -- QOR
+  | qxor                  -- QXOR
+  | qnot                  -- QNOT
+  | qfitsx                -- QFITSX
+  | qufitsx               -- QUFITSX
+  | qbitsize              -- QBITSIZE
+  | qmin                  -- QMIN
+  | isnan                 -- ISNAN
+  | chknan                -- CHKNAN
+  | qsgn                  -- QSGN
+  | qless                 -- QLESS
+  | qequal                -- QEQUAL
+  | qleq                  -- QLEQ
+  | qgreater              -- QGREATER
+  | qneq                  -- QNEQ
+  | qgeq                  -- QGEQ
+  | repeat (brk : Bool)          -- REPEAT / REPEATBRK
+  | repeatEnd (brk : Bool)       -- REPEATEND / REPEATENDBRK
+  | until (brk : Bool)           -- UNTILBRK
+  | untilEnd (brk : Bool)        -- UNTILEND / UNTILENDBRK
+  | while (brk : Bool)           -- WHILEBRK
+  | whileEnd (brk : Bool)        -- WHILEEND / WHILEENDBRK
+  | again (brk : Bool)           -- AGAIN / AGAINBRK
+  | againEnd (brk : Bool)        -- AGAINEND / AGAINENDBRK
+  | jmpDict (idx : Nat)          -- JMPDICT <idx>
+  | pushCtrX                     -- PUSHCTRX
+  | popCtrX                      -- POPCTRX
+  | setContCtrX                  -- SETCONTCTRX
+  | setContCtrMany (mask : Nat)  -- SETCONTCTRMANY <mask>
+  | setContCtrManyX              -- SETCONTCTRMANYX
+  | setRetCtr (idx : Nat)        -- SETRETCTR c<idx>
+  | setAltCtr (idx : Nat)        -- SETALTCTR c<idx>
+  | popSave (idx : Nat)          -- POPSAVE c<idx>
+  | saveAltCtr (idx : Nat)       -- SAVEALTCTR c<idx>
+  | saveBothCtr (idx : Nat)      -- SAVEBOTHCTR c<idx>
+  | runvm (mode : Nat)           -- RUNVM <mode>
+  | runvmx                      -- RUNVMX (mode from stack)
+  | atexit                -- ATEXIT
+  | atexitAlt             -- ATEXITALT
+  | setExitAlt            -- SETEXITALT
+  | thenret               -- THENRET
+  | thenretAlt            -- THENRETALT
+  | invert                -- INVERT
+  | booleval              -- BOOLEVAL
+  deriving Repr
+
+/-! Extra arithmetic opcodes (mostly newer TVM versions). -/
+
+inductive ArithExtInstr : Type
+  | qaddInt (n : Int) -- QADDINT <tinyint8>
+  | qmulInt (n : Int) -- QMULINT <tinyint8>
+  | fitsConst (unsigned : Bool) (quiet : Bool) (bits : Nat) -- {Q}{U}FITS <tinyint8+1>
+  | lshiftVar (quiet : Bool) -- QLSHIFT_VAR
+  | rshiftVar (quiet : Bool) -- QRSHIFT_VAR
+  | shrMod (mul : Bool) (add : Bool) (d : Nat) (roundMode : Int) (quiet : Bool) (z : Option Nat)
+      -- {Q}{MUL}{ADD}{RSHIFT,MODPOW2,RSHIFTMOD}{R,C}{#} (z from stack unless `z` is provided)
+  | shlDivMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) (z : Option Nat)
+      -- {Q}{ADD}LSHIFT{DIV,MOD,DIVMOD}{R,C}{#} (z from stack unless `z` is provided)
+  deriving Repr
+
+/-! Extra cell opcodes (mostly newer TVM versions). -/
+
+inductive CellExtInstr : Type
+  | btos -- BTOS
+  | plduz (c : Nat) -- PLDUZ (arg is 3-bit `c`)
+  | ldVarInt (signed : Bool) (lenBits : Nat) -- LDVAR{,U}INT{16,32}
+  | xload (quiet : Bool) -- XLOAD / XLOADQ
+  | stVarInt (signed : Bool) (lenBits : Nat) -- STVAR{,U}INT{16,32}
+  | stLeInt (unsigned : Bool) (bytes : Nat) -- ST{I,U}LE{4,8}
+  | stRefConst (c : Cell) -- STREFCONST
+  | stRef2Const (c1 : Cell) (c2 : Cell) -- STREF2CONST
+  | hashbu -- HASHBU
+  | cdataSize (quiet : Bool) -- CDATASIZE / CDATASIZEQ
+  | sdataSize (quiet : Bool) -- SDATASIZE / SDATASIZEQ
   deriving Repr
 
 inductive Instr : Type
@@ -1225,6 +1563,7 @@ inductive Instr : Type
   | setContCtr (idx : Nat) -- SETCONTCTR c<idx>
   | ctos
   | xctos
+  | cellExt (op : CellExtInstr)
   | newc
   | endc
   | endcst
@@ -1252,6 +1591,7 @@ inductive Instr : Type
   | strefq -- STREFQ
   | bbits -- BBITS
   | setcp (cp : Int)
+  | setcpX
   | ifret
   | ifnotret
   | if_         -- IF
@@ -1281,6 +1621,7 @@ inductive Instr : Type
   | abs (quiet : Bool) -- ABS / QABS
   | bitsize -- BITSIZE
   | ubitsize (quiet : Bool) -- UBITSIZE / QUBITSIZE
+  | arithExt (op : ArithExtInstr)
   | mulShrModConst (d : Nat) (roundMode : Int) (z : Nat) -- MUL{RSHIFT,MODPOW2,RSHIFTMOD}# <z>
   | divMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) -- {Q}{ADD}{DIV,MOD,DIVMOD}{R,C}
   | mulDivMod (d : Nat) (roundMode : Int) (add : Bool) (quiet : Bool) -- {Q}{MUL,MULADD}{DIV,MOD,DIVMOD}{R,C}
@@ -1298,13 +1639,22 @@ inductive Instr : Type
   | throwArgIfNot (exc : Int) -- THROWARGIFNOT <exc>
   | throwAny (hasParam : Bool) (hasCond : Bool) (throwCond : Bool) -- THROW{ARG}ANY{IF,IFNOT}
   | try_               -- TRY
+  | tryArgs (params : Nat) (retVals : Nat) -- TRYARGS <params>,<retVals>
   | saveCtr (idx : Nat)  -- SAVECTR c<idx>
   | sameAlt             -- SAMEALT
   | sameAltSave         -- SAMEALTSAVE
   | boolAnd             -- BOOLAND
   | boolOr              -- BOOLOR
   | composBoth          -- COMPOSBOTH
+  | contExt (op : ContExtInstr)
+  | setContArgs (copy : Nat) (more : Int) -- SETCONTARGS <copy>,<more>
   | setContVarArgs      -- SETCONTVARARGS
+  | setNumVarArgs       -- SETNUMVARARGS
+  | returnArgs (count : Nat) -- RETURNARGS <count>
+  | returnVarArgs       -- RETURNVARARGS
+  | bless               -- BLESS
+  | blessVarArgs        -- BLESSVARARGS
+  | blessArgs (copy : Nat) (more : Int) -- BLESSARGS <copy>,<more>
   | dictPushConst (dict : Cell) (keyBits : Nat) -- DICTPUSHCONST: pushes dict-root cell + key size
   | dictGet (intKey : Bool) (unsigned : Bool) (byRef : Bool) -- DICT{I,U}GET{REF?} / DICTGET{REF?}
   | dictGetNear (args4 : Nat) -- DICTGET{NEXT,PREV}{EQ} and DICT{I,U}GET{NEXT,PREV}{EQ}
@@ -1313,6 +1663,7 @@ inductive Instr : Type
   | dictSet (intKey : Bool) (unsigned : Bool) (byRef : Bool) (mode : DictSetMode) -- DICT{I,U}{SET,REPLACE,ADD}{REF?}
   | dictSetB (intKey : Bool) (unsigned : Bool) (mode : DictSetMode) -- DICT{I,U}{SET,REPLACE,ADD}B
   | dictReplaceB (intKey : Bool) (unsigned : Bool) -- DICT{I,U}?REPLACEB (builder value)
+  | dictExt (op : DictExtInstr)
   | stdict              -- STDICT
   | skipdict            -- SKIPDICT
   | lddict (preload : Bool) (quiet : Bool) -- {P}LDDICT{Q}
@@ -1376,9 +1727,17 @@ inductive Instr : Type
   | jmpx
   | callxArgs (params : Nat) (retVals : Int) -- CALLXARGS <params>,<retVals> (retVals may be -1)
   | jmpxArgs (params : Nat) -- JMPXARGS <params>
+  | callcc                 -- CALLCC
+  | jmpxData               -- JMPXDATA
+  | callccArgs (params : Nat) (retVals : Int) -- CALLCCARGS <params>,<retVals> (retVals in [-1..14])
+  | callxVarArgs           -- CALLXVARARGS
+  | jmpxVarArgs            -- JMPXVARARGS
+  | callccVarArgs          -- CALLCCVARARGS
   | ret
   | retAlt
   | retBool
+  | retVarArgs          -- RETVARARGS
+  | retData             -- RETDATA
   | retArgs (n : Nat) -- RETARGS <n>
   | ifjmp
   | ifnotjmp
@@ -1391,13 +1750,58 @@ inductive Instr : Type
   | ifelseRef (code : Slice)   -- IFELSEREF (1 ref)
   | ifrefElseRef (t : Slice) (f : Slice) -- IFREFELSEREF (2 refs)
   | callRef (code : Slice)     -- CALLREF (1 ref)
+  | jmpRef (code : Slice)      -- JMPREF (1 ref)
+  | jmpRefData (code : Slice)  -- JMPREFDATA (1 ref)
   | callDict (idx : Nat)       -- CALLDICT <idx>
   | prepareDict (idx : Nat)    -- PREPAREDICT <idx>
   | until             -- UNTIL
   | while_             -- WHILE
   | blkdrop (n : Nat) -- BLKDROP <n>
   | drop2              -- 2DROP
+  | debugOp (op : DebugInstr)
   deriving Repr
+
+def CryptoExtInstr.pretty : CryptoExtInstr → String
+  | .ecrecover => "ECRECOVER"
+  | .secp256k1XonlyPubkeyTweakAdd => "SECP256K1_XONLY_PUBKEY_TWEAK_ADD"
+  | .p256ChkSignU => "P256_CHKSIGNU"
+  | .p256ChkSignS => "P256_CHKSIGNS"
+  | .rist255FromHash => "RIST255_FROMHASH"
+  | .rist255Validate => "RIST255_VALIDATE"
+  | .rist255Add => "RIST255_ADD"
+  | .rist255Sub => "RIST255_SUB"
+  | .rist255Mul => "RIST255_MUL"
+  | .rist255MulBase => "RIST255_MULBASE"
+  | .rist255PushL => "RIST255_PUSHL"
+  | .rist255Qvalidate => "RIST255_QVALIDATE"
+  | .rist255Qadd => "RIST255_QADD"
+  | .rist255Qsub => "RIST255_QSUB"
+  | .rist255Qmul => "RIST255_QMUL"
+  | .rist255QmulBase => "RIST255_QMULBASE"
+  | .blsVerify => "BLS_VERIFY"
+  | .blsAggregate => "BLS_AGGREGATE"
+  | .blsFastAggregateVerify => "BLS_FASTAGGREGATEVERIFY"
+  | .blsAggregateVerify => "BLS_AGGREGATEVERIFY"
+  | .blsG1Add => "BLS_G1_ADD"
+  | .blsG1Sub => "BLS_G1_SUB"
+  | .blsG1Neg => "BLS_G1_NEG"
+  | .blsG1Mul => "BLS_G1_MUL"
+  | .blsG1MultiExp => "BLS_G1_MULTIEXP"
+  | .blsG1Zero => "BLS_G1_ZERO"
+  | .blsMapToG1 => "BLS_MAP_TO_G1"
+  | .blsG1InGroup => "BLS_G1_INGROUP"
+  | .blsG1IsZero => "BLS_G1_ISZERO"
+  | .blsG2Add => "BLS_G2_ADD"
+  | .blsG2Sub => "BLS_G2_SUB"
+  | .blsG2Neg => "BLS_G2_NEG"
+  | .blsG2Mul => "BLS_G2_MUL"
+  | .blsG2MultiExp => "BLS_G2_MULTIEXP"
+  | .blsG2Zero => "BLS_G2_ZERO"
+  | .blsMapToG2 => "BLS_MAP_TO_G2"
+  | .blsG2InGroup => "BLS_G2_INGROUP"
+  | .blsG2IsZero => "BLS_G2_ISZERO"
+  | .blsPairing => "BLS_PAIRING"
+  | .blsPushR => "BLS_PUSHR"
 
 def CryptoInstr.pretty : CryptoInstr → String
   | .hashExt hashId append rev =>
@@ -1407,12 +1811,30 @@ def CryptoInstr.pretty : CryptoInstr → String
       s!"HASHEXT{a}{r} {idStr}"
   | .hashCU => "HASHCU"
   | .hashSU => "HASHSU"
+  | .sha256U => "SHA256U"
   | .chkSignU => "CHKSIGNU"
   | .chkSignS => "CHKSIGNS"
+  | .ext op => op.pretty
 
 def TonEnvInstr.pretty : TonEnvInstr → String
   | .balance => "BALANCE"
   | .now => "NOW"
+  | .blockLt => "BLOCKLT"
+  | .lTime => "LTIME"
+  | .randSeed => "RANDSEED"
+  | .myAddr => "MYADDR"
+  | .configRoot => "CONFIGROOT"
+  | .configDict => "CONFIGDICT"
+  | .configParam opt => if opt then "CONFIGOPTPARAM" else "CONFIGPARAM"
+  | .myCode => "MYCODE"
+  | .incomingValue => "INCOMINGVALUE"
+  | .storageFees => "STORAGEFEES"
+  | .prevBlocksInfoTuple => "PREVBLOCKSINFOTUPLE"
+  | .prevMcBlocks => "PREVMCBLOCKS"
+  | .prevKeyBlock => "PREVKEYBLOCK"
+  | .prevMcBlocks100 => "PREVMCBLOCKS_100"
+  | .unpackedConfigTuple => "UNPACKEDCONFIGTUPLE"
+  | .duePayment => "DUEPAYMENT"
   | .getParam idx => s!"GETPARAM {idx}"
   | .randu256 => "RANDU256"
   | .rand => "RAND"
@@ -1430,9 +1852,27 @@ def TonEnvInstr.pretty : TonEnvInstr → String
   | .ldMsgAddr quiet =>
       let q := if quiet then "Q" else ""
       s!"LDMSGADDR{q}"
+  | .parseMsgAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"PARSEMSGADDR{q}"
   | .rewriteStdAddr quiet =>
       let q := if quiet then "Q" else ""
       s!"REWRITESTDADDR{q}"
+  | .rewriteVarAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"REWRITEVARADDR{q}"
+  | .ldStdAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"LDSTDADDR{q}"
+  | .ldOptStdAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"LDOPTSTDADDR{q}"
+  | .stStdAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"STSTDADDR{q}"
+  | .stOptStdAddr quiet =>
+      let q := if quiet then "Q" else ""
+      s!"STOPTSTDADDR{q}"
   | .globalId => "GLOBALID"
   | .getGasFee => "GETGASFEE"
   | .getStorageFee => "GETSTORAGEFEE"
@@ -1441,6 +1881,7 @@ def TonEnvInstr.pretty : TonEnvInstr → String
   | .getPrecompiledGas => "GETPRECOMPILEDGAS"
   | .getOriginalFwdFee => "GETORIGINALFWDFEE"
   | .getForwardFeeSimple => "GETFORWARDFEESIMPLE"
+  | .getExtraBalance => "GETEXTRABALANCE"
   | .inMsgParam idx =>
       match idx with
       | 0 => "INMSG_BOUNCE"
@@ -1459,6 +1900,18 @@ def TonEnvInstr.pretty : TonEnvInstr → String
   | .rawReserve => "RAWRESERVE"
   | .rawReserveX => "RAWRESERVEX"
   | .setCode => "SETCODE"
+  | .setLibCode => "SETLIBCODE"
+  | .changeLib => "CHANGELIB"
+
+def DebugInstr.pretty : DebugInstr → String
+  | .dumpStk => "DUMPSTK"
+  | .strDump => "STRDUMP"
+  | .dump idx => s!"DUMP {idx}"
+  | .debug i => s!"DEBUG {i}"
+  | .debug1 t => s!"DEBUG_1 {t}"
+  | .debug2 t => s!"DEBUG_2 {t}"
+  | .debugStr s => s!"DEBUGSTR(bytes={s.bitsRemaining / 8})"
+  | .extCall id => s!"EXTCALL {id}"
 
 def TupleInstr.pretty : TupleInstr → String
   | .mktuple n => s!"TUPLE {n}"
@@ -1487,6 +1940,20 @@ def TupleInstr.pretty : TupleInstr → String
   | .tpop => "TPOP"
 
 def CellInstr.pretty : CellInstr → String
+  | .sdFirst => "SDFIRST"
+  | .sdSfx => "SDSFX"
+  | .sdSfxRev => "SDSFXREV"
+  | .sdPsfx => "SDPSFX"
+  | .sdPsfxRev => "SDPSFXREV"
+  | .sdCntLead1 => "SDCNTLEAD1"
+  | .sdCntTrail1 => "SDCNTTRAIL1"
+  | .strefR quiet => if quiet then "STREFRQ" else "STREFR"
+  | .endxc => "ENDXC"
+  | .sdSubstr => "SDSUBSTR"
+  | .scutfirst => "SCUTFIRST"
+  | .sskipfirst => "SSKIPFIRST"
+  | .scutlast => "SCUTLAST"
+  | .sskiplast => "SSKIPLAST"
   | .subslice => "SUBSLICE"
   | .split quiet => if quiet then "SPLITQ" else "SPLIT"
   | .pldRefVar => "PLDREFVAR"
@@ -1525,6 +1992,137 @@ def CellInstr.pretty : CellInstr → String
         else "BCHK"
       let q := if quiet then "Q" else ""
       s!"{kind}{q}"
+
+def CellExtInstr.pretty : CellExtInstr → String
+  | .btos => "BTOS"
+  | .plduz c => s!"PLDUZ {c}"
+  | .ldVarInt signed lenBits =>
+      let iu := if signed then "INT" else "UINT"
+      s!"LDVAR{iu}(lenBits={lenBits})"
+  | .xload quiet =>
+      if quiet then "XLOADQ" else "XLOAD"
+  | .stVarInt signed lenBits =>
+      let iu := if signed then "INT" else "UINT"
+      s!"STVAR{iu}(lenBits={lenBits})"
+  | .stLeInt unsigned bytes =>
+      let iu := if unsigned then "U" else "I"
+      s!"ST{iu}LE{bytes}"
+  | .stRefConst _ => "STREFCONST"
+  | .stRef2Const _ _ => "STREF2CONST"
+  | .hashbu => "HASHBU"
+  | .cdataSize quiet => if quiet then "CDATASIZEQ" else "CDATASIZE"
+  | .sdataSize quiet => if quiet then "SDATASIZEQ" else "SDATASIZE"
+
+def ArithExtInstr.pretty : ArithExtInstr → String
+  | .qaddInt n => s!"QADDINT {n}"
+  | .qmulInt n => s!"QMULINT {n}"
+  | .fitsConst unsigned quiet bits =>
+      let u := if unsigned then "U" else ""
+      let q := if quiet then "Q" else ""
+      s!"{q}{u}FITS {bits}"
+  | .lshiftVar quiet =>
+      if quiet then "QLSHIFT_VAR" else "LSHIFT_VAR"
+  | .rshiftVar quiet =>
+      if quiet then "QRSHIFT_VAR" else "RSHIFT_VAR"
+  | .shrMod mulMode addMode d roundMode quiet z =>
+      let q := if quiet then "Q" else ""
+      let m := if mulMode then "MUL" else ""
+      let a := if addMode then "ADD" else ""
+      let base :=
+        match d with
+        | 1 => "RSHIFT"
+        | 2 => "MODPOW2"
+        | 3 => "RSHIFTMOD"
+        | _ => "SHRMOD"
+      let suf :=
+        if roundMode = -1 then
+          ""
+        else if roundMode = 0 then
+          "R"
+        else if roundMode = 1 then
+          "C"
+        else
+          ""
+      let hash := if z.isSome then "#" else ""
+      s!"{q}{m}{a}{base}{suf}{hash}"
+  | .shlDivMod d roundMode addMode quiet z =>
+      let q := if quiet then "Q" else ""
+      let a := if addMode then "ADD" else ""
+      let base :=
+        match d with
+        | 1 => "LSHIFTDIV"
+        | 2 => "LSHIFTMOD"
+        | 3 => "LSHIFTDIVMOD"
+        | _ => "LSHIFTDIV/MOD"
+      let suf :=
+        if roundMode = -1 then
+          ""
+        else if roundMode = 0 then
+          "R"
+        else if roundMode = 1 then
+          "C"
+        else
+          ""
+      let hash := if z.isSome then "#" else ""
+      s!"{q}{a}{base}{suf}{hash}"
+
+def ContExtInstr.pretty : ContExtInstr → String
+  | .condSel => "CONDSEL"
+  | .condSelChk => "CONDSELCHK"
+  | .ifretAlt => "IFRETALT"
+  | .ifnotretAlt => "IFNOTRETALT"
+  | .ifbitjmp i => s!"IFBITJMP {i}"
+  | .ifnbitjmp i => s!"IFNBITJMP {i}"
+  | .ifbitjmpref i _ => s!"IFBITJMPREF {i}"
+  | .ifnbitjmpref i _ => s!"IFNBITJMPREF {i}"
+  | .pow2 => "POW2"
+  | .fitsx => "FITSX"
+  | .ufitsx => "UFITSX"
+  | .qand => "QAND"
+  | .qor => "QOR"
+  | .qxor => "QXOR"
+  | .qnot => "QNOT"
+  | .qfitsx => "QFITSX"
+  | .qufitsx => "QUFITSX"
+  | .qbitsize => "QBITSIZE"
+  | .qmin => "QMIN"
+  | .isnan => "ISNAN"
+  | .chknan => "CHKNAN"
+  | .qsgn => "QSGN"
+  | .qless => "QLESS"
+  | .qequal => "QEQUAL"
+  | .qleq => "QLEQ"
+  | .qgreater => "QGREATER"
+  | .qneq => "QNEQ"
+  | .qgeq => "QGEQ"
+  | .repeat brk => if brk then "REPEATBRK" else "REPEAT"
+  | .repeatEnd brk => if brk then "REPEATENDBRK" else "REPEATEND"
+  | .until brk => if brk then "UNTILBRK" else "UNTIL"
+  | .untilEnd brk => if brk then "UNTILENDBRK" else "UNTILEND"
+  | .while brk => if brk then "WHILEBRK" else "WHILE"
+  | .whileEnd brk => if brk then "WHILEENDBRK" else "WHILEEND"
+  | .again brk => if brk then "AGAINBRK" else "AGAIN"
+  | .againEnd brk => if brk then "AGAINENDBRK" else "AGAINEND"
+  | .jmpDict idx => s!"JMPDICT {idx}"
+  | .pushCtrX => "PUSHCTRX"
+  | .popCtrX => "POPCTRX"
+  | .setContCtrX => "SETCONTCTRX"
+  | .setContCtrMany mask => s!"SETCONTCTRMANY {mask}"
+  | .setContCtrManyX => "SETCONTCTRMANYX"
+  | .setRetCtr idx => s!"SETRETCTR {idx}"
+  | .setAltCtr idx => s!"SETALTCTR {idx}"
+  | .popSave idx => s!"POPSAVE {idx}"
+  | .saveAltCtr idx => s!"SAVEALTCTR {idx}"
+  | .saveBothCtr idx => s!"SAVEBOTHCTR {idx}"
+  | .runvm mode => s!"RUNVM {mode}"
+  | .runvmx => "RUNVMX"
+  | .atexit => "ATEXIT"
+  | .atexitAlt => "ATEXITALT"
+  | .setExitAlt => "SETEXITALT"
+  | .thenret => "THENRET"
+  | .thenretAlt => "THENRETALT"
+  | .invert => "INVERT"
+  | .booleval => "BOOLEVAL"
 
 def Instr.pretty : Instr → String
   | .nop => "NOP"
@@ -1575,6 +2173,7 @@ def Instr.pretty : Instr → String
   | .setContCtr idx => s!"SETCONTCTR c{idx}"
   | .ctos => "CTOS"
   | .xctos => "XCTOS"
+  | .cellExt op => op.pretty
   | .newc => "NEWC"
   | .endc => "ENDC"
   | .endcst => "ENDCST"
@@ -1633,6 +2232,7 @@ def Instr.pretty : Instr → String
   | .strefq => "STREFQ"
   | .bbits => "BBITS"
   | .setcp cp => s!"SETCP {cp}"
+  | .setcpX => "SETCPX"
   | .ifret => "IFRET"
   | .ifnotret => "IFNOTRET"
   | .if_ => "IF"
@@ -1662,6 +2262,7 @@ def Instr.pretty : Instr → String
   | .abs quiet => if quiet then "QABS" else "ABS"
   | .bitsize => "BITSIZE"
   | .ubitsize quiet => if quiet then "QUBITSIZE" else "UBITSIZE"
+  | .arithExt op => op.pretty
   | .mulShrModConst d roundMode z =>
       let base :=
         match d with
@@ -1727,7 +2328,15 @@ def Instr.pretty : Instr → String
   | .boolAnd => "BOOLAND"
   | .boolOr => "BOOLOR"
   | .composBoth => "COMPOSBOTH"
+  | .contExt op => op.pretty
+  | .setContArgs copy more => s!"SETCONTARGS {copy},{more}"
   | .setContVarArgs => "SETCONTVARARGS"
+  | .setNumVarArgs => "SETNUMVARARGS"
+  | .returnArgs n => s!"RETURNARGS {n}"
+  | .returnVarArgs => "RETURNVARARGS"
+  | .bless => "BLESS"
+  | .blessVarArgs => "BLESSVARARGS"
+  | .blessArgs copy more => s!"BLESSARGS {copy},{more}"
   | .dictGet intKey unsigned byRef =>
       let iu := if intKey then (if unsigned then "U" else "I") else ""
       let r := if byRef then "REF" else ""
@@ -1758,6 +2367,7 @@ def Instr.pretty : Instr → String
           ""
       s!"THROW{arg}ANY{cond}"
   | .try_ => "TRY"
+  | .tryArgs p r => s!"TRYARGS {p},{r}"
   | .dictPushConst _ keyBits => s!"DICTPUSHCONST {keyBits}"
   | .dictGetExec unsigned doCall pushZ =>
       let iu := if unsigned then "U" else "I"
@@ -1844,6 +2454,8 @@ def Instr.pretty : Instr → String
   | .cellOp op => op.pretty
   | .cryptoOp op => op.pretty
   | .tonEnvOp op => op.pretty
+  | .debugOp op => op.pretty
+  | .dictExt op => s!"{reprStr op}"
   | .blkdrop2 x y => s!"BLKDROP2 {x},{y}"
   | .pushSliceConst s => s!"PUSHSLICE(bits={s.bitsRemaining},refs={s.refsRemaining})"
   | .pushCont code => s!"PUSHCONT(bits={code.bitsRemaining},refs={code.refsRemaining})"
@@ -1854,9 +2466,17 @@ def Instr.pretty : Instr → String
   | .jmpx => "JMPX"
   | .callxArgs params retVals => s!"CALLXARGS {params},{retVals}"
   | .jmpxArgs params => s!"JMPXARGS {params}"
+  | .callcc => "CALLCC"
+  | .jmpxData => "JMPXDATA"
+  | .callccArgs params retVals => s!"CALLCCARGS {params},{retVals}"
+  | .callxVarArgs => "CALLXVARARGS"
+  | .jmpxVarArgs => "JMPXVARARGS"
+  | .callccVarArgs => "CALLCCVARARGS"
   | .ret => "RET"
   | .retAlt => "RETALT"
   | .retBool => "RETBOOL"
+  | .retVarArgs => "RETVARARGS"
+  | .retData => "RETDATA"
   | .retArgs n => s!"RETARGS {n}"
   | .ifjmp => "IFJMP"
   | .ifnotjmp => "IFNOTJMP"
@@ -1869,6 +2489,8 @@ def Instr.pretty : Instr → String
   | .ifelseRef _ => "IFELSEREF"
   | .ifrefElseRef _ _ => "IFREFELSEREF"
   | .callRef _ => "CALLREF"
+  | .jmpRef _ => "JMPREF"
+  | .jmpRefData _ => "JMPREFDATA"
   | .callDict idx => s!"CALLDICT {idx}"
   | .prepareDict idx => s!"PREPAREDICT {idx}"
   | .until => "UNTIL"
@@ -1945,6 +2567,16 @@ instance : BEq Instr := ⟨fun a b =>
   | .ifnotret, .ifnotret => true
   | .if_, .if_ => true
   | .ifnot, .ifnot => true
+  | .condSel, .condSel => true
+  | .condSelChk, .condSelChk => true
+  | .ifretAlt, .ifretAlt => true
+  | .ifnotretAlt, .ifnotretAlt => true
+  | .ifbitjmp i, .ifbitjmp j => i == j
+  | .ifnbitjmp i, .ifnbitjmp j => i == j
+  | .ifbitjmpref i x, .ifbitjmpref j y =>
+      i == j && x.bitPos == y.bitPos && x.refPos == y.refPos && x.cell == y.cell
+  | .ifnbitjmpref i x, .ifnbitjmpref j y =>
+      i == j && x.bitPos == y.bitPos && x.refPos == y.refPos && x.cell == y.cell
   | .inc, .inc => true
   | .qinc, .qinc => true
   | .dec, .dec => true
@@ -2034,6 +2666,12 @@ instance : BEq Instr := ⟨fun a b =>
   | .jmpx, .jmpx => true
   | .callxArgs px rx, .callxArgs py ry => px == py && rx == ry
   | .jmpxArgs x, .jmpxArgs y => x == y
+  | .callcc, .callcc => true
+  | .jmpxData, .jmpxData => true
+  | .callccArgs px rx, .callccArgs py ry => px == py && rx == ry
+  | .callxVarArgs, .callxVarArgs => true
+  | .jmpxVarArgs, .jmpxVarArgs => true
+  | .callccVarArgs, .callccVarArgs => true
   | .ret, .ret => true
   | .retAlt, .retAlt => true
   | .retBool, .retBool => true
@@ -2051,6 +2689,8 @@ instance : BEq Instr := ⟨fun a b =>
       x1.bitPos == x2.bitPos && x1.refPos == x2.refPos && x1.cell == x2.cell &&
       y1.bitPos == y2.bitPos && y1.refPos == y2.refPos && y1.cell == y2.cell
   | .callRef x, .callRef y => x.bitPos == y.bitPos && x.refPos == y.refPos && x.cell == y.cell
+  | .jmpRef x, .jmpRef y => x.bitPos == y.bitPos && x.refPos == y.refPos && x.cell == y.cell
+  | .jmpRefData x, .jmpRefData y => x.bitPos == y.bitPos && x.refPos == y.refPos && x.cell == y.cell
   | .callDict x, .callDict y => x == y
   | .while_, .while_ => true
   | .blkdrop x, .blkdrop y => x == y
@@ -2117,6 +2757,8 @@ mutual
     | whileCond (cond : Continuation) (body : Continuation) (after : Continuation)
     | whileBody (cond : Continuation) (body : Continuation) (after : Continuation)
     | untilBody (body : Continuation) (after : Continuation)
+    | repeatBody (body : Continuation) (after : Continuation) (count : Nat)
+    | againBody (body : Continuation)
     deriving Repr
 
   inductive Value : Type
@@ -2153,6 +2795,8 @@ def OrdCdata.empty : OrdCdata := {}
       | .whileCond _ _ _ => "<cont:while-cond>"
       | .whileBody _ _ _ => "<cont:while-body>"
       | .untilBody _ _ => "<cont:until-body>"
+      | .repeatBody _ _ _ => "<cont:repeat-body>"
+      | .againBody _ => "<cont:again-body>"
 
 instance : ToString Value := ⟨Value.pretty⟩
 
@@ -2186,6 +2830,12 @@ instance : BEq Builder := ⟨fun a b => a.bits == b.bits && arrayBeq a.refs b.re
       Continuation.beq c1 c2 && Continuation.beq b1 b2 && Continuation.beq a1 a2
   | .whileBody c1 b1 a1, .whileBody c2 b2 a2 =>
       Continuation.beq c1 c2 && Continuation.beq b1 b2 && Continuation.beq a1 a2
+  | .untilBody b1 a1, .untilBody b2 a2 =>
+      Continuation.beq b1 b2 && Continuation.beq a1 a2
+  | .repeatBody b1 a1 n1, .repeatBody b2 a2 n2 =>
+      n1 == n2 && Continuation.beq b1 b2 && Continuation.beq a1 a2
+  | .againBody b1, .againBody b2 =>
+      Continuation.beq b1 b2
   | _, _ => false
 
 instance : BEq Continuation := ⟨Continuation.beq⟩
@@ -2371,14 +3021,61 @@ def tupleEntryGasPrice : Int := 1
 def freeStackDepth : Nat := 32
 def stackEntryGasPrice : Int := 1
 def hashExtEntryGasPrice : Int := 1
+def runvmGasPrice : Int := 40
 def chksgnFreeCount : Nat := 10
 def chksgnGasPrice : Int := 4000
+def p256ChksgnGasPrice : Int := 3500
+def ecrecoverGasPrice : Int := 1500
+def secp256k1XonlyPubkeyTweakAddGasPrice : Int := 1250
+
+def rist255MulGasPrice : Int := 2000
+def rist255MulBaseGasPrice : Int := 750
+def rist255AddGasPrice : Int := 600
+def rist255FromHashGasPrice : Int := 600
+def rist255ValidateGasPrice : Int := 200
+
+def blsVerifyGasPrice : Int := 61000
+def blsAggregateBaseGasPrice : Int := -2650
+def blsAggregateElementGasPrice : Int := 4350
+def blsFastAggregateVerifyBaseGasPrice : Int := 58000
+def blsFastAggregateVerifyElementGasPrice : Int := 3000
+def blsAggregateVerifyBaseGasPrice : Int := 38500
+def blsAggregateVerifyElementGasPrice : Int := 22500
+
+def blsG1AddSubGasPrice : Int := 3900
+def blsG1NegGasPrice : Int := 750
+def blsG1MulGasPrice : Int := 5200
+def blsMapToG1GasPrice : Int := 2350
+def blsG1InGroupGasPrice : Int := 2950
+
+def blsG2AddSubGasPrice : Int := 6100
+def blsG2NegGasPrice : Int := 1550
+def blsG2MulGasPrice : Int := 10550
+def blsMapToG2GasPrice : Int := 7950
+def blsG2InGroupGasPrice : Int := 4250
+
+def blsG1MultiExpBaseGasPrice : Int := 11375
+def blsG1MultiExpCoef1GasPrice : Int := 630
+def blsG1MultiExpCoef2GasPrice : Int := 8820
+def blsG2MultiExpBaseGasPrice : Int := 30388
+def blsG2MultiExpCoef1GasPrice : Int := 1280
+def blsG2MultiExpCoef2GasPrice : Int := 22840
+
+def blsPairingBaseGasPrice : Int := 20000
+def blsPairingElementGasPrice : Int := 11800
 
 def instrGas (i : Instr) (totBits : Nat) : Int :=
-  let base : Int := gasPerInstr + Int.ofNat totBits
+  -- TON charges invalid opcodes (dummy dispatch) as `gas_per_instr` without per-bit cost.
+  -- In `runvmx`, EXTCALL falls into this bucket.
   match i with
-  | .endc => base + cellCreateGasPrice
-  | _ => base
+  | .debugOp (.extCall _) =>
+      gasPerInstr
+  | _ =>
+      let base : Int := gasPerInstr + Int.ofNat totBits
+      match i with
+      | .endc => base + cellCreateGasPrice
+      | .cellOp .endxc => base + cellCreateGasPrice
+      | _ => base
 
 /-! ### Minimal cp0 decoding (Milestone 2) -/
 
@@ -2420,6 +3117,7 @@ def bitsToIntSignedTwos (bs : BitString) : Int :=
       else
         Int.ofNat u
 
+set_option maxRecDepth 2048 in
 def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   -- PUSHINT (tinyint4): 4-bit prefix 0x7, 4-bit immediate.
   let p4 ← s.peekBitsAsNat 4
@@ -2500,6 +3198,49 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   -- DICTPUSHCONST (24-bit, +1 ref): 0xf4a4..0xf4a7 + 10-bit key size.
   if s.haveBits 24 then
     let w24 := bitsToNat (s.readBits 24)
+
+    -- PREVMCBLOCKS / PREVKEYBLOCK / PREVMCBLOCKS_100 (24-bit): 0xf83400..0xf83402.
+    if w24 = 0xf83400 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp .prevMcBlocks, 24, s24)
+    if w24 = 0xf83401 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp .prevKeyBlock, 24, s24)
+    if w24 = 0xf83402 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp .prevMcBlocks100, 24, s24)
+
+    -- BLS_* (24-bit): 0xf93000..0xf93031.
+    if w24 >>> 8 = 0xf930 then
+      let op : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      match op with
+      | 0x00 => return (.cryptoOp (.ext .blsVerify), 24, s24)
+      | 0x01 => return (.cryptoOp (.ext .blsAggregate), 24, s24)
+      | 0x02 => return (.cryptoOp (.ext .blsFastAggregateVerify), 24, s24)
+      | 0x03 => return (.cryptoOp (.ext .blsAggregateVerify), 24, s24)
+      | 0x10 => return (.cryptoOp (.ext .blsG1Add), 24, s24)
+      | 0x11 => return (.cryptoOp (.ext .blsG1Sub), 24, s24)
+      | 0x12 => return (.cryptoOp (.ext .blsG1Neg), 24, s24)
+      | 0x13 => return (.cryptoOp (.ext .blsG1Mul), 24, s24)
+      | 0x14 => return (.cryptoOp (.ext .blsG1MultiExp), 24, s24)
+      | 0x15 => return (.cryptoOp (.ext .blsG1Zero), 24, s24)
+      | 0x16 => return (.cryptoOp (.ext .blsMapToG1), 24, s24)
+      | 0x17 => return (.cryptoOp (.ext .blsG1InGroup), 24, s24)
+      | 0x18 => return (.cryptoOp (.ext .blsG1IsZero), 24, s24)
+      | 0x20 => return (.cryptoOp (.ext .blsG2Add), 24, s24)
+      | 0x21 => return (.cryptoOp (.ext .blsG2Sub), 24, s24)
+      | 0x22 => return (.cryptoOp (.ext .blsG2Neg), 24, s24)
+      | 0x23 => return (.cryptoOp (.ext .blsG2Mul), 24, s24)
+      | 0x24 => return (.cryptoOp (.ext .blsG2MultiExp), 24, s24)
+      | 0x25 => return (.cryptoOp (.ext .blsG2Zero), 24, s24)
+      | 0x26 => return (.cryptoOp (.ext .blsMapToG2), 24, s24)
+      | 0x27 => return (.cryptoOp (.ext .blsG2InGroup), 24, s24)
+      | 0x28 => return (.cryptoOp (.ext .blsG2IsZero), 24, s24)
+      | 0x30 => return (.cryptoOp (.ext .blsPairing), 24, s24)
+      | 0x31 => return (.cryptoOp (.ext .blsPushR), 24, s24)
+      | _ => throw .invOpcode
+
     -- BCHKBITS / BCHKBITSQ (24-bit): 16-bit opcode 0xcf38/0xcf3c + 8-bit arg (bits-1).
     let p16 := w24 >>> 8
     if p16 = 0xcf38 ∨ p16 = 0xcf3c then
@@ -2524,6 +3265,15 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let (n, s24) ← sRef.takeBitsAsNat 10
       return (.dictPushConst dictCell n, 24, s24)
 
+    -- PFXDICTSWITCH (24-bit, +1 ref): 14-bit prefix 0x3d2b + 10-bit key_len, then 1 ref (dict).
+    if w24 >>> 10 = 0x3d2b then
+      if !s.haveRefs 1 then
+        throw .invOpcode
+      let keyLen : Nat := w24 &&& 0x3ff
+      let (_, s24) ← s.takeBitsAsNat 24
+      let (dictCell, rest) ← s24.takeRefInv
+      return (.dictExt (.pfxSwitch dictCell keyLen), 24, rest)
+
     -- PREPAREDICT <idx> (24-bit): 10-bit prefix (0xf180 >> 6) + 14-bit args.
     -- Matches C++ `exec_preparedict` (contops.cpp).
     let p10 := w24 >>> 14
@@ -2531,6 +3281,29 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let idx : Nat := w24 &&& 0x3fff
       let (_, s24) ← s.takeBitsAsNat 24
       return (.prepareDict idx, 24, s24)
+
+    -- CALLDICT_LONG / JMPDICT (24-bit): 10-bit prefix (0x3c4/0x3c5) + 14-bit args.
+    if p10 = 0x3c4 then
+      let idx : Nat := w24 &&& 0x3fff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.callDict idx, 24, s24)
+    if p10 = 0x3c5 then
+      let idx : Nat := w24 &&& 0x3fff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt (.jmpDict idx), 24, s24)
+
+    -- SETCONTCTRMANY (24-bit): 16-bit opcode 0xede3 + 8-bit arg (mask).
+    let p16 := w24 >>> 8
+    if p16 = 0xede3 then
+      let mask : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt (.setContCtrMany mask), 24, s24)
+
+    -- RUNVM (24-bit): 12-bit prefix (0xdb4) + 12-bit mode.
+    if w24 >>> 12 = 0xdb4 then
+      let mode : Nat := w24 &&& 0xfff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt (.runvm mode), 24, s24)
 
     -- HASHEXT (24-bit): 14-bit prefix (0xf904 >> 2) + 10-bit args (hash_id8 + rev + append).
     -- Matches C++ `exec_hash_ext` / `dump_hash_ext` (TON version >= 4).
@@ -2563,9 +3336,21 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let bits : Nat := (w24 &&& 0xff) + 1
       let (_, s24) ← s.takeBitsAsNat 24
       return (.rshiftConst true bits, 24, s24)
+    if w24 = 0xb7b600 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qfitsx, 24, s24)
+    if w24 = 0xb7b601 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qufitsx, 24, s24)
+    if w24 = 0xb7b602 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qbitsize, 24, s24)
     if w24 = 0xb7b603 then
       let (_, s24) ← s.takeBitsAsNat 24
       return (.ubitsize true, 24, s24)
+    if w24 = 0xb7b608 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qmin, 24, s24)
     if w24 = 0xb7b609 then
       let (_, s24) ← s.takeBitsAsNat 24
       return (.qmax, 24, s24)
@@ -2575,6 +3360,34 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w24 = 0xb7b60a then
       let (_, s24) ← s.takeBitsAsNat 24
       return (.qminmax, 24, s24)
+
+    -- QADDINT / QMULINT (24-bit): 0xb7a6/0xb7a7 + imm8.
+    if p16 = 0xb7a6 then
+      let imm8 : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.arithExt (.qaddInt (natToIntSignedTwos imm8 8)), 24, s24)
+    if p16 = 0xb7a7 then
+      let imm8 : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.arithExt (.qmulInt (natToIntSignedTwos imm8 8)), 24, s24)
+
+    -- QEQINT / QLESSINT / QGTINT / QNEQINT (24-bit): 0xb7c0..0xb7c3 + imm8.
+    if 0xb7c0 ≤ p16 ∧ p16 ≤ 0xb7c3 then
+      let imm8 : Nat := w24 &&& 0xff
+      let n : Int := natToIntSignedTwos imm8 8
+      let (_, s24) ← s.takeBitsAsNat 24
+      match p16 with
+      | 0xb7c0 => return (.eqInt n, 24, s24)
+      | 0xb7c1 => return (.lessInt n, 24, s24)
+      | 0xb7c2 => return (.gtInt n, 24, s24)
+      | _ => return (.neqInt n, 24, s24)
+
+    -- QFITS / QUFITS (24-bit): 0xb7b4/0xb7b5 + width8 (delta=1).
+    if p16 = 0xb7b4 ∨ p16 = 0xb7b5 then
+      let bits : Nat := (w24 &&& 0xff) + 1
+      let unsigned : Bool := p16 = 0xb7b5
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.arithExt (.fitsConst unsigned true bits), 24, s24)
 
     -- QDIV/MOD family (24-bit): 20-bit prefix 0xb7a90 + 4-bit args.
     let p20 := w24 >>> 4
@@ -2594,6 +3407,111 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         throw .invOpcode
       let (_, s24) ← s.takeBitsAsNat 24
       return (.divMod d roundMode add true, 24, s24)
+
+    -- QMUL{DIV,MOD,DIVMOD} family (24-bit): 20-bit prefix 0xb7a98 + 4-bit args.
+    if p20 = 0xb7a98 then
+      let args4 : Nat := w24 &&& 0xf
+      let roundEnc : Nat := args4 &&& 0x3
+      let dEnc : Nat := (args4 >>> 2) &&& 0x3
+      if roundEnc = 3 then
+        throw .invOpcode
+      let roundMode : Int := Int.ofNat roundEnc - 1
+      let (d, add) : (Nat × Bool) :=
+        if dEnc = 0 then
+          (3, true)
+        else
+          (dEnc, false)
+      if d = 0 ∨ roundMode = 2 then
+        throw .invOpcode
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.mulDivMod d roundMode add true, 24, s24)
+
+    -- RIST255_Q* (24-bit): 0xb7f921..0xb7f925.
+    if w24 >>> 8 = 0xb7f9 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      match w24 &&& 0xff with
+      | 0x21 => return (.cryptoOp (.ext .rist255Qvalidate), 24, s24)
+      | 0x22 => return (.cryptoOp (.ext .rist255Qadd), 24, s24)
+      | 0x23 => return (.cryptoOp (.ext .rist255Qsub), 24, s24)
+      | 0x24 => return (.cryptoOp (.ext .rist255Qmul), 24, s24)
+      | 0x25 => return (.cryptoOp (.ext .rist255QmulBase), 24, s24)
+      | _ => throw .invOpcode
+
+    -- Q-shrmod/shldivmod families (24-bit): 0xb7 + 16-bit opcode in the 0xa9** range.
+    if w24 >>> 16 = 0xb7 then
+      let op16 : Nat := w24 &&& 0xffff
+      let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+
+      let decodeShrMod (start d : Nat) (mul add : Bool) : Option Instr :=
+        if start ≤ op16 ∧ op16 ≤ start + 2 then
+          let ofs : Nat := op16 - start
+          some (.arithExt (.shrMod mul add d (roundOfs ofs) true none))
+        else
+          none
+
+      let decodeShlDivMod (start d : Nat) (addMode : Bool) : Option Instr :=
+        if start ≤ op16 ∧ op16 ≤ start + 2 then
+          let ofs : Nat := op16 - start
+          some (.arithExt (.shlDivMod d (roundOfs ofs) addMode true none))
+        else
+          none
+
+      let candidates : List (Option Instr) :=
+        [ decodeShrMod 0xa920 3 false true
+        , decodeShrMod 0xa924 1 false false
+        , decodeShrMod 0xa928 2 false false
+        , decodeShrMod 0xa92c 3 false false
+        , decodeShrMod 0xa9a0 3 true true
+        , decodeShrMod 0xa9a4 1 true false
+        , decodeShrMod 0xa9a8 2 true false
+        , decodeShrMod 0xa9ac 3 true false
+        , decodeShlDivMod 0xa9c0 3 true
+        , decodeShlDivMod 0xa9c4 1 false
+        , decodeShlDivMod 0xa9c8 2 false
+        , decodeShlDivMod 0xa9cc 3 false
+        ]
+      let instr? : Option Instr := candidates.findSome? (fun x => x)
+
+      match instr? with
+      | some instr =>
+          let (_, s24) ← s.takeBitsAsNat 24
+          return (instr, 24, s24)
+      | none =>
+          pure ()
+
+    -- {RSHIFT,MODPOW2,RSHIFTMOD}# and related pow2 shift/divmod ops (24-bit): 16-bit opcode + arg8 (delta=1).
+    if (0xa930 ≤ p16 ∧ p16 ≤ 0xa93e) ∨ (0xa9b0 ≤ p16 ∧ p16 ≤ 0xa9b2) ∨ (0xa9d0 ≤ p16 ∧ p16 ≤ 0xa9de) then
+      let z : Nat := (w24 &&& 0xff) + 1
+      let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+      let (_, s24) ← s.takeBitsAsNat 24
+      if 0xa930 ≤ p16 ∧ p16 ≤ 0xa932 then
+        let ofs : Nat := p16 - 0xa930
+        return (.arithExt (.shrMod false true 3 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa934 ≤ p16 ∧ p16 ≤ 0xa936 then
+        let ofs : Nat := p16 - 0xa934
+        return (.arithExt (.shrMod false false 1 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa938 ≤ p16 ∧ p16 ≤ 0xa93a then
+        let ofs : Nat := p16 - 0xa938
+        return (.arithExt (.shrMod false false 2 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa93c ≤ p16 ∧ p16 ≤ 0xa93e then
+        let ofs : Nat := p16 - 0xa93c
+        return (.arithExt (.shrMod false false 3 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa9b0 ≤ p16 ∧ p16 ≤ 0xa9b2 then
+        let ofs : Nat := p16 - 0xa9b0
+        return (.arithExt (.shrMod true true 3 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa9d0 ≤ p16 ∧ p16 ≤ 0xa9d2 then
+        let ofs : Nat := p16 - 0xa9d0
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) true false (some z)), 24, s24)
+      if 0xa9d4 ≤ p16 ∧ p16 ≤ 0xa9d6 then
+        let ofs : Nat := p16 - 0xa9d4
+        return (.arithExt (.shlDivMod 1 (roundOfs ofs) false false (some z)), 24, s24)
+      if 0xa9d8 ≤ p16 ∧ p16 ≤ 0xa9da then
+        let ofs : Nat := p16 - 0xa9d8
+        return (.arithExt (.shlDivMod 2 (roundOfs ofs) false false (some z)), 24, s24)
+      if 0xa9dc ≤ p16 ∧ p16 ≤ 0xa9de then
+        let ofs : Nat := p16 - 0xa9dc
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) false false (some z)), 24, s24)
+      throw .invOpcode
 
     -- Integer load from slice: 13-bit prefix (0xd708 >> 3) + 11-bit args.
     -- Matches C++ `exec_load_int_fixed2`.
@@ -2741,6 +3659,31 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let cell : Cell := Cell.mkOrdinary bits refCells
       return (.pushSliceConst (Slice.ofCell cell), 18, rest)
 
+  -- PUSHSLICE_REFS (15-bit prefix): 0x8c + r:2 + bits:5, then (r+1) refs and (8*bits+1) inline bits.
+  -- Matches C++ `exec_push_slice_r`.
+  if s.haveBits 15 then
+    let w15 := bitsToNat (s.readBits 15)
+    if w15 >>> 7 = 0x8c then
+      let r : Nat := (w15 >>> 5) &&& 0x3
+      let bits5 : Nat := w15 &&& 0x1f
+      let refs : Nat := r + 1
+      let dataBits : Nat := bits5 * 8 + 1
+      if !s.haveBits (15 + dataBits) then
+        throw .invOpcode
+      if !s.haveRefs refs then
+        throw .invOpcode
+      let (_, s15) ← s.takeBitsAsNat 15
+      let raw := s15.readBits dataBits
+      let mut rest := s15.advanceBits dataBits
+      let mut refCells : Array Cell := #[]
+      for _ in [0:refs] do
+        let (c, rest') ← rest.takeRefInv
+        refCells := refCells.push c
+        rest := rest'
+      let bits := bitsStripTrailingMarker raw
+      let cell : Cell := Cell.mkOrdinary bits refCells
+      return (.pushSliceConst (Slice.ofCell cell), 15, rest)
+
   -- PUSHINT (8/16/long)
   -- STSLICECONST (inline constant slice): 9-bit prefix 0xcf80>>7 + 5-bit args, then inline slice bits/refs.
   if s.haveBits 14 then
@@ -2825,6 +3768,11 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   -- 16-bit control register ops: PUSH c<i>, POP c<i>.
   if s.haveBits 16 then
     let w16 := bitsToNat (s.readBits 16)
+    -- PLDUZ: 13-bit prefix (0x1ae2) + 3-bit arg.
+    if w16 >>> 3 = 0x1ae2 then
+      let c : Nat := w16 &&& 0x7
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.plduz c), 16, s16)
     -- ST{I,U}X{R}{Q}: 0xcf00..0xcf07 (16-bit; 13-bit prefix + 3-bit flags).
     if w16 &&& 0xfff8 = 0xcf00 then
       let args3 : Nat := w16 &&& 0x7
@@ -2884,6 +3832,13 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xf2ff then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.try_, 16, s16)
+    -- TRYARGS <p>,<r>: 0xf3 (8-bit) + args8 (p:4, r:4).
+    if w16 &&& 0xff00 = 0xf300 then
+      let args8 : Nat := w16 &&& 0xff
+      let params : Nat := (args8 >>> 4) &&& 0xf
+      let retVals : Nat := args8 &&& 0xf
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tryArgs params retVals, 16, s16)
     -- XCHG3 (16-bit): 4-bit prefix 0x4 + 12-bit args (x,y,z nibbles).
     if w16 >>> 12 = 0x4 then
       let args12 : Nat := w16 &&& 0xfff
@@ -3025,12 +3980,21 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xc702 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.srempty, 16, s16)
+    if w16 = 0xc703 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdFirst, 16, s16)
     if w16 = 0xc710 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdCntLead0, 16, s16)
     if w16 = 0xc712 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdCntTrail0, 16, s16)
+    if w16 = 0xc711 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdCntLead1, 16, s16)
+    if w16 = 0xc713 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdCntTrail1, 16, s16)
     if w16 = 0xc705 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdEq, 16, s16)
@@ -3049,6 +4013,18 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xc70b then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdPpfxRev, 16, s16)
+    if w16 = 0xc70c then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdSfx, 16, s16)
+    if w16 = 0xc70d then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdSfxRev, 16, s16)
+    if w16 = 0xc70e then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdPsfx, 16, s16)
+    if w16 = 0xc70f then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdPsfxRev, 16, s16)
     if w16 = 0xd720 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdcutfirst, 16, s16)
@@ -3061,6 +4037,36 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xd723 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sdskiplast, 16, s16)
+    if w16 = 0xd724 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sdSubstr, 16, s16)
+    if w16 = 0xd730 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .scutfirst, 16, s16)
+    if w16 = 0xd731 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sskipfirst, 16, s16)
+    if w16 = 0xd732 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .scutlast, 16, s16)
+    if w16 = 0xd733 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .sskiplast, 16, s16)
+    if w16 = 0xcf14 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp (.strefR false), 16, s16)
+    if w16 = 0xcf1c then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp (.strefR true), 16, s16)
+    if w16 = 0xcf23 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellOp .endxc, 16, s16)
+    if w16 = 0xb600 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .fitsx, 16, s16)
+    if w16 = 0xb601 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .ufitsx, 16, s16)
     if w16 = 0xb608 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.min, 16, s16)
@@ -3100,9 +4106,49 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xb7a5 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qdec, 16, s16)
+    -- QLSHIFT_VAR / QRSHIFT_VAR (16-bit): 0xb7ac/0xb7ad.
+    if w16 = 0xb7ac then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.arithExt (.lshiftVar true), 16, s16)
+    if w16 = 0xb7ad then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.arithExt (.rshiftVar true), 16, s16)
     if w16 = 0xb7ae then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qpow2, 16, s16)
+    if w16 = 0xb7b0 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qand, 16, s16)
+    if w16 = 0xb7b1 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qor, 16, s16)
+    if w16 = 0xb7b2 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qxor, 16, s16)
+    if w16 = 0xb7b3 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qnot, 16, s16)
+    if w16 = 0xb7b8 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qsgn, 16, s16)
+    if w16 = 0xb7b9 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qless, 16, s16)
+    if w16 = 0xb7ba then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qequal, 16, s16)
+    if w16 = 0xb7bb then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qleq, 16, s16)
+    if w16 = 0xb7bc then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qgreater, 16, s16)
+    if w16 = 0xb7bd then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qneq, 16, s16)
+    if w16 = 0xb7be then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .qgeq, 16, s16)
     if w16 = 0xb7bf then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.qcmp, 16, s16)
@@ -3134,6 +4180,13 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let quiet : Bool := (args2 &&& 2) = 2
       let (_, s16) ← s.takeBitsAsNat 16
       return (.loadSliceX prefetch quiet, 16, s16)
+    -- XLOAD / XLOADQ: 0xd73a/0xd73b.
+    if w16 = 0xd73a then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.xload false), 16, s16)
+    if w16 = 0xd73b then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.xload true), 16, s16)
     -- DIV/MOD family (16-bit): 12-bit prefix 0xa90 + 4-bit args.
     if w16 >>> 4 = 0xa90 then
       let args4 : Nat := w16 &&& 0xf
@@ -3169,6 +4222,81 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         throw .invOpcode
       let (_, s16) ← s.takeBitsAsNat 16
       return (.mulDivMod d roundMode add false, 16, s16)
+
+    -- SHR/MOD pow2 family (16-bit): 0xa920..0xa92e / 0xa9a0..0xa9ae / 0xa9c0..0xa9ce.
+    let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+    if (0xa920 ≤ w16 ∧ w16 ≤ 0xa92e) ∨ (0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9ae) ∨ (0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9ce) then
+      let (_, s16) ← s.takeBitsAsNat 16
+      if 0xa920 ≤ w16 ∧ w16 ≤ 0xa922 then
+        let ofs : Nat := w16 - 0xa920
+        return (.arithExt (.shrMod false true 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa924 ≤ w16 ∧ w16 ≤ 0xa926 then
+        let ofs : Nat := w16 - 0xa924
+        return (.arithExt (.shrMod false false 1 (roundOfs ofs) false none), 16, s16)
+      if 0xa928 ≤ w16 ∧ w16 ≤ 0xa92a then
+        let ofs : Nat := w16 - 0xa928
+        return (.arithExt (.shrMod false false 2 (roundOfs ofs) false none), 16, s16)
+      if 0xa92c ≤ w16 ∧ w16 ≤ 0xa92e then
+        let ofs : Nat := w16 - 0xa92c
+        return (.arithExt (.shrMod false false 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9a2 then
+        let ofs : Nat := w16 - 0xa9a0
+        return (.arithExt (.shrMod true true 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa9a4 ≤ w16 ∧ w16 ≤ 0xa9a6 then
+        let ofs : Nat := w16 - 0xa9a4
+        return (.arithExt (.shrMod true false 1 (roundOfs ofs) false none), 16, s16)
+      if 0xa9a8 ≤ w16 ∧ w16 ≤ 0xa9aa then
+        let ofs : Nat := w16 - 0xa9a8
+        return (.arithExt (.shrMod true false 2 (roundOfs ofs) false none), 16, s16)
+      if 0xa9ac ≤ w16 ∧ w16 ≤ 0xa9ae then
+        let ofs : Nat := w16 - 0xa9ac
+        return (.arithExt (.shrMod true false 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9c2 then
+        let ofs : Nat := w16 - 0xa9c0
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) true false none), 16, s16)
+      if 0xa9c4 ≤ w16 ∧ w16 ≤ 0xa9c6 then
+        let ofs : Nat := w16 - 0xa9c4
+        return (.arithExt (.shlDivMod 1 (roundOfs ofs) false false none), 16, s16)
+      if 0xa9c8 ≤ w16 ∧ w16 ≤ 0xa9ca then
+        let ofs : Nat := w16 - 0xa9c8
+        return (.arithExt (.shlDivMod 2 (roundOfs ofs) false false none), 16, s16)
+      if 0xa9cc ≤ w16 ∧ w16 ≤ 0xa9ce then
+        let ofs : Nat := w16 - 0xa9cc
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) false false none), 16, s16)
+      throw .invOpcode
+
+    -- STREF_ALT: 0xcf10 (same semantics as STREF).
+    if w16 = 0xcf10 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.stref, 16, s16)
+
+    -- STREFCONST / STREF2CONST: 0xcf20/0xcf21 (+1/+2 refs).
+    if w16 = 0xcf20 then
+      if !s.haveRefs 1 then
+        throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (c, rest) ← s16.takeRefInv
+      return (.cellExt (.stRefConst c), 16, rest)
+    if w16 = 0xcf21 then
+      if !s.haveRefs 2 then
+        throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (c1, s17) ← s16.takeRefInv
+      let (c2, rest) ← s17.takeRefInv
+      return (.cellExt (.stRef2Const c1 c2), 16, rest)
+
+    -- ST{I,U}LE{4,8}: 0xcf28..0xcf2b.
+    if 0xcf28 ≤ w16 ∧ w16 ≤ 0xcf2b then
+      let (_, s16) ← s.takeBitsAsNat 16
+      let unsigned : Bool := (w16 &&& 1) = 1
+      let bytes : Nat := if (w16 &&& 2) = 2 then 8 else 4
+      return (.cellExt (.stLeInt unsigned bytes), 16, s16)
+
+    -- BTOS: 0xcf50.
+    if w16 = 0xcf50 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt .btos, 16, s16)
+
     -- Store slice into builder (16-bit): STSLICE / STSLICER and quiet variants.
     if w16 = 0xcf12 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -3246,6 +4374,48 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xf827 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp .balance, 16, s16)
+    if w16 = 0xf824 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .blockLt, 16, s16)
+    if w16 = 0xf825 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .lTime, 16, s16)
+    if w16 = 0xf826 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .randSeed, 16, s16)
+    if w16 = 0xf828 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .myAddr, 16, s16)
+    if w16 = 0xf829 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .configRoot, 16, s16)
+    if w16 = 0xf82a then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .myCode, 16, s16)
+    if w16 = 0xf82b then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .incomingValue, 16, s16)
+    if w16 = 0xf82c then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .storageFees, 16, s16)
+    if w16 = 0xf82d then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .prevBlocksInfoTuple, 16, s16)
+    if w16 = 0xf82e then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .unpackedConfigTuple, 16, s16)
+    if w16 = 0xf82f then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .duePayment, 16, s16)
+    if w16 = 0xf830 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .configDict, 16, s16)
+    if w16 = 0xf832 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.configParam false), 16, s16)
+    if w16 = 0xf833 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.configParam true), 16, s16)
     if w16 = 0xf814 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp (.setRand false), 16, s16)
@@ -3256,6 +4426,11 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let idx : Nat := w16 - 0xf820
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp (.getParam idx), 16, s16)
+    if w16 = 0xf881 then
+      -- GETPARAMLONG / GETPARAMLONG2: 24-bit opcode 0xf88100..0xf881ff (arg = low 8 bits).
+      let (w24, s24) ← s.takeBitsAsNat 24
+      let idx : Nat := w24 &&& 0xff
+      return (.tonEnvOp (.getParam idx), 24, s24)
     if w16 = 0xf835 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp .globalId, 16, s16)
@@ -3296,6 +4471,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let idx : Nat := w16 &&& 0x1f
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp (.setGlob idx), 16, s16)
+    if w16 = 0xf880 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .getExtraBalance, 16, s16)
     if 0xf890 ≤ w16 ∧ w16 < 0xf8a0 then
       let idx : Nat := w16 - 0xf890
       let (_, s16) ← s.takeBitsAsNat 16
@@ -3306,15 +4484,132 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xf901 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.cryptoOp .hashSU, 16, s16)
+    if w16 = 0xf902 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cryptoOp .sha256U, 16, s16)
     if w16 = 0xf910 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.cryptoOp .chkSignU, 16, s16)
     if w16 = 0xf911 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.cryptoOp .chkSignS, 16, s16)
+    -- Newer crypto ops (16-bit): 0xf912..0xf916 and RIST255_* (0xf920..0xf926).
+    if w16 = 0xf912 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cryptoOp (.ext .ecrecover), 16, s16)
+    if w16 = 0xf913 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cryptoOp (.ext .secp256k1XonlyPubkeyTweakAdd), 16, s16)
+    if w16 = 0xf914 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cryptoOp (.ext .p256ChkSignU), 16, s16)
+    if w16 = 0xf915 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cryptoOp (.ext .p256ChkSignS), 16, s16)
+    if w16 = 0xf916 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt .hashbu, 16, s16)
+    if 0xf920 ≤ w16 ∧ w16 ≤ 0xf926 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      match w16 with
+      | 0xf920 => return (.cryptoOp (.ext .rist255FromHash), 16, s16)
+      | 0xf921 => return (.cryptoOp (.ext .rist255Validate), 16, s16)
+      | 0xf922 => return (.cryptoOp (.ext .rist255Add), 16, s16)
+      | 0xf923 => return (.cryptoOp (.ext .rist255Sub), 16, s16)
+      | 0xf924 => return (.cryptoOp (.ext .rist255Mul), 16, s16)
+      | 0xf925 => return (.cryptoOp (.ext .rist255MulBase), 16, s16)
+      | _ => return (.cryptoOp (.ext .rist255PushL), 16, s16)
+    if w16 = 0xf940 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.cdataSize true), 16, s16)
+    if w16 = 0xf941 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.cdataSize false), 16, s16)
+    if w16 = 0xf942 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.sdataSize true), 16, s16)
+    if w16 = 0xf943 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.sdataSize false), 16, s16)
+    -- VarInt/VarUInt + standard address ops (16-bit): 0xfa01..0xfa07 / 0xfa48..0xfa55.
+    if w16 = 0xfa01 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.ldVarInt true 16), 16, s16)
+    if w16 = 0xfa03 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.stVarInt true 16), 16, s16)
+    if w16 = 0xfa04 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.ldVarInt false 32), 16, s16)
+    if w16 = 0xfa05 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.ldVarInt true 32), 16, s16)
+    if w16 = 0xfa06 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.stVarInt false 32), 16, s16)
+    if w16 = 0xfa07 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.cellExt (.stVarInt true 32), 16, s16)
+    if w16 = 0xfa48 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.ldStdAddr false), 16, s16)
+    if w16 = 0xfa49 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.ldStdAddr true), 16, s16)
+    if w16 = 0xfa50 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.ldOptStdAddr false), 16, s16)
+    if w16 = 0xfa51 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.ldOptStdAddr true), 16, s16)
+    if w16 = 0xfa52 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.stStdAddr false), 16, s16)
+    if w16 = 0xfa53 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.stStdAddr true), 16, s16)
+    if w16 = 0xfa54 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.stOptStdAddr false), 16, s16)
+    if w16 = 0xfa55 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.stOptStdAddr true), 16, s16)
+    -- SETCONTARGS <copy>,<more> (16-bit): 0xec (8-bit) + args8 (copy:4, more:4 with 15 => -1).
+    if w16 &&& 0xff00 = 0xec00 then
+      let args8 : Nat := w16 &&& 0xff
+      let copy : Nat := (args8 >>> 4) &&& 0xf
+      let moreNib : Nat := args8 &&& 0xf
+      let more : Int := if moreNib = 15 then -1 else Int.ofNat moreNib
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.setContArgs copy more, 16, s16)
+    -- RETURNARGS <count> (16-bit): 12-bit prefix 0xed0 + 4-bit count.
+    if w16 &&& 0xfff0 = 0xed00 then
+      let count : Nat := w16 &&& 0xf
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.returnArgs count, 16, s16)
+    if w16 = 0xed10 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.returnVarArgs, 16, s16)
     if w16 = 0xed11 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.setContVarArgs, 16, s16)
+    if w16 = 0xed12 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.setNumVarArgs, 16, s16)
+    if w16 = 0xed1e then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.bless, 16, s16)
+    if w16 = 0xed1f then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.blessVarArgs, 16, s16)
+    -- BLESSARGS <copy>,<more> (16-bit): 0xee (8-bit) + args8 (copy:4, more:4 with 15 => -1).
+    if w16 &&& 0xff00 = 0xee00 then
+      let args8 : Nat := w16 &&& 0xff
+      let copy : Nat := (args8 >>> 4) &&& 0xf
+      let moreNib : Nat := args8 &&& 0xf
+      let more : Int := if moreNib = 15 then -1 else Int.ofNat moreNib
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.blessArgs copy more, 16, s16)
     if w16 &&& 0xfff8 = 0xed40 then
       let idx : Nat := w16 &&& 0xf
       if idx = 6 then throw .invOpcode
@@ -3330,11 +4625,51 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       if idx = 6 ∨ idx ≥ 8 then throw .invOpcode
       let (_, s16) ← s.takeBitsAsNat 16
       return (.setContCtr idx, 16, s16)
+    if w16 &&& 0xfff8 = 0xed70 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.setRetCtr idx), 16, s16)
+    if w16 &&& 0xfff8 = 0xed80 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.setAltCtr idx), 16, s16)
+    if w16 &&& 0xfff8 = 0xed90 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.popSave idx), 16, s16)
     if w16 &&& 0xfff8 = 0xeda0 then
       let idx : Nat := w16 &&& 0xf
       if idx = 6 then throw .invOpcode
       let (_, s16) ← s.takeBitsAsNat 16
       return (.saveCtr idx, 16, s16)
+    if w16 &&& 0xfff8 = 0xedb0 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.saveAltCtr idx), 16, s16)
+    if w16 &&& 0xfff8 = 0xedc0 then
+      let idx : Nat := w16 &&& 0xf
+      if idx = 6 then throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.saveBothCtr idx), 16, s16)
+    if w16 = 0xede0 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .pushCtrX, 16, s16)
+    if w16 = 0xede1 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .popCtrX, 16, s16)
+    if w16 = 0xede2 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .setContCtrX, 16, s16)
+    if w16 = 0xede4 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .setContCtrManyX, 16, s16)
+    if w16 = 0xdb50 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .runvmx, 16, s16)
     if w16 = 0xedf0 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.boolAnd, 16, s16)
@@ -3350,10 +4685,33 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xedfb then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.sameAltSave, 16, s16)
+    if w16 = 0xedf3 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .atexit, 16, s16)
+    if w16 = 0xedf4 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .atexitAlt, 16, s16)
+    if w16 = 0xedf5 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .setExitAlt, 16, s16)
+    if w16 = 0xedf6 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .thenret, 16, s16)
+    if w16 = 0xedf7 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .thenretAlt, 16, s16)
+    if w16 = 0xedf8 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .invert, 16, s16)
+    if w16 = 0xedf9 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .booleval, 16, s16)
     if w16 &&& 0xff00 = 0xff00 then
       let b : Nat := w16 &&& 0xff
       if b = 0xf0 then
-        throw .invOpcode
+        -- SETCPX (0xfff0): cp is taken from the stack.
+        let (_, s16) ← s.takeBitsAsNat 16
+        return (.setcpX, 16, s16)
       -- Match `exec_set_cp`: cp = ((b + 0x10) & 0xff) - 0x10.
       let cp : Int := Int.ofNat ((b + 0x10) &&& 0xff) - 0x10
       let (_, s16) ← s.takeBitsAsNat 16
@@ -3371,12 +4729,24 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xfa41 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp (.ldMsgAddr true), 16, s16)
+    if w16 = 0xfa42 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.parseMsgAddr false), 16, s16)
+    if w16 = 0xfa43 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.parseMsgAddr true), 16, s16)
     if w16 = 0xfa44 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp (.rewriteStdAddr false), 16, s16)
     if w16 = 0xfa45 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp (.rewriteStdAddr true), 16, s16)
+    if w16 = 0xfa46 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.rewriteVarAddr false), 16, s16)
+    if w16 = 0xfa47 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp (.rewriteVarAddr true), 16, s16)
     if w16 = 0xfb00 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp .sendRawMsg, 16, s16)
@@ -3389,6 +4759,12 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xfb04 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp .setCode, 16, s16)
+    if w16 = 0xfb06 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .setLibCode, 16, s16)
+    if w16 = 0xfb07 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.tonEnvOp .changeLib, 16, s16)
     if w16 = 0xfb08 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.tonEnvOp .sendMsg, 16, s16)
@@ -3422,6 +4798,62 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let (c1, s1) ← s16.takeRefInv
       let (c2, rest) ← s1.takeRefInv
       return (.ifrefElseRef (Slice.ofCell c1) (Slice.ofCell c2), 16, rest)
+    if w16 = 0xe314 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.repeat true), 16, s16)
+    if w16 = 0xe315 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.repeatEnd true), 16, s16)
+    if w16 = 0xe316 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.until true), 16, s16)
+    if w16 = 0xe317 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.untilEnd true), 16, s16)
+    if w16 = 0xe318 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.while true), 16, s16)
+    if w16 = 0xe319 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.whileEnd true), 16, s16)
+    if w16 = 0xe31a then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.again true), 16, s16)
+    if w16 = 0xe31b then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.againEnd true), 16, s16)
+    if w16 = 0xe304 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .condSel, 16, s16)
+    if w16 = 0xe305 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .condSelChk, 16, s16)
+    if w16 = 0xe308 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .ifretAlt, 16, s16)
+    if w16 = 0xe309 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt .ifnotretAlt, 16, s16)
+    -- IFBITJMP / IFNBITJMP: 11-bit prefix (0x71c/0x71d) + 5-bit arg, padded to 16 bits.
+    if w16 &&& 0xffe0 = 0xe380 then
+      let i : Nat := w16 &&& 0x1f
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.ifbitjmp i), 11 + 5, s16)
+    if w16 &&& 0xffe0 = 0xe3a0 then
+      let i : Nat := w16 &&& 0x1f
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.contExt (.ifnbitjmp i), 11 + 5, s16)
+    -- IFBITJMPREF / IFNBITJMPREF: same bit layout plus 1 ref operand.
+    if w16 &&& 0xffe0 = 0xe3c0 then
+      let i : Nat := w16 &&& 0x1f
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (c, rest) ← s16.takeRefInv
+      return (.contExt (.ifbitjmpref i (Slice.ofCell c)), 11 + 5, rest)
+    if w16 &&& 0xffe0 = 0xe3e0 then
+      let i : Nat := w16 &&& 0x1f
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (c, rest) ← s16.takeRefInv
+      return (.contExt (.ifnbitjmpref i (Slice.ofCell c)), 11 + 5, rest)
 
     -- Continuation calls/jumps with arg counts (contops.cpp).
     -- CALLXARGS <params>,<retvals>: 0xda (8-bit) + args8 (params:4, retvals:4).
@@ -3455,10 +4887,45 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xdb32 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.retBool, 16, s16)
+    if w16 = 0xdb34 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.callcc, 16, s16)
+    if w16 = 0xdb35 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.jmpxData, 16, s16)
+    if w16 = 0xdb36 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (args8, s24) ← s16.takeBitsAsNat 8
+      let params : Nat := (args8 >>> 4) &&& 0xf
+      let retVals : Int := Int.ofNat ((args8 + 1) &&& 0xf) - 1
+      return (.callccArgs params retVals, 24, s24)
+    if w16 = 0xdb38 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.callxVarArgs, 16, s16)
+    if w16 = 0xdb39 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.retVarArgs, 16, s16)
+    if w16 = 0xdb3a then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.jmpxVarArgs, 16, s16)
+    if w16 = 0xdb3b then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.callccVarArgs, 16, s16)
     if w16 = 0xdb3c then
       let (_, s16) ← s.takeBitsAsNat 16
       let (c, rest) ← s16.takeRefInv
       return (.callRef (Slice.ofCell c), 16, rest)
+    if w16 = 0xdb3d then
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (c, rest) ← s16.takeRefInv
+      return (.jmpRef (Slice.ofCell c), 16, rest)
+    if w16 = 0xdb3e then
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (c, rest) ← s16.takeRefInv
+      return (.jmpRefData (Slice.ofCell c), 16, rest)
+    if w16 = 0xdb3f then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.retData, 16, s16)
 
     if w16 = 0xf400 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -3466,6 +4933,12 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if w16 = 0xf401 then
       let (_, s16) ← s.takeBitsAsNat 16
       return (.skipdict, 16, s16)
+    if w16 = 0xf402 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.lddicts false), 16, s16)
+    if w16 = 0xf403 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.lddicts true), 16, s16)
     -- DICT{I,U}GET{REF?}: 0xf40a..0xf40f.
     if 0xf40a ≤ w16 ∧ w16 ≤ 0xf40f then
       let byRef : Bool := (w16 &&& 1) = 1
@@ -3488,6 +4961,35 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     if 0xf432 ≤ w16 ∧ w16 < 0xf438 then
       return (← decodeDictSet .add)
 
+    -- DICT*{SET,REPLACE,ADD,DEL}GET{REF?}: 0xf41a..0xf41f / 0xf42a..0xf42f / 0xf43a..0xf43f / 0xf462..0xf467.
+    let decodeDictMutGet (mode : DictMutMode) : Except Excno (Instr × Nat × Slice) := do
+      let byRef : Bool := (w16 &&& 1) = 1
+      let intKey : Bool := (w16 &&& 4) = 4
+      let unsigned : Bool := intKey && ((w16 &&& 2) = 2)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.mutGet intKey unsigned byRef mode), 16, s16)
+    if 0xf41a ≤ w16 ∧ w16 ≤ 0xf41f then
+      return (← decodeDictMutGet .set)
+    if 0xf42a ≤ w16 ∧ w16 ≤ 0xf42f then
+      return (← decodeDictMutGet .replace)
+    if 0xf43a ≤ w16 ∧ w16 ≤ 0xf43f then
+      return (← decodeDictMutGet .add)
+    if 0xf462 ≤ w16 ∧ w16 ≤ 0xf467 then
+      return (← decodeDictMutGet .del)
+
+    -- DICT*{SET,REPLACE,ADD}GETB (builder): 0xf445..0xf447 / 0xf44d..0xf44f / 0xf455..0xf457.
+    let decodeDictMutGetB (mode : DictSetMode) : Except Excno (Instr × Nat × Slice) := do
+      let intKey : Bool := (w16 &&& 2) = 2
+      let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.mutGetB intKey unsigned mode), 16, s16)
+    if 0xf445 ≤ w16 ∧ w16 ≤ 0xf447 then
+      return (← decodeDictMutGetB .set)
+    if 0xf44d ≤ w16 ∧ w16 ≤ 0xf44f then
+      return (← decodeDictMutGetB .replace)
+    if 0xf455 ≤ w16 ∧ w16 ≤ 0xf457 then
+      return (← decodeDictMutGetB .add)
+
     -- DICT{I,U}?SETB (builder value): 0xf441..0xf443.
     if 0xf441 ≤ w16 ∧ w16 < 0xf444 then
       let intKey : Bool := (w16 &&& 2) = 2
@@ -3501,6 +5003,44 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
       let (_, s16) ← s.takeBitsAsNat 16
       return (.dictReplaceB intKey unsigned, 16, s16)
+
+    -- DICT*ADDB (builder): 0xf451..0xf453.
+    if 0xf451 ≤ w16 ∧ w16 < 0xf454 then
+      let intKey : Bool := (w16 &&& 2) = 2
+      let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictSetB intKey unsigned .add, 16, s16)
+
+    -- DICT{I,U}?DEL: 0xf459..0xf45b.
+    if 0xf459 ≤ w16 ∧ w16 < 0xf45c then
+      let intKey : Bool := (w16 &&& 2) = 2
+      let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.del intKey unsigned), 16, s16)
+
+    -- DICT{I,U}?GETOPTREF: 0xf469..0xf46b.
+    if 0xf469 ≤ w16 ∧ w16 < 0xf46c then
+      let intKey : Bool := (w16 &&& 2) = 2
+      let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.getOptRef intKey unsigned), 16, s16)
+
+    -- DICT{I,U}?SETGETOPTREF: 0xf46d..0xf46f.
+    if 0xf46d ≤ w16 ∧ w16 < 0xf470 then
+      let intKey : Bool := (w16 &&& 2) = 2
+      let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.setGetOptRef intKey unsigned), 16, s16)
+
+    -- PFXDICT{SET,REPLACE,ADD,DEL}: 0xf470..0xf473.
+    if 0xf470 ≤ w16 ∧ w16 ≤ 0xf472 then
+      let mode : DictSetMode :=
+        if w16 = 0xf470 then .set else if w16 = 0xf471 then .replace else .add
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.pfxSet mode), 16, s16)
+    if w16 = 0xf473 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt .pfxDel, 16, s16)
 
     -- DICTGET{NEXT,PREV}{EQ} and DICT{I,U}GET{NEXT,PREV}{EQ}: 0xf474..0xf47f.
     -- Matches C++ `exec_dict_getnear` (dictops.cpp).
@@ -3516,6 +5056,24 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       let args5 : Nat := w16 &&& 0x1f
       let (_, s16) ← s.takeBitsAsNat 16
       return (.dictGetMinMax args5, 16, s16)
+
+    -- PFXDICTGET{Q, ,JMP,EXEC}: 0xf4a8..0xf4ab.
+    if 0xf4a8 ≤ w16 ∧ w16 ≤ 0xf4ab then
+      let kind : PfxDictGetKind :=
+        if w16 = 0xf4a8 then .getQ
+        else if w16 = 0xf4a9 then .get
+        else if w16 = 0xf4aa then .getJmp
+        else .getExec
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.pfxGet kind), 16, s16)
+
+    -- SUBDICT*GET / SUBDICT*RPGET: 0xf4b1..0xf4b3 / 0xf4b5..0xf4b7.
+    if (0xf4b1 ≤ w16 ∧ w16 < 0xf4b4) ∨ (0xf4b5 ≤ w16 ∧ w16 < 0xf4b8) then
+      let rp : Bool := (0xf4b5 ≤ w16 ∧ w16 < 0xf4b8)
+      let intKey : Bool := (w16 &&& 2) = 2
+      let unsigned : Bool := intKey && ((w16 &&& 1) = 1)
+      let (_, s16) ← s.takeBitsAsNat 16
+      return (.dictExt (.subdictGet intKey unsigned rp), 16, s16)
 
     if w16 = 0xd726 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -3832,6 +5390,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   if b8 = 0xad then
     let (_, s') ← s.takeBitsAsNat 8
     return (.rshift, 8, s')
+  if b8 = 0xae then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt .pow2, 8, s')
   if b8 = 0xba then
     let (_, s') ← s.takeBitsAsNat 8
     return (.equal, 8, s')
@@ -3850,6 +5411,13 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   if b8 = 0xb3 then
     let (_, s') ← s.takeBitsAsNat 8
     return (.not_, 8, s')
+  -- FITS / UFITS (16-bit): 0xb4/0xb5 + width8 (delta=1).
+  if b8 = 0xb4 ∨ b8 = 0xb5 then
+    let (_, s8) ← s.takeBitsAsNat 8
+    let (imm8, s16) ← s8.takeBitsAsNat 8
+    let bits : Nat := imm8 + 1
+    let unsigned : Bool := b8 = 0xb5
+    return (.arithExt (.fitsConst unsigned false bits), 16, s16)
   if b8 = 0xb8 then
     let (_, s') ← s.takeBitsAsNat 8
     return (.sgn, 8, s')
@@ -3884,6 +5452,12 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     let (_, s8) ← s.takeBitsAsNat 8
     let (arg, s16) ← s8.takeBitsAsNat 8
     return (.neqInt (natToIntSignedTwos arg 8), 16, s16)
+  if b8 = 0xc4 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt .isnan, 8, s')
+  if b8 = 0xc5 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt .chknan, 8, s')
   if b8 = 0xc8 then
     let (_, s') ← s.takeBitsAsNat 8
     return (.newc, 8, s')
@@ -3955,12 +5529,79 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   if b8 = 0xe2 then
     let (_, s') ← s.takeBitsAsNat 8
     return (.ifelse, 8, s')
+  if b8 = 0xe4 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt (.repeat false), 8, s')
+  if b8 = 0xe5 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt (.repeatEnd false), 8, s')
   if b8 = 0xe6 then
     let (_, s') ← s.takeBitsAsNat 8
     return (.until, 8, s')
+  if b8 = 0xe7 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt (.untilEnd false), 8, s')
   if b8 = 0xe8 then
     let (_, s') ← s.takeBitsAsNat 8
     return (.while_, 8, s')
+  if b8 = 0xe9 then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt (.whileEnd false), 8, s')
+  if b8 = 0xea then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt (.again false), 8, s')
+  if b8 = 0xeb then
+    let (_, s') ← s.takeBitsAsNat 8
+    return (.contExt (.againEnd false), 8, s')
+
+  -- Debug / FFI opcodes.
+  -- EXTCALL: 0xfc00 (16) + id (32).
+  if s.haveBits 48 then
+    let w16 := bitsToNat (s.readBits 16)
+    if w16 = 0xfc00 then
+      let (_, s16) ← s.takeBitsAsNat 16
+      let (id, rest) ← s16.takeBitsAsNat 32
+      return (.debugOp (.extCall id), 48, rest)
+
+  -- Debug family: 0xfe**.
+  if s.haveBits 16 then
+    let w16 := bitsToNat (s.readBits 16)
+    -- DUMPSTK: 0xfe00.
+    if w16 = 0xfe00 then
+      let (_, rest) ← s.takeBitsAsNat 16
+      return (.debugOp .dumpStk, 16, rest)
+    -- STRDUMP: 0xfe14.
+    if w16 = 0xfe14 then
+      let (_, rest) ← s.takeBitsAsNat 16
+      return (.debugOp .strDump, 16, rest)
+    -- DUMP: 12-bit prefix 0xfe2 + 4-bit stack index.
+    if w16 >>> 4 = 0xfe2 then
+      let idx : Nat := w16 &&& 0xf
+      let (_, rest) ← s.takeBitsAsNat 16
+      return (.debugOp (.dump idx), 16, rest)
+    -- DEBUGSTR: 12-bit prefix 0xfef + 4-bit length tag, then (len+1) bytes of data.
+    if w16 >>> 4 = 0xfef then
+      let len4 : Nat := w16 &&& 0xf
+      let dataBits : Nat := (len4 + 1) * 8
+      if !s.haveBits (16 + dataBits) then
+        throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      let data := s16.readBits dataBits
+      let rest := s16.advanceBits dataBits
+      let cell : Cell := Cell.mkOrdinary data #[]
+      return (.debugOp (.debugStr (Slice.ofCell cell)), 16, rest)
+    -- DEBUG / DEBUG_1 / DEBUG_2: 0xfe + 8-bit immediate, with disjoint ranges.
+    if w16 >>> 8 = 0xfe then
+      let imm : Nat := w16 &&& 0xff
+      if 0x01 ≤ imm ∧ imm ≤ 0x13 then
+        let (_, rest) ← s.takeBitsAsNat 16
+        return (.debugOp (.debug imm), 16, rest)
+      else if 0x15 ≤ imm ∧ imm ≤ 0x1f then
+        let (_, rest) ← s.takeBitsAsNat 16
+        return (.debugOp (.debug1 imm), 16, rest)
+      else if 0x30 ≤ imm ∧ imm ≤ 0xef then
+        let (_, rest) ← s.takeBitsAsNat 16
+        return (.debugOp (.debug2 imm), 16, rest)
 
   throw .invOpcode
 
@@ -3992,12 +5633,19 @@ def Slice.takeBitsAsNatCellUnd (s : Slice) (n : Nat) : Except Excno (Nat × Slic
     throw .cellUnd
 
 def Slice.skipMaybeAnycast (s : Slice) : Except Excno Slice := do
-  -- Minimal support: accept `nothing$0` and reject `just$1` (Anycast).
+  -- Mirrors C++ `skip_maybe_anycast` (tonops.cpp).
   let (b, s1) ← s.takeBitsAsNatCellUnd 1
   if b = 0 then
     return s1
   else
-    throw .cellUnd
+    let lenBits : Nat := 5 -- natLenBits 30
+    let (depth, s2) ← s1.takeBitsAsNatCellUnd lenBits
+    if depth = 0 ∨ depth > 30 then
+      throw .cellUnd
+    if s2.haveBits depth then
+      return s2.advanceBits depth
+    else
+      throw .cellUnd
 
 def Slice.skipMessageAddr (s : Slice) : Except Excno Slice := do
   -- Minimal `MsgAddress` support (enough for common std addresses used in real txs).
@@ -4030,6 +5678,63 @@ def Slice.skipMessageAddr (s : Slice) : Except Excno Slice := do
         return s12.advanceBits need
       else
         throw .cellUnd
+  | _ =>
+      throw .cellUnd
+
+def Slice.parseMaybeAnycast (s : Slice) : Except Excno (Value × Slice) := do
+  -- Mirrors C++ `parse_maybe_anycast` (tonops.cpp): returns (null) for nothing$0 or a slice for just$1.
+  let (b, s1) ← s.takeBitsAsNatCellUnd 1
+  if b = 0 then
+    return (.null, s1)
+  else
+    let lenBits : Nat := 5 -- natLenBits 30
+    let (depth, s2) ← s1.takeBitsAsNatCellUnd lenBits
+    if depth = 0 ∨ depth > 30 then
+      throw .cellUnd
+    if !s2.haveBits depth then
+      throw .cellUnd
+    let pfxBits := s2.readBits depth
+    let s3 := s2.advanceBits depth
+    return (.slice (Slice.ofCell (Cell.mkOrdinary pfxBits #[])), s3)
+
+def Slice.parseMessageAddr (s : Slice) : Except Excno (Array Value × Slice) := do
+  -- Mirrors C++ `parse_message_addr` (tonops.cpp).
+  let (tag, s2) ← s.takeBitsAsNatCellUnd 2
+  match tag with
+  | 0 =>
+      -- addr_none$00 = MsgAddressExt; -> (0)
+      return (#[.int (.num 0)], s2)
+  | 1 =>
+      -- addr_extern$01 len:(## 9) external_address:(bits len) = MsgAddressExt; -> (1, addr)
+      let (len, s3) ← s2.takeBitsAsNatCellUnd 9
+      if !s3.haveBits len then
+        throw .cellUnd
+      let addrBits := s3.readBits len
+      let s4 := s3.advanceBits len
+      return (#[.int (.num 1), .slice (Slice.ofCell (Cell.mkOrdinary addrBits #[]))], s4)
+  | 2 =>
+      -- addr_std$10 anycast:(Maybe Anycast) workchain_id:int8 address:bits256 = MsgAddressInt;
+      -- -> (2, anycast_or_null, workchain, addr256)
+      let (anycast, s3) ← s2.parseMaybeAnycast
+      let (wcNat, s4) ← s3.takeBitsAsNatCellUnd 8
+      if !s4.haveBits 256 then
+        throw .cellUnd
+      let addrBits := s4.readBits 256
+      let s5 := s4.advanceBits 256
+      let wc : Int := natToIntSignedTwos wcNat 8
+      return (#[.int (.num 2), anycast, .int (.num wc), .slice (Slice.ofCell (Cell.mkOrdinary addrBits #[]))], s5)
+  | 3 =>
+      -- addr_var$11 anycast:(Maybe Anycast) addr_len:(## 9) workchain_id:int32 address:(bits addr_len) = MsgAddressInt;
+      -- -> (3, anycast_or_null, workchain, addr)
+      let (anycast, s3) ← s2.parseMaybeAnycast
+      let (len, s4) ← s3.takeBitsAsNatCellUnd 9
+      let (wcNat, s5) ← s4.takeBitsAsNatCellUnd 32
+      if !s5.haveBits len then
+        throw .cellUnd
+      let addrBits := s5.readBits len
+      let s6 := s5.advanceBits len
+      let wc : Int := natToIntSignedTwos wcNat 32
+      return (#[.int (.num 3), anycast, .int (.num wc), .slice (Slice.ofCell (Cell.mkOrdinary addrBits #[]))], s6)
   | _ =>
       throw .cellUnd
 
@@ -4674,6 +6379,179 @@ def dictSetBuilderWithCells (root : Option Cell) (key : BitString) (val : Builde
     fun b => builderAppendBuilderChecked b val
   dictSetGenAuxWithCells root key storeVal mode
 
+partial def dictLookupSetGenAuxWithCells (root : Option Cell) (key : BitString)
+    (storeVal : Builder → Except Excno Builder) (mode : DictSetMode) :
+    Except Excno (Option Slice × Option Cell × Bool × Nat × Array Cell) := do
+  let n : Nat := key.size
+  match root with
+  | none =>
+      if mode == .replace then
+        return (none, none, false, 0, #[])
+      let enc : BitString := dictLabelEncode key n n
+      let b0 := Builder.empty
+      let b1 ← builderStoreBitsChecked b0 enc
+      let b2 ← storeVal b1
+      return (none, some b2.finalize, true, 1, #[])
+  | some cell =>
+      let lbl ← parseDictLabel cell n
+      let pfxLen : Nat := dictCommonPrefixLen lbl key
+      if pfxLen < lbl.len then
+        if mode == .replace then
+          return (none, some cell, false, 0, #[cell])
+
+        -- Insert a new fork inside the current edge.
+        let m : Nat := n - pfxLen - 1
+        let keySuffix : BitString := key.extract (pfxLen + 1) n
+
+        -- New leaf for the inserted key.
+        let enc1 : BitString := dictLabelEncode keySuffix m m
+        let b1 ← builderStoreBitsChecked Builder.empty enc1
+        let b1 ← storeVal b1
+        let cNew := b1.finalize
+
+        -- Lower part of the old edge.
+        let t : Nat := lbl.len - pfxLen - 1
+        let oldLabelBits : BitString := dictLabelBits lbl
+        let oldSuffix : BitString := oldLabelBits.extract (pfxLen + 1) lbl.len
+        let payloadSlice : Slice := lbl.remainder.advanceBits lbl.storedBits
+        let payloadCell : Cell := payloadSlice.toCellRemaining
+        let enc2 : BitString := dictLabelEncode oldSuffix t m
+        let b2 ← builderStoreBitsChecked Builder.empty enc2
+        let b2 ← builderAppendCellChecked b2 payloadCell
+        let cOld := b2.finalize
+
+        -- Fork node with the shared prefix.
+        let prefBits : BitString := key.take pfxLen
+        let encF : BitString := dictLabelEncode prefBits pfxLen n
+        let bF ← builderStoreBitsChecked Builder.empty encF
+        let swBit : Bool := key[pfxLen]!
+        let (left, right) := if swBit then (cOld, cNew) else (cNew, cOld)
+        let bF ← builderStoreRefChecked bF left
+        let bF ← builderStoreRefChecked bF right
+        return (none, some bF.finalize, true, 3, #[cell])
+
+      if lbl.len == n then
+        -- Leaf node.
+        let oldVal : Slice := lbl.remainder.advanceBits lbl.storedBits
+        if mode == .add then
+          return (some oldVal, some cell, false, 0, #[cell])
+        let enc : BitString := dictLabelEncode key n n
+        let b0 ← builderStoreBitsChecked Builder.empty enc
+        let b0 ← storeVal b0
+        return (some oldVal, some b0.finalize, true, 1, #[cell])
+
+      -- Fork node: recurse into the selected child.
+      if cell.refs.size < 2 then
+        throw .dictErr
+      let swBit : Bool := key[lbl.len]!
+      let childKey : BitString := key.extract (lbl.len + 1) n
+      let left0 := cell.refs[0]!
+      let right0 := cell.refs[1]!
+      if swBit then
+        let (oldVal?, rightNew?, ok, created, loaded) ←
+          dictLookupSetGenAuxWithCells (some right0) childKey storeVal mode
+        if !ok then
+          return (oldVal?, some cell, false, 0, #[cell] ++ loaded)
+        match rightNew? with
+        | none => throw .dictErr
+        | some rightNew =>
+            let labelBits : BitString := key.take lbl.len
+            let enc : BitString := dictLabelEncode labelBits lbl.len n
+            let b ← builderStoreBitsChecked Builder.empty enc
+            let b ← builderStoreRefChecked b left0
+            let b ← builderStoreRefChecked b rightNew
+            return (oldVal?, some b.finalize, true, created + 1, #[cell] ++ loaded)
+      else
+        let (oldVal?, leftNew?, ok, created, loaded) ←
+          dictLookupSetGenAuxWithCells (some left0) childKey storeVal mode
+        if !ok then
+          return (oldVal?, some cell, false, 0, #[cell] ++ loaded)
+        match leftNew? with
+        | none => throw .dictErr
+        | some leftNew =>
+            let labelBits : BitString := key.take lbl.len
+            let enc : BitString := dictLabelEncode labelBits lbl.len n
+            let b ← builderStoreBitsChecked Builder.empty enc
+            let b ← builderStoreRefChecked b leftNew
+            let b ← builderStoreRefChecked b right0
+            return (oldVal?, some b.finalize, true, created + 1, #[cell] ++ loaded)
+
+def dictLookupSetRefWithCells (root : Option Cell) (key : BitString) (valRef : Cell) (mode : DictSetMode) :
+    Except Excno (Option Slice × Option Cell × Bool × Nat × Array Cell) := do
+  let storeVal : Builder → Except Excno Builder :=
+    fun b => builderStoreRefChecked b valRef
+  dictLookupSetGenAuxWithCells root key storeVal mode
+
+def dictLookupSetSliceWithCells (root : Option Cell) (key : BitString) (val : Slice) (mode : DictSetMode) :
+    Except Excno (Option Slice × Option Cell × Bool × Nat × Array Cell) := do
+  let c := val.toCellRemaining
+  let storeVal : Builder → Except Excno Builder :=
+    fun b => builderAppendCellChecked b c
+  dictLookupSetGenAuxWithCells root key storeVal mode
+
+def dictLookupSetBuilderWithCells (root : Option Cell) (key : BitString) (val : Builder) (mode : DictSetMode) :
+    Except Excno (Option Slice × Option Cell × Bool × Nat × Array Cell) := do
+  let storeVal : Builder → Except Excno Builder :=
+    fun b => builderAppendBuilderChecked b val
+  dictLookupSetGenAuxWithCells root key storeVal mode
+
+partial def dictExtractPrefixSubdictWithCells (root : Option Cell) (keyBits : Nat)
+    (pfx : BitString) (prefixLen : Nat) (removePrefix : Bool) :
+    Except Excno (Option Cell × Bool × Nat × Array Cell) := do
+  match root with
+  | none =>
+      return (none, false, 0, #[])
+  | some rootCell =>
+      if prefixLen = 0 then
+        return (some rootCell, false, 0, #[])
+      if prefixLen > keyBits then
+        if removePrefix then
+          throw .dictErr
+        else
+          return (none, true, 0, #[])
+
+      let rec go (cell : Cell) (m : Nat) (loaded : Array Cell) :
+          Except Excno (Option Cell × Bool × Nat × Array Cell) := do
+        let loaded := loaded.push cell
+        let remaining : Nat := keyBits - m
+        let lbl ← parseDictLabel cell remaining
+        let labelBits : BitString := dictLabelBits lbl
+        let l : Nat := Nat.min (prefixLen - m) lbl.len
+        let prefixPart : BitString := pfx.extract m (m + l)
+        if bitsCommonPrefixLen labelBits prefixPart < l then
+          return (none, true, 0, loaded)
+
+        if m + lbl.len < prefixLen then
+          let m1 : Nat := m + lbl.len
+          if m1 ≥ prefixLen then
+            throw .fatal
+          if !lbl.remainder.haveRefs 2 then
+            throw .dictErr
+          let swBit : Bool := pfx[m1]!
+          let child := lbl.remainder.cell.refs[if swBit then 1 else 0]!
+          go child (m1 + 1) loaded
+        else
+          let payload := lbl.remainder.advanceBits lbl.storedBits
+          if !removePrefix then
+            if m = 0 then
+              return (some rootCell, false, 0, loaded)
+            let combinedLabelBits : BitString := pfx.take m ++ labelBits
+            let combinedLen : Nat := m + lbl.len
+            let enc : BitString := dictLabelEncode combinedLabelBits combinedLen keyBits
+            let b0 ← builderStoreBitsChecked Builder.empty enc
+            let b1 ← builderAppendCellChecked b0 payload.toCellRemaining
+            return (some b1.finalize, true, 1, loaded)
+          else
+            let newKeyBits : Nat := keyBits - prefixLen
+            let keep : Nat := m + lbl.len - prefixLen
+            let suffixBits : BitString := labelBits.drop (lbl.len - keep)
+            let enc : BitString := dictLabelEncode suffixBits keep newKeyBits
+            let b0 ← builderStoreBitsChecked Builder.empty enc
+            let b1 ← builderAppendCellChecked b0 payload.toCellRemaining
+            return (some b1.finalize, true, 1, loaded)
+
+      go rootCell 0 #[]
+
 def bitsOr (a b : BitString) : BitString :=
   if a.size != b.size then
     #[]
@@ -4778,6 +6656,34 @@ def encodeTupleInstr (op : TupleInstr) : Except Excno BitString := do
 
 def encodeCellInstr (op : CellInstr) : Except Excno BitString := do
   match op with
+  | .sdFirst =>
+      return natToBits 0xc703 16
+  | .sdSfx =>
+      return natToBits 0xc70c 16
+  | .sdSfxRev =>
+      return natToBits 0xc70d 16
+  | .sdPsfx =>
+      return natToBits 0xc70e 16
+  | .sdPsfxRev =>
+      return natToBits 0xc70f 16
+  | .sdCntLead1 =>
+      return natToBits 0xc711 16
+  | .sdCntTrail1 =>
+      return natToBits 0xc713 16
+  | .strefR quiet =>
+      return natToBits (if quiet then 0xcf1c else 0xcf14) 16
+  | .endxc =>
+      return natToBits 0xcf23 16
+  | .sdSubstr =>
+      return natToBits 0xd724 16
+  | .scutfirst =>
+      return natToBits 0xd730 16
+  | .sskipfirst =>
+      return natToBits 0xd731 16
+  | .scutlast =>
+      return natToBits 0xd732 16
+  | .sskiplast =>
+      return natToBits 0xd733 16
   | .subslice =>
       return natToBits 0xd734 16
   | .split quiet =>
@@ -4860,6 +6766,67 @@ def encodeCellInstr (op : CellInstr) : Except Excno BitString := do
         throw .invOpcode
       return natToBits base 16
 
+def encodeCellExtInstr (op : CellExtInstr) : Except Excno BitString := do
+  match op with
+  | .btos =>
+      return natToBits 0xcf50 16
+  | .stLeInt unsigned bytes =>
+      let lenBit : Nat ←
+        if bytes = 4 then
+          pure 0
+        else if bytes = 8 then
+          pure 2
+        else
+          throw .rangeChk
+      let w16 : Nat := 0xcf28 + (if unsigned then 1 else 0) + lenBit
+      return natToBits w16 16
+  | .hashbu =>
+      return natToBits 0xf916 16
+  | .cdataSize quiet =>
+      return natToBits (if quiet then 0xf940 else 0xf941) 16
+  | .sdataSize quiet =>
+      return natToBits (if quiet then 0xf942 else 0xf943) 16
+  | _ =>
+      -- Some CellExt opcodes embed refs/consts in the code cell (not supported by `encodeCp0`).
+      throw .invOpcode
+
+def encodeArithExtInstr (op : ArithExtInstr) : Except Excno BitString := do
+  match op with
+  | .qaddInt n =>
+      if decide (-128 ≤ n ∧ n ≤ 127) then
+        let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
+        return natToBits 0xb7a6 16 ++ natToBits imm 8
+      else
+        throw .rangeChk
+  | .qmulInt n =>
+      if decide (-128 ≤ n ∧ n ≤ 127) then
+        let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
+        return natToBits 0xb7a7 16 ++ natToBits imm 8
+      else
+        throw .rangeChk
+  | .fitsConst unsigned quiet bits =>
+      if bits = 0 ∨ bits > 256 then
+        throw .rangeChk
+      let imm : Nat := bits - 1
+      if quiet then
+        let p16 : Nat := if unsigned then 0xb7b5 else 0xb7b4
+        return natToBits p16 16 ++ natToBits imm 8
+      else
+        let p8 : Nat := if unsigned then 0xb5 else 0xb4
+        return natToBits p8 8 ++ natToBits imm 8
+  | .lshiftVar quiet =>
+      if quiet then
+        return natToBits 0xb7ac 16
+      else
+        throw .invOpcode
+  | .rshiftVar quiet =>
+      if quiet then
+        return natToBits 0xb7ad 16
+      else
+        throw .invOpcode
+  | _ =>
+      throw .invOpcode
+
 def encodeCryptoInstr (op : CryptoInstr) : Except Excno BitString := do
   match op with
   | .hashExt hashId append rev =>
@@ -4875,10 +6842,14 @@ def encodeCryptoInstr (op : CryptoInstr) : Except Excno BitString := do
       return natToBits 0xf900 16
   | .hashSU =>
       return natToBits 0xf901 16
+  | .sha256U =>
+      return natToBits 0xf902 16
   | .chkSignU =>
       return natToBits 0xf910 16
   | .chkSignS =>
       return natToBits 0xf911 16
+  | .ext _ =>
+      throw .invOpcode
 
 def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
   match op with
@@ -4886,8 +6857,42 @@ def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
       return natToBits 0xf827 16
   | .now =>
       return natToBits 0xf823 16
+  | .blockLt =>
+      return natToBits 0xf824 16
+  | .lTime =>
+      return natToBits 0xf825 16
+  | .randSeed =>
+      return natToBits 0xf826 16
+  | .myAddr =>
+      return natToBits 0xf828 16
+  | .configRoot =>
+      return natToBits 0xf829 16
+  | .configDict =>
+      return natToBits 0xf830 16
+  | .configParam opt =>
+      return natToBits (if opt then 0xf833 else 0xf832) 16
+  | .myCode =>
+      return natToBits 0xf82a 16
+  | .incomingValue =>
+      return natToBits 0xf82b 16
+  | .storageFees =>
+      return natToBits 0xf82c 16
+  | .prevBlocksInfoTuple =>
+      return natToBits 0xf82d 16
+  | .prevMcBlocks =>
+      return natToBits 0xf83400 24
+  | .prevKeyBlock =>
+      return natToBits 0xf83401 24
+  | .prevMcBlocks100 =>
+      return natToBits 0xf83402 24
+  | .unpackedConfigTuple =>
+      return natToBits 0xf82e 16
+  | .duePayment =>
+      return natToBits 0xf82f 16
   | .getParam idx =>
-      if idx ≤ 15 then
+      -- The short 16-bit opcodes 0xf823..0xf82f are used by dedicated aliases (NOW/BALANCE/.../DUEPAYMENT).
+      -- To keep decode∘encode a roundtrip on the `getParam` AST node, only use the short form for 0..2.
+      if idx ≤ 2 then
         return natToBits (0xf820 + idx) 16
       else if idx ≤ 255 then
         return natToBits (0xf88100 + idx) 24
@@ -4927,8 +6932,20 @@ def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
       return natToBits 0xfa02 16
   | .ldMsgAddr quiet =>
       return natToBits (if quiet then 0xfa41 else 0xfa40) 16
+  | .parseMsgAddr quiet =>
+      return natToBits (if quiet then 0xfa43 else 0xfa42) 16
   | .rewriteStdAddr quiet =>
       return natToBits (if quiet then 0xfa45 else 0xfa44) 16
+  | .rewriteVarAddr quiet =>
+      return natToBits (if quiet then 0xfa47 else 0xfa46) 16
+  | .ldStdAddr quiet =>
+      return natToBits (if quiet then 0xfa49 else 0xfa48) 16
+  | .ldOptStdAddr quiet =>
+      return natToBits (if quiet then 0xfa51 else 0xfa50) 16
+  | .stStdAddr quiet =>
+      return natToBits (if quiet then 0xfa53 else 0xfa52) 16
+  | .stOptStdAddr quiet =>
+      return natToBits (if quiet then 0xfa55 else 0xfa54) 16
   | .globalId =>
       return natToBits 0xf835 16
   | .getGasFee =>
@@ -4945,6 +6962,8 @@ def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
       return natToBits 0xf83b 16
   | .getForwardFeeSimple =>
       return natToBits 0xf83c 16
+  | .getExtraBalance =>
+      return natToBits 0xf880 16
   | .inMsgParam idx =>
       if idx ≤ 15 then
         return natToBits (0xf890 + idx) 16
@@ -4960,6 +6979,54 @@ def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
       return natToBits 0xfb03 16
   | .setCode =>
       return natToBits 0xfb04 16
+  | .setLibCode =>
+      return natToBits 0xfb06 16
+  | .changeLib =>
+      return natToBits 0xfb07 16
+
+def encodeDebugInstr (op : DebugInstr) : Except Excno BitString := do
+  match op with
+  | .dumpStk =>
+      return natToBits 0xfe00 16
+  | .strDump =>
+      return natToBits 0xfe14 16
+  | .dump idx =>
+      if idx ≤ 15 then
+        return natToBits (0xfe20 + idx) 16
+      else
+        throw .rangeChk
+  | .debug i =>
+      if 0x01 ≤ i ∧ i ≤ 0x13 then
+        return natToBits 0xfe 8 ++ natToBits i 8
+      else
+        throw .rangeChk
+  | .debug1 t =>
+      if 0x15 ≤ t ∧ t ≤ 0x1f then
+        return natToBits 0xfe 8 ++ natToBits t 8
+      else
+        throw .rangeChk
+  | .debug2 t =>
+      if 0x30 ≤ t ∧ t ≤ 0xef then
+        return natToBits 0xfe 8 ++ natToBits t 8
+      else
+        throw .rangeChk
+  | .debugStr s =>
+      if s.refsRemaining ≠ 0 then
+        throw .rangeChk
+      let dataBits : Nat := s.bitsRemaining
+      if dataBits = 0 ∨ dataBits % 8 ≠ 0 then
+        throw .rangeChk
+      let lenBytes : Nat := dataBits / 8
+      if lenBytes > 16 then
+        throw .rangeChk
+      let bits4 : Nat := lenBytes - 1
+      let header : Nat := 0xfef0 + bits4
+      return natToBits header 16 ++ s.readBits dataBits
+  | .extCall id =>
+      if id ≤ 1_000_000 ∧ id < (1 <<< 32) then
+        return natToBits 0xfc00 16 ++ natToBits id 32
+      else
+        throw .rangeChk
 
 def encodeCp0 (i : Instr) : Except Excno BitString := do
   match i with
@@ -5202,8 +7269,126 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits 0xedf1 16
   | .composBoth =>
       return natToBits 0xedf2 16
+  | .contExt op =>
+      match op with
+      | .atexit => return natToBits 0xedf3 16
+      | .atexitAlt => return natToBits 0xedf4 16
+      | .setExitAlt => return natToBits 0xedf5 16
+      | .thenret => return natToBits 0xedf6 16
+      | .thenretAlt => return natToBits 0xedf7 16
+      | .invert => return natToBits 0xedf8 16
+      | .booleval => return natToBits 0xedf9 16
+      | .condSel => return natToBits 0xe304 16
+      | .condSelChk => return natToBits 0xe305 16
+      | .ifretAlt => return natToBits 0xe308 16
+      | .ifnotretAlt => return natToBits 0xe309 16
+      | .pow2 => return natToBits 0xae 8
+      | .fitsx => return natToBits 0xb600 16
+      | .ufitsx => return natToBits 0xb601 16
+      | .qand => return natToBits 0xb7b0 16
+      | .qor => return natToBits 0xb7b1 16
+      | .qxor => return natToBits 0xb7b2 16
+      | .qnot => return natToBits 0xb7b3 16
+      | .qfitsx => return natToBits 0xb7b600 24
+      | .qufitsx => return natToBits 0xb7b601 24
+      | .qbitsize => return natToBits 0xb7b602 24
+      | .qmin => return natToBits 0xb7b608 24
+      | .isnan => return natToBits 0xc4 8
+      | .chknan => return natToBits 0xc5 8
+      | .qsgn => return natToBits 0xb7b8 16
+      | .qless => return natToBits 0xb7b9 16
+      | .qequal => return natToBits 0xb7ba 16
+      | .qleq => return natToBits 0xb7bb 16
+      | .qgreater => return natToBits 0xb7bc 16
+      | .qneq => return natToBits 0xb7bd 16
+      | .qgeq => return natToBits 0xb7be 16
+      | .repeat false => return natToBits 0xe4 8
+      | .repeat true => return natToBits 0xe314 16
+      | .repeatEnd false => return natToBits 0xe5 8
+      | .repeatEnd true => return natToBits 0xe315 16
+      | .until false => return natToBits 0xe6 8
+      | .until true => return natToBits 0xe316 16
+      | .untilEnd false => return natToBits 0xe7 8
+      | .untilEnd true => return natToBits 0xe317 16
+      | .while false => return natToBits 0xe8 8
+      | .while true => return natToBits 0xe318 16
+      | .whileEnd false => return natToBits 0xe9 8
+      | .whileEnd true => return natToBits 0xe319 16
+      | .again false => return natToBits 0xea 8
+      | .again true => return natToBits 0xe31a 16
+      | .againEnd false => return natToBits 0xeb 8
+      | .againEnd true => return natToBits 0xe31b 16
+      | .ifbitjmp i =>
+          if i > 31 then throw .rangeChk
+          return natToBits ((0x71c <<< 5) + i) 16
+      | .ifnbitjmp i =>
+          if i > 31 then throw .rangeChk
+          return natToBits ((0x71d <<< 5) + i) 16
+      | .ifbitjmpref _ _ => throw .invOpcode
+      | .ifnbitjmpref _ _ => throw .invOpcode
+      | .jmpDict idx =>
+          if idx > 0x3fff then throw .rangeChk
+          let prefix10 : Nat := 0x3c5
+          let word24 : Nat := (prefix10 <<< 14) + (idx &&& 0x3fff)
+          return natToBits word24 24
+      | .pushCtrX => return natToBits 0xede0 16
+      | .popCtrX => return natToBits 0xede1 16
+      | .setContCtrX => return natToBits 0xede2 16
+      | .setContCtrMany mask =>
+          if mask ≥ 256 then throw .rangeChk
+          return natToBits 0xede3 16 ++ natToBits (mask &&& 0xff) 8
+      | .setContCtrManyX => return natToBits 0xede4 16
+      | .setRetCtr idx =>
+          if idx = 6 ∨ idx > 7 then throw .rangeChk
+          return natToBits (0xed70 + idx) 16
+      | .setAltCtr idx =>
+          if idx = 6 ∨ idx > 7 then throw .rangeChk
+          return natToBits (0xed80 + idx) 16
+      | .popSave idx =>
+          if idx = 6 ∨ idx > 7 then throw .rangeChk
+          return natToBits (0xed90 + idx) 16
+      | .saveAltCtr idx =>
+          if idx = 6 ∨ idx > 7 then throw .rangeChk
+          return natToBits (0xedb0 + idx) 16
+      | .saveBothCtr idx =>
+          if idx = 6 ∨ idx > 7 then throw .rangeChk
+          return natToBits (0xedc0 + idx) 16
+      | .runvm mode =>
+          if mode ≥ 512 then throw .rangeChk
+          let word24 : Nat := (0xdb4 <<< 12) + (mode &&& 0xfff)
+          return natToBits word24 24
+      | .runvmx =>
+          return natToBits 0xdb50 16
+  | .setContArgs copy more =>
+      if copy > 15 then
+        throw .rangeChk
+      if more < -1 ∨ more > 14 then
+        throw .rangeChk
+      let moreNib : Nat := if more = -1 then 15 else more.toNat
+      let args8 : Nat := (copy <<< 4) + moreNib
+      return natToBits 0xec 8 ++ natToBits args8 8
   | .setContVarArgs =>
       return natToBits 0xed11 16
+  | .returnArgs count =>
+      if count > 15 then
+        throw .rangeChk
+      return natToBits (0xed00 + count) 16
+  | .returnVarArgs =>
+      return natToBits 0xed10 16
+  | .setNumVarArgs =>
+      return natToBits 0xed12 16
+  | .bless =>
+      return natToBits 0xed1e 16
+  | .blessVarArgs =>
+      return natToBits 0xed1f 16
+  | .blessArgs copy more =>
+      if copy > 15 then
+        throw .rangeChk
+      if more < -1 ∨ more > 14 then
+        throw .rangeChk
+      let moreNib : Nat := if more = -1 then 15 else more.toNat
+      let args8 : Nat := (copy <<< 4) + moreNib
+      return natToBits 0xee 8 ++ natToBits args8 8
   | .ctos =>
       return natToBits 0xd0 8
   | .xctos =>
@@ -5316,6 +7501,8 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         return natToBits 0xff 8 ++ natToBits b 8
       else
         throw .invOpcode
+  | .setcpX =>
+      return natToBits 0xfff0 16
   | .ifret =>
       return natToBits 0xdc 8
   | .ifnotret =>
@@ -5558,10 +7745,18 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       encodeTupleInstr op
   | .cellOp op =>
       encodeCellInstr op
+  | .cellExt op =>
+      encodeCellExtInstr op
   | .cryptoOp op =>
       encodeCryptoInstr op
   | .tonEnvOp op =>
       encodeTonEnvInstr op
+  | .debugOp op =>
+      encodeDebugInstr op
+  | .arithExt op =>
+      encodeArithExtInstr op
+  | .dictExt _ =>
+      throw .invOpcode
   | .blkdrop2 x y =>
       if x ≤ 15 ∧ y ≤ 15 then
         let args : Nat := (x <<< 4) + y
@@ -5598,12 +7793,34 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       if params > 15 then
         throw .rangeChk
       return natToBits (0xdb10 + params) 16
+  | .callcc =>
+      return natToBits 0xdb34 16
+  | .jmpxData =>
+      return natToBits 0xdb35 16
+  | .callccArgs params retVals =>
+      if params > 15 then
+        throw .rangeChk
+      if retVals < -1 ∨ retVals > 14 then
+        throw .rangeChk
+      let lo : Nat := if retVals = -1 then 15 else retVals.toNat
+      let args8 : Nat := (params <<< 4) + lo
+      return natToBits 0xdb36 16 ++ natToBits args8 8
+  | .callxVarArgs =>
+      return natToBits 0xdb38 16
+  | .jmpxVarArgs =>
+      return natToBits 0xdb3a 16
+  | .callccVarArgs =>
+      return natToBits 0xdb3b 16
   | .ret =>
       return natToBits 0xdb30 16
   | .retAlt =>
       return natToBits 0xdb31 16
   | .retBool =>
       return natToBits 0xdb32 16
+  | .retVarArgs =>
+      return natToBits 0xdb39 16
+  | .retData =>
+      return natToBits 0xdb3f 16
   | .retArgs n =>
       if n > 15 then
         throw .rangeChk
@@ -5630,9 +7847,18 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       throw .invOpcode
   | .callRef _ =>
       throw .invOpcode
+  | .jmpRef _ =>
+      throw .invOpcode
+  | .jmpRefData _ =>
+      throw .invOpcode
   | .callDict idx =>
       if idx < 256 then
         return natToBits (0xf000 + idx) 16
+      else if idx ≤ 0x3fff then
+        -- CALLDICT_LONG: 10-bit prefix (0x3c4) + 14-bit args.
+        let prefix10 : Nat := 0x3c4
+        let word24 : Nat := (prefix10 <<< 14) + (idx &&& 0x3fff)
+        return natToBits word24 24
       else
         throw .rangeChk
   | .prepareDict idx =>
@@ -5725,6 +7951,11 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits (0xf2f0 + args) 16
   | .try_ =>
       return natToBits 0xf2ff 16
+  | .tryArgs params retVals =>
+      if params > 15 ∨ retVals > 15 then
+        throw .rangeChk
+      let args8 : Nat := (params <<< 4) + retVals
+      return natToBits 0xf3 8 ++ natToBits args8 8
   | .stdict =>
       return natToBits 0xf400 16
   | .skipdict =>
@@ -5753,10 +7984,39 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       if !ok then
         throw .invOpcode
       return natToBits (0xf480 + args5) 16
-  | .dictSet _ _ _ _ =>
-      throw .invOpcode
-  | .dictSetB _ _ _ =>
-      throw .invOpcode
+  | .dictSet intKey unsigned byRef mode =>
+      -- DICT{I,U}{SET,REPLACE,ADD}{REF?}: 0xf412..0xf417 / 0xf422..0xf427 / 0xf432..0xf437.
+      let base : Nat :=
+        match mode with
+        | .set => 0xf412
+        | .replace => 0xf422
+        | .add => 0xf432
+      let w16 : Nat :=
+        if !intKey then
+          if unsigned then
+            -- Unsigned is only meaningful for intKey.
+            0
+          else
+            base + (if byRef then 1 else 0)
+        else
+          let kind : Nat := if unsigned then 4 else 2
+          base + kind + (if byRef then 1 else 0)
+      if w16 = 0 then
+        throw .invOpcode
+      return natToBits w16 16
+  | .dictSetB intKey unsigned mode =>
+      -- DICT{I,U}?SETB (builder value): 0xf441..0xf443.
+      -- MVP: only SETB is supported by the cp0 encoding/decoding in this repo.
+      if mode != .set then
+        throw .invOpcode
+      let w16 : Nat :=
+        if !intKey then
+          if unsigned then 0 else 0xf441
+        else
+          if unsigned then 0xf443 else 0xf442
+      if w16 = 0 then
+        throw .invOpcode
+      return natToBits w16 16
   | .dictReplaceB intKey unsigned =>
       if intKey then
         return natToBits (if unsigned then 0xf44b else 0xf44a) 16
@@ -5765,8 +8025,11 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         return natToBits 0xf449 16
   | .dictPushConst _ _ =>
       throw .invOpcode
-  | .dictGetExec _ _ _ =>
-      throw .invOpcode
+  | .dictGetExec unsigned doCall pushZ =>
+      -- DICT{I,U}GET{JMP,EXEC}{Z}: 0xf4a0..0xf4a3 (no Z) and 0xf4bc..0xf4bf (Z).
+      let base : Nat := if pushZ then 0xf4bc else 0xf4a0
+      let w16 : Nat := base + (if unsigned then 1 else 0) + (if doCall then 2 else 0)
+      return natToBits w16 16
 
 def assembleCp0 (code : List Instr) : Except Excno Cell := do
   let mut bits : BitString := #[]
@@ -5801,6 +8064,9 @@ structure VmState where
   gas : GasLimits
   chksgnCounter : Nat
   loadedCells : Array (Array UInt8)
+  -- Library collections used by XLOAD (see TON `VmState::load_library`).
+  -- Each entry is a dictionary root cell mapping 256-bit hashes to ^Cell values.
+  libraries : Array Cell
   callStack : Array CallFrame
   cstate : CommittedState
   maxDataDepth : Nat
@@ -5809,12 +8075,13 @@ structure VmState where
 def VmState.initial (code : Cell) (gasLimit : Int := 1_000_000) (gasMax : Int := GasLimits.infty)
     (gasCredit : Int := 0) : VmState :=
   { stack := #[]
-    regs := { Regs.initial with c3 := .ordinary (Slice.ofCell code) (.quit 0) OrdCregs.empty OrdCdata.empty }
+    regs := Regs.initial
     cc := .ordinary (Slice.ofCell code) (.quit 0) OrdCregs.empty OrdCdata.empty
     cp := 0
     gas := GasLimits.ofLimits gasLimit gasMax gasCredit
     chksgnCounter := 0
     loadedCells := #[]
+    libraries := #[]
     callStack := #[]
     cstate := CommittedState.empty
     maxDataDepth := 512 }
@@ -5983,8 +8250,49 @@ def VmState.retAlt (st : VmState) : VmState :=
   let cont := st.regs.c1
   { st with regs := { st.regs with c1 := .quit 1 }, cc := cont }
 
+def VM.jump (cont : Continuation) (passArgs : Int := -1) : VM Unit := do
+  -- Mirrors C++ `VmState::jump(cont, pass_args)` stack truncation + underflow checks (simplified).
+  let st ← get
+  let depth : Nat := st.stack.size
+  if decide (passArgs ≥ 0) then
+    let k : Nat := passArgs.toNat
+    if k > depth then
+      throw .stkUnd
+  match cont with
+  | .ordinary _ _ _ cdata
+  | .envelope _ _ cdata =>
+      if decide (0 ≤ cdata.nargs) then
+        let nargs : Nat := cdata.nargs.toNat
+        if nargs > depth then
+          throw .stkUnd
+        if decide (passArgs ≥ 0) then
+          if cdata.nargs > passArgs then
+            throw .stkUnd
+      let copy : Int :=
+        if decide (0 ≤ cdata.nargs) then
+          cdata.nargs
+        else if decide (passArgs ≥ 0) then
+          passArgs
+        else
+          -1
+      if decide (copy ≥ 0) then
+        let n : Nat := copy.toNat
+        if n < depth then
+          let newStack : Stack := st.stack.extract (depth - n) depth
+          set { st with stack := newStack }
+          modify fun st => st.consumeStackGas newStack.size
+  | _ =>
+      if decide (passArgs ≥ 0) then
+        let n : Nat := passArgs.toNat
+        if n < depth then
+          let newStack : Stack := st.stack.extract (depth - n) depth
+          set { st with stack := newStack }
+          modify fun st => st.consumeStackGas newStack.size
+  modify fun st => { st with cc := cont }
+
   def VM.ret (passArgs : Int := -1) : VM Unit := do
     let st ← get
+    let mut passArgsForJump : Int := passArgs
     if h : 0 < st.callStack.size then
       let frame := st.callStack.back (h := h)
       let expected : Int := frame.retArgs
@@ -6005,10 +8313,15 @@ def VmState.retAlt (st : VmState) : VmState :=
           pure (st.stack.extract (st.stack.size - k) st.stack.size)
       let newStack : Stack := frame.savedStack ++ vals
       set { st with stack := newStack, callStack := st.callStack.pop }
-    modify fun st => st.ret
+      passArgsForJump := -1
+    let st ← get
+    let cont := st.regs.c0
+    set { st with regs := { st.regs with c0 := .quit 0 } }
+    VM.jump cont passArgsForJump
 
   def VM.retAlt (passArgs : Int := -1) : VM Unit := do
     let st ← get
+    let mut passArgsForJump : Int := passArgs
     if h : 0 < st.callStack.size then
       let frame := st.callStack.back (h := h)
       let expected : Int := frame.retArgs
@@ -6029,7 +8342,11 @@ def VmState.retAlt (st : VmState) : VmState :=
           pure (st.stack.extract (st.stack.size - k) st.stack.size)
       let newStack : Stack := frame.savedStack ++ vals
       set { st with stack := newStack, callStack := st.callStack.pop }
-    modify fun st => st.retAlt
+      passArgsForJump := -1
+    let st ← get
+    let cont := st.regs.c1
+    set { st with regs := { st.regs with c1 := .quit 1 } }
+    VM.jump cont passArgsForJump
 
 def VmState.jumpTo (st : VmState) (k : Continuation) : VmState :=
   { st with cc := k }
@@ -6086,39 +8403,37 @@ def VM.generateRandu256 : VM Int := do
   -- SHA512(seed) where seed is a 256-bit unsigned integer, then:
   --   new_seed := hash[0:32], rand := hash[32:64].
   let st ← get
-  if 0 < st.regs.c7.size then
-    match st.regs.c7[0]! with
-    | .tuple params =>
-        if 6 < params.size then
-          match params[6]! with
-          | .int (.num seed) =>
-              if decide (seed < 0 ∨ seed ≥ intPow2 256) then
-                throw .rangeChk
-              let seedBytes := natToBytesBEFixed seed.toNat 32
-              let digest := sha512Digest seedBytes
-              let newSeedNat := bytesToNatBE (digest.extract 0 32)
-              let randNat := bytesToNatBE (digest.extract 32 64)
-              let newSeed : Int := Int.ofNat newSeedNat
-              let rand : Int := Int.ofNat randNat
+  match st.regs.c7[0]? with
+  | none =>
+      throw .rangeChk
+  | some (Value.tuple params) =>
+      match params[6]? with
+      | none =>
+          throw .rangeChk
+      | some (Value.int (.num seed)) =>
+          if decide (seed < 0 ∨ seed ≥ intPow2 256) then
+            throw .rangeChk
+          let seedBytes := natToBytesBEFixed seed.toNat 32
+          let digest := sha512Digest seedBytes
+          let newSeedNat := bytesToNatBE (digest.extract 0 32)
+          let randNat := bytesToNatBE (digest.extract 32 64)
+          let newSeed : Int := Int.ofNat newSeedNat
+          let rand : Int := Int.ofNat randNat
 
-              let (params', tpay) := tupleExtendSetIndex params 6 (.int (.num newSeed))
-              let outerSize := st.regs.c7.size
-              let c7' := st.regs.c7.set! 0 (.tuple params')
-              let mut st' := { st with regs := { st.regs with c7 := c7' } }
-              if tpay > 0 then
-                st' := st'.consumeTupleGas tpay
-              st' := st'.consumeTupleGas outerSize
-              set st'
-              return rand
-          | .int .nan =>
-              throw .rangeChk
-          | _ =>
-              throw .typeChk
-        else
+          let (params', tpay) := tupleExtendSetIndex params 6 (Value.int (.num newSeed))
+          let outerSize := st.regs.c7.size
+          let c7' := st.regs.c7.set! 0 (Value.tuple params')
+          let mut st' := { st with regs := { st.regs with c7 := c7' } }
+          if tpay > 0 then
+            st' := st'.consumeTupleGas tpay
+          st' := st'.consumeTupleGas outerSize
+          set st'
+          return rand
+      | some (Value.int .nan) =>
+          throw .rangeChk
+      | some _ =>
           throw .typeChk
-    | _ =>
-        throw .typeChk
-  else
-    throw .typeChk
+  | some _ =>
+      throw .typeChk
 
 end TvmLean
