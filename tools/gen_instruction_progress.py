@@ -6,6 +6,7 @@ import csv
 import json
 import os
 import re
+import subprocess
 import time
 import urllib.error
 import urllib.request
@@ -236,6 +237,37 @@ def _count_progress(progress: dict[str, tuple[bool, bool]]) -> tuple[int, int]:
     return implemented, tested
 
 
+def _load_code_progress() -> dict[str, tuple[bool, bool]]:
+    """
+    Probe the actual Lean decoder/exec to determine which spec opcodes are implemented.
+
+    An opcode counts as implemented if:
+    - it decodes via `decodeCp0WithBits`, and
+    - executing the decoded `Instr` does not raise `invOpcode` (other runtime errors are treated as implemented).
+
+    This currently does not infer `tested` and returns it as `False`.
+    """
+    cmd = ["lake", "exe", "tvm-lean-progress", "--", "--tsv"]
+    p = subprocess.run(cmd, cwd=REPO_ROOT, check=False, capture_output=True, text=True)
+    if p.returncode != 0:
+        raise SystemExit(
+            "failed to run code progress probe:\n"
+            + f"cmd: {' '.join(cmd)}\n"
+            + (p.stdout or "")
+            + (p.stderr or "")
+        )
+    out: dict[str, tuple[bool, bool]] = {}
+    for line in (p.stdout or "").splitlines():
+        s = line.strip()
+        if not s:
+            continue
+        if "\t" not in s:
+            continue
+        k, v = s.split("\t", 1)
+        out[k.strip()] = (v.strip().lower() == "true", False)
+    return out
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -246,9 +278,9 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument(
         "--source",
-        choices=["auto", "linear", "legacy"],
+        choices=["auto", "linear", "legacy", "code"],
         default="auto",
-        help="Progress source: auto (default), linear, or legacy.",
+        help="Progress source: auto (default), linear, legacy, or code (probe Lean decoder/exec).",
     )
     parser.add_argument(
         "--linear-token",
@@ -276,16 +308,21 @@ def main(argv: list[str] | None = None) -> None:
     linear_token = (args.linear_token or os.environ.get("LINEAR_API_KEY") or "").strip()
 
     use_linear = False
-    if args.source == "linear":
-        if not linear_token:
-            raise SystemExit("missing Linear API key (set LINEAR_API_KEY or pass --linear-token)")
-        use_linear = True
-    elif args.source == "auto":
-        use_linear = bool(linear_token)
-
     linear_progress: dict[str, tuple[bool, bool]] = {}
-    if use_linear:
-        linear_progress = _load_linear_progress(token=linear_token)
+    code_progress: dict[str, tuple[bool, bool]] = {}
+
+    if args.source == "code":
+        code_progress = _load_code_progress()
+    else:
+        if args.source == "linear":
+            if not linear_token:
+                raise SystemExit("missing Linear API key (set LINEAR_API_KEY or pass --linear-token)")
+            use_linear = True
+        elif args.source == "auto":
+            use_linear = bool(linear_token)
+
+        if use_linear:
+            linear_progress = _load_linear_progress(token=linear_token)
 
     OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
     with OUT_CSV.open("w", encoding="utf-8", newline="") as f:
@@ -294,7 +331,9 @@ def main(argv: list[str] | None = None) -> None:
 
         for ins in tvm:
             name = ins["name"]
-            if use_linear:
+            if args.source == "code":
+                impl, tested = code_progress.get(f"tvm::{name}", (False, False))
+            elif use_linear:
                 impl, tested = linear_progress.get(f"tvm::{name}", (False, False))
             else:
                 impl, tested = legacy.get(name, (False, False))
@@ -321,7 +360,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.summary:
         tvm_prog = {f"tvm::{ins['name']}": (False, False) for ins in tvm}
         fift_prog = {f"fift::{fa['name']}": (False, False) for fa in fift}
-        src = linear_progress if use_linear else {**{f"tvm::{k}": v for k, v in legacy.items()}}
+        if args.source == "code":
+            src = code_progress
+        else:
+            src = linear_progress if use_linear else {**{f"tvm::{k}": v for k, v in legacy.items()}}
         for k in list(tvm_prog.keys()):
             if k in src:
                 tvm_prog[k] = src[k]

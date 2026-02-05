@@ -1093,7 +1093,10 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                       let gasMax0 : Int := tc.expected.gas_max.getD cfg.gasLimit
                       let gasMaxInit : Int := if gasMax0 < gasLimitInit then gasLimitInit else gasMax0
                       let gasCreditInit : Int := tc.expected.gas_credit.getD 0
-                      let base := VmState.initial codeCell gasLimitInit gasMaxInit gasCreditInit
+                      -- Compute-phase VM in TON is created with `flags=1` (same_c3), i.e. `c3 := OrdCont(code, cp)`
+                      -- so that CALLDICT/JMPDICT re-enter the root code dispatcher.
+                      let base0 := VmState.initial codeCell gasLimitInit gasMaxInit gasCreditInit
+                      let base : VmState := { base0 with regs := { base0.regs with c3 := base0.cc } }
                       let st0 : VmState :=
                         { base with
                           stack := initStack

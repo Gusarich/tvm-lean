@@ -1,1 +1,2 @@
 -- Auto-generated stub for TVM instruction IFNBITJMPREF (category: continuation).
+import Tests.Continuation.AllCondChangeOps

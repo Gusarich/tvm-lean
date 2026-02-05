@@ -1,5 +1,6 @@
 -- Auto-generated stub for TVM instruction TPUSH (category: tuple).
 import Tests.Registry
+import Tests.Tuple.AllTupleOps
 
 open TvmLean Tests
 

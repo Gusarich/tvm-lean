@@ -4,13 +4,15 @@ import Tests.Registry
 open TvmLean Tests
 
 def testSetCp : IO Unit := do
-  -- SETCP 1 is unsupported in our MVP and must raise inv_opcode (6), i.e. exit ~6 = -7.
+  -- SETCP 1 is unsupported in TON (only cp0 exists) and must raise inv_opcode (6).
   let prog : List Instr := [ .setcp 1 ]
   match (← runProg prog) with
   | .continue _ => throw (IO.userError "setcp: did not halt")
   | .halt exitCode _ =>
-      assert (exitCode == -7) s!"setcp: expected exitCode=-7, got {exitCode}"
+      assert (exitCode == (~~~ Excno.invOpcode.toInt)) s!"setcp: expected invOpcode, got exitCode={exitCode}"
 
 initialize
   Tests.registerTest "codepage/setcp" testSetCp
   Tests.registerRoundtrip (.setcp 0)
+  Tests.registerRoundtrip (.setcp (-1))
+  Tests.registerRoundtrip (.setcp 239)

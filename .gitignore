@@ -18,6 +18,7 @@ __pycache__/
 /diff-test/fixtures/*.json
 !/diff-test/fixtures/smoke_*.json
 /diff-test/fixtures/_batch/
+/diff-test/fixtures/batch/
 /diff-test/results*.json
 /diff-test/*.jsonl
 /diff-test/_report*.json

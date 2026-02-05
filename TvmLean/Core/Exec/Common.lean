@@ -17,18 +17,17 @@ def VM.execNullSwapIf (cond : Bool) (depth : Nat) (count : Nat) : VM Unit := do
   VM.push (.int (.num x))
 
 def VM.getUnpackedConfigTuple : VM (Array Value) := do
-  let st ← get
-  if 0 < st.regs.c7.size then
-    match st.regs.c7[0]! with
-    | .tuple params =>
-        match params.get? 14 with
-        | some (.tuple unpacked) => return unpacked
-        | some .null => throw .invOpcode
-        | some _ => throw .typeChk
-        | none => throw .invOpcode
-    | _ => throw .typeChk
-  else
-    throw .typeChk
+  -- Mirrors C++ `get_unpacked_config_tuple(st)` (tonops.cpp):
+  --   t1 := tuple_index(c7, 0); t2 := tuple_index(t1, 14); return t2
+  match (← get).regs.c7[0]? with
+  | none => throw .rangeChk
+  | some (Value.tuple params) =>
+      match params[14]? with
+      | none => throw .rangeChk
+      | some (Value.tuple unpacked) => return unpacked
+      | some _ => throw .typeChk
+  | some _ =>
+      throw .typeChk
 
 def VM.getMsgPrices (isMasterchain : Bool) : VM (Int × Int × Int × Nat × Nat) := do
   -- Mirrors `util::get_msg_prices(get_unpacked_config_tuple(st), is_masterchain)`.
@@ -47,9 +46,9 @@ def VM.getMsgPrices (isMasterchain : Bool) : VM (Int × Int × Int × Nat × Nat
       let (firstFrac, s6) ← s5.takeBitsAsNatCellUnd 16
       let (_, _) ← s6.takeBitsAsNatCellUnd 16 -- next_frac
       return (Int.ofNat lumpPrice, Int.ofNat bitPrice, Int.ofNat cellPrice, ihrFactor, firstFrac)
-  | some .null => throw .invOpcode
+  | some .null => throw .typeChk
   | some _ => throw .typeChk
-  | none => throw .typeChk
+  | none => throw .rangeChk
 
 def VM.getGasPrices (isMasterchain : Bool) : VM (Nat × Nat × Nat) := do
   -- Mirrors `util::get_gas_prices(get_unpacked_config_tuple(st), is_masterchain)`.
@@ -95,8 +94,72 @@ def VM.getGasPrices (isMasterchain : Bool) : VM (Nat × Nat × Nat) := do
       match (parseGasLimitsPrices pricesCs : Except Excno (Nat × Nat × Nat)) with
       | .ok (gasPrice, flatGasLimit, flatGasPrice) => return (gasPrice, flatGasLimit, flatGasPrice)
       | .error e => throw e
-  | some .null => throw .invOpcode
+  | some .null => throw .typeChk
   | some _ => throw .typeChk
-  | none => throw .typeChk
+  | none => throw .rangeChk
+
+def VM.extractCc (saveCr : Nat) (stackCopy : Int := -1) (ccArgs : Int := -1) : VM Continuation := do
+  -- Mirrors C++ `VmState::extract_cc(save_cr, stack_copy, cc_args)`.
+  let st ← get
+  let codeAfter : Slice ←
+    match st.cc with
+    | .ordinary code _ _ _ => pure code
+    | _ => throw .typeChk
+
+  let depth : Nat := st.stack.size
+  let mut bottom : Stack := #[]
+  let mut newStack : Stack := st.stack
+
+  if decide (stackCopy < 0) then
+    -- Keep the whole stack, capture nothing.
+    bottom := #[]
+    newStack := st.stack
+  else
+    let copy : Nat := stackCopy.toNat
+    if copy > depth then
+      throw .stkUnd
+    if copy = depth then
+      bottom := #[]
+      newStack := st.stack
+    else if copy = 0 then
+      bottom := st.stack
+      newStack := #[]
+    else
+      let split : Nat := depth - copy
+      bottom := st.stack.take split
+      newStack := st.stack.extract split depth
+
+  -- Update stack and charge stack gas only when we actually split off a non-empty `newStack` via `copy > 0`.
+  -- This matches C++ behavior closely enough for our purposes.
+  let st :=
+    if decide (0 < stackCopy) && newStack.size > 0 then
+      ({ st with stack := newStack }).consumeStackGas newStack.size
+    else
+      { st with stack := newStack }
+
+  let mut ccCregs : OrdCregs := OrdCregs.empty
+  let mut regs := st.regs
+  if (saveCr &&& 1) = 1 then
+    ccCregs := { ccCregs with c0 := some regs.c0 }
+    regs := { regs with c0 := .quit 0 }
+  if (saveCr &&& 2) = 2 then
+    ccCregs := { ccCregs with c1 := some regs.c1 }
+    regs := { regs with c1 := .quit 1 }
+  if (saveCr &&& 4) = 4 then
+    ccCregs := { ccCregs with c2 := some regs.c2 }
+
+  set { st with regs := regs }
+
+  let ccCdata : OrdCdata := { stack := bottom, nargs := ccArgs }
+  return .ordinary codeAfter (.quit 0) ccCregs ccCdata
+
+def VM.pushCode : VM Unit := do
+  -- Mirrors C++ `VmState::push_code()`: push current remaining code slice.
+  let st ← get
+  match st.cc with
+  | .ordinary code _ _ _ =>
+      VM.push (.slice code)
+  | _ =>
+      throw .typeChk
 
 end TvmLean

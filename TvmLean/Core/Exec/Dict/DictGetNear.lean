@@ -17,25 +17,38 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
       let dictCell? ← VM.popMaybeCell
       if intKey then
         let key ← VM.popIntFinite
-        let mut res : Except Excno (Option (Slice × BitString) × Array Cell) := do
+        let (out?, loaded0) ←
           match dictKeyBits? key n unsigned with
           | some hintBits =>
-              dictNearestWithCells dictCell? hintBits goUp allowEq sgnd
+              match dictCell? with
+              | some c => modify fun st => st.registerCellLoad c
+              | none => pure ()
+              match dictNearestWithCells dictCell? hintBits goUp allowEq sgnd with
+              | .error e => throw e
+              | .ok r => pure r
           | none =>
               let cond : Bool := (decide (0 ≤ key)) != goUp
               if cond then
-                dictMinMaxWithCells dictCell? n (!goUp) sgnd
+                match dictCell? with
+                | some c => modify fun st => st.registerCellLoad c
+                | none => pure ()
+                match dictMinMaxWithCells dictCell? n (!goUp) sgnd with
+                | .error e => throw e
+                | .ok r => pure r
               else
-                return (none, #[])
-        match res with
-        | .error e => throw e
-        | .ok (none, loaded) =>
-            for c in loaded do
-              modify fun st => st.registerCellLoad c
+                pure (none, #[])
+
+        let loaded :=
+          match dictCell? with
+          | none => loaded0
+          | some root => loaded0.filter (fun c => c != root)
+        for c in loaded do
+          modify fun st => st.registerCellLoad c
+
+        match out? with
+        | none =>
             VM.pushSmallInt 0
-        | .ok (some (val, keyBits), loaded) =>
-            for c in loaded do
-              modify fun st => st.registerCellLoad c
+        | some (val, keyBits) =>
             VM.push (.slice val)
             let keyOut : Int :=
               if sgnd then
@@ -49,13 +62,24 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
         if !keyHint.haveBits n then
           throw .cellUnd
         let hintBits : BitString := keyHint.readBits n
+        match dictCell? with
+        | some c => modify fun st => st.registerCellLoad c
+        | none => pure ()
         match dictNearestWithCells dictCell? hintBits goUp allowEq false with
         | .error e => throw e
         | .ok (none, loaded) =>
+            let loaded :=
+              match dictCell? with
+              | none => loaded
+              | some root => loaded.filter (fun c => c != root)
             for c in loaded do
               modify fun st => st.registerCellLoad c
             VM.pushSmallInt 0
         | .ok (some (val, keyBits), loaded) =>
+            let loaded :=
+              match dictCell? with
+              | none => loaded
+              | some root => loaded.filter (fun c => c != root)
             for c in loaded do
               modify fun st => st.registerCellLoad c
             VM.push (.slice val)

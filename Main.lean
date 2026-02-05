@@ -54,6 +54,10 @@ def runWithTrace (fuel : Nat) (st : TvmLean.VmState) : IO TvmLean.StepResult := 
             "<whileBody>"
         | .untilBody _ _ =>
             "<untilBody>"
+        | .repeatBody _ _ _ =>
+            "<repeatBody>"
+        | .againBody _ =>
+            "<againBody>"
         | .quit n =>
             s!"<quit {n}>"
         | .excQuit =>

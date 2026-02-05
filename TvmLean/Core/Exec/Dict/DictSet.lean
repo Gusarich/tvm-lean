@@ -24,12 +24,20 @@ def execInstrDictDictSet (i : Instr) (next : VM Unit) : VM Unit := do
           else
             throw .cellUnd
 
+      match dictCell? with
+      | some c => modify fun st => st.registerCellLoad c
+      | none => pure ()
+
       if byRef then
         let valRef ← VM.popCell
         match dictSetRefWithCells dictCell? keyBits valRef mode with
         | .error e =>
             throw e
         | .ok (newRoot?, ok, created, loaded) =>
+            let loaded :=
+              match dictCell? with
+              | none => loaded
+              | some root => loaded.filter (fun c => c != root)
             for c in loaded do
               modify fun st => st.registerCellLoad c
             if created > 0 then
@@ -48,6 +56,10 @@ def execInstrDictDictSet (i : Instr) (next : VM Unit) : VM Unit := do
         | .error e =>
             throw e
         | .ok (newRoot?, ok, created, loaded) =>
+            let loaded :=
+              match dictCell? with
+              | none => loaded
+              | some root => loaded.filter (fun c => c != root)
             for c in loaded do
               modify fun st => st.registerCellLoad c
             if created > 0 then

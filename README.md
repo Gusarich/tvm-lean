@@ -1,6 +1,6 @@
 # TVM Lean
 
-> ⚠️ **Work in Progress** — This project is in early development and has not been thoroughly tested. The repo is public primarily to allow running CI jobs without private repository restrictions.
+> ⚠️ **Experimental** — This project is in active development and has not been thoroughly tested. Do not rely on its semantics.
 
 A Lean 4 implementation of the TON Virtual Machine, designed to match the behavior of the [reference C++ implementation](https://github.com/ton-blockchain/ton).
 
@@ -19,4 +19,6 @@ The original idea was to rewrite the specification for all instructions using AI
 
 ## Status
 
-🚧 Early development. Check back for updates.
+🚧 **In active development.** Most of the TVM is implemented, but it has not been properly tested yet. Differential testing against randomly sampled mainnet transactions currently shows ~99% of transactions emulating correctly.
+
+The implementation will become a useful foundation for formal verification once it reaches 100% diff-testing accuracy and each instruction has its own dedicated test suite with carefully validated semantics. Until then, treat the semantics as approximate.

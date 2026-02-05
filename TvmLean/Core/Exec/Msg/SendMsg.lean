@@ -19,6 +19,8 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
       if mode ≥ 256 then
         throw .rangeChk
       let msgCell ← VM.popCell
+      -- Mirrors the TL-B unpack attempt which loads the root cell once (even if the message is invalid).
+      modify fun st => st.registerCellLoad msgCell
 
       let getParam (idx : Nat) : VM Value := do
         let st ← get
@@ -32,11 +34,6 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
           | _ => throw .typeChk
         else
           throw .rangeChk
-
-      let myAddr : Slice ←
-        match (← getParam 8) with
-        | .slice s => pure s
-        | _ => throw .typeChk
 
       let parseAddrWorkchain (cs0 : Slice) : VM Int := do
         -- Mirrors `parse_addr_workchain` (tonops.cpp): expects MsgAddressInt (addr_std / addr_var).
@@ -233,6 +230,11 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
         | .ok v => pure v
         | .error _ => throw .unknown
 
+      let myAddr : Slice ←
+        match (← getParam 8) with
+        | .slice s => pure s
+        | _ => throw .typeChk
+
       let myWc ← parseAddrWorkchain myAddr
       let destWc ←
         if parsedMsg.extMsg then
@@ -241,8 +243,7 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
           parseAddrWorkchain parsedMsg.dest
       let isMasterchain : Bool := (myWc == -1) || (!parsedMsg.extMsg && destWc == -1)
 
-      -- Load root cell twice: unpack + stats.
-      modify fun st => st.registerCellLoad msgCell
+      -- Load root cell one more time: storage stat.
       modify fun st => st.registerCellLoad msgCell
 
       -- storage stat: count reachable cells/bits excluding the root cell (and root bits)

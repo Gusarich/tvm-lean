@@ -23,14 +23,25 @@ def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
           -- Dictionary index out of bounds: behave like "not found".
           VM.pushSmallInt 0
       | some keyBits =>
+          match dictCell? with
+          | some c => modify fun st => st.registerCellLoad c
+          | none => pure ()
           match dictLookupWithCells dictCell? keyBits with
           | .error e =>
               throw e
           | .ok (none, loaded) =>
+              let loaded :=
+                match dictCell? with
+                | none => loaded
+                | some root => loaded.filter (fun c => c != root)
               for c in loaded do
                 modify fun st => st.registerCellLoad c
               VM.pushSmallInt 0
           | .ok (some valueSlice, loaded) =>
+              let loaded :=
+                match dictCell? with
+                | none => loaded
+                | some root => loaded.filter (fun c => c != root)
               for c in loaded do
                 modify fun st => st.registerCellLoad c
               if byRef then

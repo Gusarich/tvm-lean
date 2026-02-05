@@ -10,6 +10,8 @@ import TvmLean.Core.Exec.CellOp
 import TvmLean.Core.Exec.TonEnv
 import TvmLean.Core.Exec.Crypto
 import TvmLean.Core.Exec.Msg
+import TvmLean.Core.Exec.Misc
+import TvmLean.Core.Exec.Debug
 import TvmLean.Core.Exec.Exception
 import TvmLean.Core.Exec.Dict
 
@@ -27,6 +29,8 @@ def execInstr (i : Instr) : VM Unit :=
                 execInstrTonEnv i <|
                   execInstrCrypto i <|
                     execInstrMsg i <|
+                      execInstrMisc i <|
+                      execInstrDebug i <|
                       execInstrException i <|
                         execInstrDict i <|
                           throw .invOpcode

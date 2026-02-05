@@ -469,6 +469,7 @@ import Tests.Config.CONFIGOPTPARAM
 import Tests.Config.CONFIGPARAM
 import Tests.Config.CONFIGROOT
 import Tests.Config.DUEPAYMENT
+import Tests.Config.GETEXTRABALANCE
 import Tests.Config.GETFORWARDFEE
 import Tests.Config.GETFORWARDFEESIMPLE
 import Tests.Config.GETGASFEE
@@ -923,4 +924,3 @@ import Tests.Tuple.UNPACKFIRST
 import Tests.Tuple.UNPACKFIRSTVAR
 import Tests.Tuple.UNTUPLE
 import Tests.Tuple.UNTUPLEVAR
-

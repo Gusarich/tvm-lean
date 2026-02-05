@@ -1,4 +1,6 @@
 import TvmLean.Core.Exec.Common
+import TvmLean.Core.Exec.Arith.ContExt
+import TvmLean.Core.Exec.Arith.Ext
 import TvmLean.Core.Exec.Arith.Inc
 import TvmLean.Core.Exec.Arith.Qinc
 import TvmLean.Core.Exec.Arith.Dec
@@ -61,6 +63,8 @@ namespace TvmLean
 
 set_option maxHeartbeats 1000000 in
 def execInstrArith (i : Instr) (next : VM Unit) : VM Unit :=
+  execInstrArithContExt i <|
+  execInstrArithExt i <|
   execInstrArithInc i <|
   execInstrArithQinc i <|
   execInstrArithDec i <|

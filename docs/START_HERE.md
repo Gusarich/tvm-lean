@@ -40,6 +40,48 @@ Run offline diff regression tests (curated mainnet fixtures):
 lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
 ```
 
+## Mainnet diff tests (collecting fixtures)
+
+You can diff-test against real mainnet transactions by collecting JSON fixtures from Toncenter, then running
+the Lean diff-test runner on them.
+
+Prereqs:
+
+- Node.js + `npm`
+- Optional: set `TONCENTER_API_KEY` to avoid rate limits (Toncenter)
+
+Build the Lean diff-test runner:
+
+```sh
+lake build tvm-lean-diff-test
+```
+
+Install + build the fixture collector:
+
+```sh
+cd diff-test/collector
+npm install
+npm run build
+```
+
+Collect a single transaction fixture:
+
+```sh
+npm run collect -- --tx <TX_HASH> --out-dir ../fixtures/manual
+```
+
+Sweep and *run* (batch) diff-tests over ~5000 fixtures, streaming results to `diff-test/results.jsonl`:
+
+```sh
+TONCENTER_API_KEY=... npm run sweep -- --since 2026-02-01 --max-fixtures 5000 --run-lean --batch-size 200 --skip-unsupported --results ../results.jsonl --keep-fixtures
+```
+
+Run the diff-test runner directly over a fixtures directory:
+
+```sh
+lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/manual --max-cases 5000 --skip-unsupported --out diff-test/report.json --strict-exit
+```
+
 ## Repo map
 
 - `TvmLean/Core.lean`: thin re-export of the core VM model (see `TvmLean/Core/Prelude.lean`, `TvmLean/Core/Exec.lean`, `TvmLean/Core/Step.lean`)

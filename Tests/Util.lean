@@ -68,6 +68,31 @@ def runProg (prog : List Instr) (fuel : Nat := 200) : IO StepResult := do
   let st0 := VmState.initial codeCell
   pure (VmState.run fuel st0)
 
+def runProgWith (prog : List Instr) (init : VmState → VmState) (fuel : Nat := 200) : IO StepResult := do
+  let codeCell ←
+    match assembleCp0 prog with
+    | .ok c => pure c
+    | .error e => throw (IO.userError s!"assembleCp0 failed: {reprStr e}")
+  let st0 := init (VmState.initial codeCell)
+  pure (VmState.run fuel st0)
+
+def expectHalt (res : StepResult) : IO (Int × VmState) := do
+  match res with
+  | .continue _ =>
+      throw (IO.userError "expected halt, got continue")
+  | .halt exitCode st =>
+      pure (exitCode, st)
+
+def expectExit (ctx : String) (expected : Int) (exitCode : Int) : IO Unit := do
+  assert (exitCode == expected) s!"{ctx}: expected exitCode={expected}, got {exitCode}"
+
+def expectExitOk (ctx : String) (exitCode : Int) : IO Unit :=
+  expectExit ctx (-1) exitCode
+
+def expectExitExc (ctx : String) (exc : Excno) (exitCode : Int) : IO Unit := do
+  let expected : Int := ~~~ exc.toInt
+  expectExit ctx expected exitCode
+
 def cellOfBytes (bs : Array UInt8) : Cell :=
   Id.run do
     let mut bits : BitString := #[]
@@ -76,4 +101,3 @@ def cellOfBytes (bs : Array UInt8) : Cell :=
     Cell.mkOrdinary bits #[]
 
 end Tests
-
