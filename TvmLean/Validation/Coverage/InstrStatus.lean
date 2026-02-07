@@ -1,4 +1,4 @@
-import TvmLean.Model
+import TvmLean.Spec.Index
 
 namespace TvmLean
 
@@ -9,7 +9,7 @@ inductive InstrImplStatus where
   deriving Repr, BEq
 
 structure InstrCoverageRow where
-  id : String
+  id : InstrId
   impl : InstrImplStatus
   unitCases : Nat
   oracleCases : Nat

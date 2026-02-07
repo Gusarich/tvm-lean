@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction PUSHNEGPOW2 (category: arithmetic).

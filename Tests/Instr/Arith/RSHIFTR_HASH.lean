@@ -1,0 +1,17 @@
+import Tests.Harness.Registry
+import TvmLean.Spec.Index
+
+open TvmLean
+open Tests
+
+namespace Tests.Instr.Arith.RSHIFTR_HASH
+
+def suite : InstrSuite where
+  id := { name := "RSHIFTR#" }
+  unit := #[]
+  oracle := #[]
+  fuzz := #[]
+
+initialize registerSuite suite
+
+end Tests.Instr.Arith.RSHIFTR_HASH

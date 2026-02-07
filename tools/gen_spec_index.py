@@ -13,6 +13,7 @@ SPEC_PATH = REPO_ROOT / "third_party/tvm-specification/tvm-specification.json"
 UPSTREAM_PATH = REPO_ROOT / "third_party/tvm-specification/UPSTREAM.json"
 OUT_JSON = REPO_ROOT / "docs/progress/tvm_spec_index.json"
 OUT_CSV = REPO_ROOT / "docs/progress/tvm_spec_index.csv"
+OUT_LEAN = REPO_ROOT / "TvmLean/Spec/Index.lean"
 
 
 def _load_json(path: Path) -> Any:
@@ -24,6 +25,48 @@ def _optional(dct: dict[str, Any] | None, key: str) -> Any | None:
     if not dct:
         return None
     return dct.get(key)
+
+
+def _lean_string(s: str) -> str:
+    return '"' + s.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _emit_lean(rows: list["SpecInstructionIndexRow"]) -> None:
+    lines: list[str] = []
+    lines.append("import TvmLean.Model.Instr.Id")
+    lines.append("")
+    lines.append("namespace TvmLean")
+    lines.append("")
+    lines.append("/-- Metadata row for a TVM instruction from the vendored spec snapshot. -/")
+    lines.append("structure InstrSpecRow where")
+    lines.append("  id : InstrId")
+    lines.append("  family : String")
+    lines.append("  prefixBits : Nat")
+    lines.append("  checkLenBits : Nat")
+    lines.append("  skipLenBits : Nat")
+    lines.append("  deriving Repr, Inhabited, DecidableEq, BEq")
+    lines.append("")
+    lines.append("/-- Generated from `third_party/tvm-specification/tvm-specification.json`. -/")
+    lines.append("def allInstrRows : Array InstrSpecRow := #[")
+    for r in rows:
+        lines.append(
+            "  { "
+            f"id := {{ name := {_lean_string(r.name)} }}, "
+            f"family := {_lean_string(r.category)}, "
+            f"prefixBits := {r.layout.prefix}, "
+            f"checkLenBits := {r.layout.checkLen}, "
+            f"skipLenBits := {r.layout.skipLen}"
+            " },"
+        )
+    lines.append("]")
+    lines.append("")
+    lines.append("/-- Canonical instruction IDs from the current spec snapshot. -/")
+    lines.append("def allInstrIds : Array InstrId := allInstrRows.map (fun r => r.id)")
+    lines.append("")
+    lines.append("end TvmLean")
+    lines.append("")
+    OUT_LEAN.parent.mkdir(parents=True, exist_ok=True)
+    OUT_LEAN.write_text("\n".join(lines), encoding="utf-8")
 
 
 @dataclass(frozen=True)
@@ -221,8 +264,9 @@ def main() -> None:
 
     print(f"wrote {OUT_JSON}")
     print(f"wrote {OUT_CSV}")
+    _emit_lean(rows)
+    print(f"wrote {OUT_LEAN}")
 
 
 if __name__ == "__main__":
     main()
-

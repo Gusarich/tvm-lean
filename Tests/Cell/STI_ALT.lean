@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction STI_ALT (category: cell).

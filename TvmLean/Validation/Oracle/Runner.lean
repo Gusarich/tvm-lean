@@ -1296,7 +1296,7 @@ def runOracleBatch (cases : Array (Cell × List String)) : IO (Array OracleOut) 
     return #[]
   let tonFift := (← IO.getEnv "TON_FIFT_BIN").getD "/Users/daniil/Coding/ton/build/crypto/fift"
   let tonLib := (← IO.getEnv "TON_FIFT_LIB").getD "/Users/daniil/Coding/ton/crypto/fift/lib"
-  let oracleLib := (← IO.getEnv "TVMLEANTON_ORACLE_LIB_FIF").getD "tools/ton_oracle_runvm_lib.fif"
+  let oracleLib := (← IO.getEnv "TVMLEANTON_ORACLE_LIB_FIF").getD "oracle/fif/ton_oracle_runvm_lib.fif"
   let tmpDir := (← IO.getEnv "TVMLEANTON_ORACLE_TMP").getD "/tmp"
   let keepTmp : Bool := (← IO.getEnv "TVMLEANTON_ORACLE_KEEP_TMP").getD "0" == "1"
 
@@ -1340,7 +1340,7 @@ def runOracleBatch (cases : Array (Cell × List String)) : IO (Array OracleOut) 
 def runOracle (code : Cell) (stackArgs : List String) : IO OracleOut := do
   let tonFift := (← IO.getEnv "TON_FIFT_BIN").getD "/Users/daniil/Coding/ton/build/crypto/fift"
   let tonLib := (← IO.getEnv "TON_FIFT_LIB").getD "/Users/daniil/Coding/ton/crypto/fift/lib"
-  let oracleScript := (← IO.getEnv "TVMLEANTON_ORACLE_FIF").getD "tools/ton_oracle_runvm.fif"
+  let oracleScript := (← IO.getEnv "TVMLEANTON_ORACLE_FIF").getD "oracle/fif/ton_oracle_runvm.fif"
   let bocBytes ←
     match stdBocSerialize code with
     | .ok b => pure b
@@ -1362,7 +1362,7 @@ def runLean (code : Cell) (initStack : Array Value) (fuel : Nat := 2_000_000) : 
   -- Use an iterative runner (not `VmState.run` recursion) so we can allow enough steps for
   -- structured-loop opcodes to reach out-of-gas deterministically.
   Id.run do
-    -- Standard deterministic c7 context (must match `tools/ton_oracle_runvm.fif`).
+    -- Standard deterministic c7 context (must match `oracle/fif/ton_oracle_runvm.fif`).
     let cfgGlobalIdBoc : String := "te6cckEBAQEABgAACP///xHmo3/3"
     let cfgMcGasPricesBoc : String :=
       "te6cckEBAQEATAAAlNEAAAAAAAAAZAAAAAAAD0JA3gAAAAAnEAAAAAAAAAAPQkAAAAAABCwdgAAAAAAAACcQAAAAAAAmJaAAAAAABfXhAAAAAAA7msoAKm2gQw=="

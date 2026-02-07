@@ -38,7 +38,16 @@ lean_lib TvmLeanValidation where
 
 lean_lib TvmLeanTests where
   srcDir := "."
-  roots := #[`Tests]
+  roots := #[
+    `Tests.Tests,
+    `Tests.All,
+    `Tests.Harness.Registry,
+    `Tests.Harness.OracleHarness,
+    `Tests.Harness.FuzzHarness,
+    `Tests.Harness.Runner,
+    `Tests.Harness.Cli,
+    `Tests.Harness.Coverage
+  ]
 
 target tvmlean_crypto.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto.o"

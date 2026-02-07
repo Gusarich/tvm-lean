@@ -14,7 +14,7 @@ Defaults:
 
 Examples:
   tools/run_diff_tests.sh --max-cases 100
-  tools/run_diff_tests.sh --dir diff-test/fixtures --shards 12 --out diff-test/_runs/latest
+  tools/run_diff_tests.sh --dir diff-test/fixtures --shards 12 --out diff-test/reports/latest
   tools/run_diff_tests.sh --dir diff-test/fixtures --shards 12 --trace-all --trace-max 50
 
 Notes:
@@ -77,7 +77,7 @@ done
 
 if [[ -z "$OUT" ]]; then
   ts="$(date +%Y%m%d_%H%M%S)"
-  OUT="${ROOT}/diff-test/_runs/${ts}"
+  OUT="${ROOT}/diff-test/reports/${ts}"
 fi
 
 mkdir -p "$OUT"

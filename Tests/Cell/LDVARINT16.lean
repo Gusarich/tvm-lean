@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction LDVARINT16 (category: cell).

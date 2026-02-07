@@ -239,32 +239,38 @@ def _count_progress(progress: dict[str, tuple[bool, bool]]) -> tuple[int, int]:
 
 def _load_code_progress() -> dict[str, tuple[bool, bool]]:
     """
-    Probe the actual Lean decoder/exec to determine which spec opcodes are implemented.
-
-    An opcode counts as implemented if:
-    - it decodes via `decodeCp0WithBits`, and
-    - executing the decoded `Instr` does not raise `invOpcode` (other runtime errors are treated as implemented).
-
-    This currently does not infer `tested` and returns it as `False`.
+    Read coverage data from `tvm-lean-coverage` and map it to (implemented, tested).
     """
-    cmd = ["lake", "exe", "tvm-lean-progress", "--", "--tsv"]
+    cmd = ["lake", "exe", "tvm-lean-coverage", "--", "--format", "json"]
     p = subprocess.run(cmd, cwd=REPO_ROOT, check=False, capture_output=True, text=True)
     if p.returncode != 0:
         raise SystemExit(
-            "failed to run code progress probe:\n"
+            "failed to run coverage probe:\n"
             + f"cmd: {' '.join(cmd)}\n"
             + (p.stdout or "")
             + (p.stderr or "")
         )
+
+    try:
+        rows = json.loads(p.stdout or "[]")
+    except Exception as e:
+        raise SystemExit(f"failed to parse coverage JSON output: {e}") from e
+
     out: dict[str, tuple[bool, bool]] = {}
-    for line in (p.stdout or "").splitlines():
-        s = line.strip()
-        if not s:
+    if not isinstance(rows, list):
+        return out
+
+    for row in rows:
+        if not isinstance(row, dict):
             continue
-        if "\t" not in s:
+        name = str(row.get("instr") or "").strip()
+        impl = str(row.get("impl") or "").strip()
+        if not name:
             continue
-        k, v = s.split("\t", 1)
-        out[k.strip()] = (v.strip().lower() == "true", False)
+        unit = int(row.get("unit") or 0)
+        oracle = int(row.get("oracle") or 0)
+        fuzz = int(row.get("fuzz") or 0)
+        out[f"tvm::{name}"] = (impl == "ok", (unit + oracle + fuzz) > 0)
     return out
 
 

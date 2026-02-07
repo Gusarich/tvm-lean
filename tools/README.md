@@ -35,7 +35,7 @@ Notes:
 
 - `--cases auto` resolves to `variants * code-variants` to saturate the generated code×stack matrix.
 - Real-time per-instruction PASS/FAIL lines are printed to stdout.
-- Progress is also appended to `oracle/_runs/<ts>/progress.log`.
+- Progress is also appended to `oracle/runs/<ts>/progress.log`.
 
 Run the extensive all-instruction multi-seed matrix:
 

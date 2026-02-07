@@ -7,6 +7,16 @@ def VM.checkUnderflow (n : Nat) : VM Unit := do
   if st.stack.size < n then
     throw .stkUnd
 
+/--
+Marks an instruction path as not yet implemented.
+
+Until the VM monad migrates to `VmError`, this throws `Excno.unknown` while also
+constructing a structured `VmError.unimplemented` value for tooling/reporting call sites.
+-/
+def VM.unimplementedInstr (id : InstrId) (msg : String := "not yet implemented") : VM α := do
+  let _ : VmError := .unimplemented id msg
+  throw .unknown
+
 def VM.execNullSwapIf (cond : Bool) (depth : Nat) (count : Nat) : VM Unit := do
   -- Matches C++ `exec_null_swap_if` / `exec_null_swap_if_many` (tupleops.cpp).
   let st ← get
