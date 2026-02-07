@@ -28,11 +28,12 @@ def testMod : IO Unit := do
 
   let (exitCodeZ, stZ) ←
     expectHalt (← runProg [ .pushInt (.num 1), .pushInt (.num 0), .divMod 2 (-1) false false ])
-  expectExitOk "mod(1,0)" exitCodeZ
+  -- MOD is non-quiet: division by zero returns NaN internally, then `push_int_quiet` raises int overflow.
+  expectExitExc "mod(1,0)" .intOv exitCodeZ
   assert (stZ.stack.size == 1) s!"mod(1,0): unexpected stack size={stZ.stack.size}"
   match stZ.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"mod(1,0): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"mod(1,0): expected 0, got {n}"
+  | v => throw (IO.userError s!"mod(1,0): expected 0, got {v.pretty}")
 
   -- Even when quotient would overflow (MIN_INT / -1), MOD returns 0.
   let (exitCodeB, stB) ←

@@ -12,7 +12,7 @@ def testDivr : IO Unit := do
   | .int (.num n) => assert (n == 3) s!"divr(8,3): expected 3, got {n}"
   | v => throw (IO.userError s!"divr(8,3): unexpected stack value {v.pretty}")
 
-  -- tie (0.5) rounds away from zero
+  -- tie (0.5) rounds toward +∞ (TON `BigInt::mod_div` semantics)
   let (exitCode2, st2) ←
     expectHalt (← runProg [ .pushInt (.num 3), .pushInt (.num 2), .divMod 1 0 false false ])
   expectExitOk "divr(3,2)" exitCode2
@@ -26,16 +26,17 @@ def testDivr : IO Unit := do
   expectExitOk "divr(-3,2)" exitCode3
   assert (st3.stack.size == 1) s!"divr(-3,2): unexpected stack size={st3.stack.size}"
   match st3.stack[0]! with
-  | .int (.num n) => assert (n == -2) s!"divr(-3,2): expected -2, got {n}"
+  | .int (.num n) => assert (n == -1) s!"divr(-3,2): expected -1, got {n}"
   | v => throw (IO.userError s!"divr(-3,2): unexpected stack value {v.pretty}")
 
   let (exitCodeZ, stZ) ←
     expectHalt (← runProg [ .pushInt (.num 1), .pushInt (.num 0), .divMod 1 0 false false ])
-  expectExitOk "divr(1,0)" exitCodeZ
+  -- DIVR is non-quiet: division by zero returns NaN internally, then `push_int_quiet` raises int overflow.
+  expectExitExc "divr(1,0)" .intOv exitCodeZ
   assert (stZ.stack.size == 1) s!"divr(1,0): unexpected stack size={stZ.stack.size}"
   match stZ.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"divr(1,0): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"divr(1,0): expected 0, got {n}"
+  | v => throw (IO.userError s!"divr(1,0): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/divr" testDivr

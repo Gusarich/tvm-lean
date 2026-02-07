@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrMsgSendRawMsg (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .tonEnvOp .sendRawMsg =>
+      VM.checkUnderflow 2
       let mode ← VM.popNatUpTo 255
       let msgCell ← VM.popCell
       modify fun st => st.consumeGas cellCreateGasPrice

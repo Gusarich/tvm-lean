@@ -7,11 +7,13 @@ Run `tvm-lean-oracle-validate` per-instruction in parallel and store logs.
 
 Defaults:
   --jobs 12
-  --variants 20 --code-variants 8 --cases 20 --max-nosig-depth 64
+  --variants 20 --code-variants 8 --cases 20 --max-nosig-depth 64 --min-cases 10
+  --random-cases 64 --seed 1
 
 Examples:
   tools/run_oracle_validate.sh --limit 50
   tools/run_oracle_validate.sh --only ADDINT --verbose
+  tools/run_oracle_validate.sh --variants 64 --code-variants 64 --cases auto
   tools/run_oracle_validate.sh --jobs 12 --out oracle/_runs/latest
 
 Env overrides (optional):
@@ -31,8 +33,11 @@ LIMIT=0
 ONLY=""
 VARIANTS=20
 CODE_VARIANTS=8
-CASES=20
+CASES="20"
 MAX_NOSIG_DEPTH=64
+MIN_CASES=10
+RANDOM_CASES=64
+SEED=1
 VERBOSE=0
 OUT=""
 
@@ -46,6 +51,9 @@ while [[ $# -gt 0 ]]; do
     --code-variants) CODE_VARIANTS="$2"; shift 2 ;;
     --cases) CASES="$2"; shift 2 ;;
     --max-nosig-depth) MAX_NOSIG_DEPTH="$2"; shift 2 ;;
+    --min-cases) MIN_CASES="$2"; shift 2 ;;
+    --random-cases) RANDOM_CASES="$2"; shift 2 ;;
+    --seed) SEED="$2"; shift 2 ;;
     --verbose) VERBOSE=1; shift ;;
     --out) OUT="$2"; shift 2 ;;
     *)
@@ -59,6 +67,51 @@ done
 if [[ -z "$OUT" ]]; then
   ts="$(date +%Y%m%d_%H%M%S)"
   OUT="${ROOT}/oracle/_runs/${ts}"
+fi
+
+is_uint() {
+  [[ "$1" =~ ^[0-9]+$ ]]
+}
+
+if ! is_uint "$JOBS"; then
+  echo "invalid --jobs: $JOBS" >&2
+  exit 2
+fi
+if ! is_uint "$VARIANTS"; then
+  echo "invalid --variants: $VARIANTS" >&2
+  exit 2
+fi
+if ! is_uint "$CODE_VARIANTS"; then
+  echo "invalid --code-variants: $CODE_VARIANTS" >&2
+  exit 2
+fi
+if [[ "$CASES" == "auto" ]]; then
+  CASES="$((VARIANTS * CODE_VARIANTS))"
+else
+  if ! is_uint "$CASES"; then
+    echo "invalid --cases: $CASES (expected Nat or 'auto')" >&2
+    exit 2
+  fi
+fi
+if ! is_uint "$MAX_NOSIG_DEPTH"; then
+  echo "invalid --max-nosig-depth: $MAX_NOSIG_DEPTH" >&2
+  exit 2
+fi
+if ! is_uint "$MIN_CASES"; then
+  echo "invalid --min-cases: $MIN_CASES" >&2
+  exit 2
+fi
+if ! is_uint "$RANDOM_CASES"; then
+  echo "invalid --random-cases: $RANDOM_CASES" >&2
+  exit 2
+fi
+if ! is_uint "$SEED"; then
+  echo "invalid --seed: $SEED" >&2
+  exit 2
+fi
+if (( CASES < MIN_CASES )); then
+  echo "--cases must be >= --min-cases (cases=$CASES min-cases=$MIN_CASES)" >&2
+  exit 2
 fi
 
 mkdir -p "$OUT/logs" "$OUT/ok" "$OUT/fail"
@@ -93,7 +146,15 @@ export ORACLE_VARIANTS="$VARIANTS"
 export ORACLE_CODE_VARIANTS="$CODE_VARIANTS"
 export ORACLE_CASES="$CASES"
 export ORACLE_MAX_NOSIG_DEPTH="$MAX_NOSIG_DEPTH"
+export ORACLE_MIN_CASES="$MIN_CASES"
+export ORACLE_RANDOM_CASES="$RANDOM_CASES"
+export ORACLE_SEED="$SEED"
 export ORACLE_VERBOSE="$VERBOSE"
+export ORACLE_PROGRESS_FILE="${OUT}/progress.log"
+
+echo "run_dir: $OUT"
+echo "config: jobs=${JOBS} variants=${ORACLE_VARIANTS} code_variants=${ORACLE_CODE_VARIANTS} cases=${ORACLE_CASES} min_cases=${ORACLE_MIN_CASES} random_cases=${ORACLE_RANDOM_CASES} seed=${ORACLE_SEED}"
+echo "progress_log: ${ORACLE_PROGRESS_FILE}"
 
 cat "$names_file" | xargs -n 1 -P "$JOBS" bash -lc '
   set -euo pipefail
@@ -103,16 +164,32 @@ cat "$names_file" | xargs -n 1 -P "$JOBS" bash -lc '
   ok="${ORACLE_RUN_DIR}/ok/${safe}"
   fail="${ORACLE_RUN_DIR}/fail/${safe}"
   rm -f "$ok" "$fail"
+  start_ts="$(date +%s)"
   {
     echo "name: $name"
-    echo "variants: ${ORACLE_VARIANTS}  code-variants: ${ORACLE_CODE_VARIANTS}  cases: ${ORACLE_CASES}  max-nosig-depth: ${ORACLE_MAX_NOSIG_DEPTH}"
+    echo "variants: ${ORACLE_VARIANTS}  code-variants: ${ORACLE_CODE_VARIANTS}  cases: ${ORACLE_CASES}  max-nosig-depth: ${ORACLE_MAX_NOSIG_DEPTH}  min-cases: ${ORACLE_MIN_CASES}  random-cases: ${ORACLE_RANDOM_CASES}  seed: ${ORACLE_SEED}"
     echo
-    args=(--only "$name" --variants "$ORACLE_VARIANTS" --code-variants "$ORACLE_CODE_VARIANTS" --cases "$ORACLE_CASES" --max-nosig-depth "$ORACLE_MAX_NOSIG_DEPTH")
+    args=(--only "$name" --variants "$ORACLE_VARIANTS" --code-variants "$ORACLE_CODE_VARIANTS" --cases "$ORACLE_CASES" --max-nosig-depth "$ORACLE_MAX_NOSIG_DEPTH" --min-cases "$ORACLE_MIN_CASES" --random-cases "$ORACLE_RANDOM_CASES" --seed "$ORACLE_SEED")
     if [[ "${ORACLE_VERBOSE}" -eq 1 ]]; then
       args+=(--verbose)
     fi
     "${ORACLE_BIN}" "${args[@]}"
-  } >"$log" 2>&1 && touch "$ok" || { touch "$fail"; exit 0; }
+  } >"$log" 2>&1 && {
+    touch "$ok"
+    end_ts="$(date +%s)"
+    dt="$((end_ts - start_ts))"
+    line="PASS ${name} (${dt}s)"
+    echo "$line"
+    printf "%s\t%s\t%s\n" "pass" "$name" "$dt" >> "${ORACLE_PROGRESS_FILE}"
+  } || {
+    touch "$fail"
+    end_ts="$(date +%s)"
+    dt="$((end_ts - start_ts))"
+    line="FAIL ${name} (${dt}s) log=${log}"
+    echo "$line"
+    printf "%s\t%s\t%s\n" "fail" "$name" "$dt" >> "${ORACLE_PROGRESS_FILE}"
+    exit 0
+  }
 ' _
 
 python3 - <<'PY' "$OUT"

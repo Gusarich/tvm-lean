@@ -2,18 +2,11 @@ import { mkdir, rm, writeFile, appendFile, access, readFile, readdir } from "nod
 import path from "node:path";
 import { spawn } from "node:child_process";
 
-import { Address, beginCell, Cell, Dictionary, loadShardAccount, storeMessage, type TupleItem } from "@ton/core";
-import { Blockchain, Executor } from "@ton/sandbox";
-import { collectUsedLibraries, findFullBlockForSeqno, findRawTxByHash, getBlockAccount, getBlockConfig, shardAccountToBase64 } from "txtracer-core";
+import { Address, beginCell, Cell, Dictionary, storeMessage } from "@ton/core";
+import { collectUsedLibraries, findFullBlockForSeqno, findRawTxByHash, getBlockAccount, getBlockConfig } from "txtracer-core";
 
 import { computeGasInit, parseGlobalConfig, type ParsedGlobalConfig } from "./gas.js";
-
-type TupleItemJson =
-  | { type: "null" }
-  | { type: "nan" }
-  | { type: "int"; value: string }
-  | { type: "cell" | "slice" | "builder"; boc: string }
-  | { type: "tuple"; items: TupleItemJson[] };
+import { computeExpectedStateWithFift } from "./fift_oracle.js";
 
 type Fixture = {
   tx_hash: string;
@@ -47,6 +40,7 @@ type Fixture = {
     config_precompiled_contracts_boc?: string;
   };
   expected: {
+    // Uncomplemented compute exit code (blockchain-style).
     exit_code: number;
     gas_used?: string;
     gas_limit?: string;
@@ -54,7 +48,6 @@ type Fixture = {
     gas_credit?: string;
     c4_boc?: string;
     c5_boc?: string;
-    c7?: TupleItemJson;
   };
 };
 
@@ -78,7 +71,6 @@ type SweepOpts = {
   traceAll: boolean;
   traceMax: number;
   keepFixtures: boolean;
-  expectedState: boolean;
 };
 
 function parseTimeToUtime(s: string): number {
@@ -106,32 +98,6 @@ function bytesToBigIntBE(buf: Buffer): bigint {
   let x = 0n;
   for (const b of buf) x = (x << 8n) + BigInt(b);
   return x;
-}
-
-function tupleItemToJson(item: TupleItem): TupleItemJson {
-  if (item.type === "null") return { type: "null" };
-  if (item.type === "nan") return { type: "nan" };
-  if (item.type === "int") return { type: "int", value: item.value.toString(10) };
-  if (item.type === "cell") return { type: "cell", boc: bocBase64(item.cell) };
-  if (item.type === "slice") return { type: "slice", boc: bocBase64(item.cell) };
-  if (item.type === "builder") return { type: "builder", boc: bocBase64(item.cell) };
-  if (item.type === "tuple") return { type: "tuple", items: item.items.map(tupleItemToJson) };
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-  throw new Error(`unsupported TupleItem type: ${(item as any).type}`);
-}
-
-function patchC7BlockLt(c7: TupleItemJson, blockLt: bigint): TupleItemJson {
-  if (c7.type !== "tuple") return c7;
-  const env = c7.items[0];
-  if (!env || env.type !== "tuple") return c7;
-
-  const envItems = [...env.items];
-  if (envItems.length <= 4) return c7;
-
-  envItems[4] = { type: "int", value: blockLt.toString(10) };
-  const c7Items = [...c7.items];
-  c7Items[0] = { type: "tuple", items: envItems };
-  return { type: "tuple", items: c7Items };
 }
 
 function extractConfigParamCell(configCellB64: string, idx: number): Cell | null {
@@ -214,7 +180,6 @@ function parseArgs(argv: string[]): SweepOpts {
     traceAll: false,
     traceMax: 200,
     keepFixtures: false,
-    expectedState: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -257,10 +222,6 @@ function parseArgs(argv: string[]): SweepOpts {
       opts.traceMax = Number(argv[++i]!);
     } else if (a === "--keep-fixtures") {
       opts.keepFixtures = true;
-    } else if (a === "--expected-state") {
-      opts.expectedState = true;
-    } else if (a === "--no-expected-state") {
-      opts.expectedState = false;
     } else if (a === "--") {
       // ignore
     } else {
@@ -316,10 +277,6 @@ async function runLeanBatch(opts: SweepOpts, batchDir: string) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
 
-  if (opts.runLean && !opts.expectedState) {
-    throw new Error("--run-lean requires --expected-state (tvm-lean-diff-test compares c7 and other final VM registers)");
-  }
-
   if (opts.runLean) {
     await access(opts.leanBin).catch(() => {
       throw new Error(`Lean diff runner not found at ${opts.leanBin}. Build it with: (cd ../.. && lake build tvm-lean-diff-test)`);
@@ -327,15 +284,6 @@ async function main() {
   }
 
   await mkdir(opts.outDir, { recursive: true });
-
-  let sandbox: { executor: any; debugExecutor?: Executor } | undefined = undefined;
-  if (opts.expectedState) {
-    const blockchain = await Blockchain.create();
-    blockchain.verbosity.print = false;
-    blockchain.verbosity.vmLogs = "vm_logs_verbose";
-    const debugExecutor = await Executor.create({ debug: true });
-    sandbox = { executor: blockchain.executor as any, debugExecutor };
-  }
 
   const [startSeqno, endSeqno] = await getSeqnoRange(opts.testnet, opts.sinceUtime, opts.untilUtime);
   console.log(`masterchain seqno range: ${startSeqno}..${endSeqno}`);
@@ -358,6 +306,7 @@ async function main() {
     computeNotVm: 0,
     noInMsg: 0,
     noCode: 0,
+    precompiled: 0,
     errors: 0,
   };
 
@@ -450,7 +399,6 @@ async function main() {
 
           let dataCell: any = emptyCell();
           let codeCell: any = undefined;
-          let libsCell: any = undefined;
 
           const st: any = shardAcc.account?.storage?.state;
           if (st?.type === "active") {
@@ -467,8 +415,7 @@ async function main() {
           }
           const myCodeCell = codeCell;
 
-          const [libs, loadedCode] = await collectUsedLibraries(opts.testnet, shardAcc, rawTx.tx as any, []);
-          libsCell = libs;
+          const [_libs, loadedCode] = await collectUsedLibraries(opts.testnet, shardAcc, rawTx.tx as any, []);
           if (loadedCode) codeCell = loadedCode;
 
           const inMsgCell = beginCell().store(storeMessage(inMsg) as any).endCell();
@@ -491,8 +438,7 @@ async function main() {
             inMsgExtern,
           });
 
-          // Needed for a realistic c7 environment (Lean uses it in defaultInitC7),
-          // and for sandbox emulation when `--expected-state` is enabled.
+          // Needed for realistic c7 init in Lean and fift oracle context.
           const shardBlockKey = `${rawTx.block.workchain}:${rawTx.block.shard}:${rawTx.block.seqno}`;
           let randSeed = randSeedByShardBlock.get(shardBlockKey);
           if (!randSeed) {
@@ -530,6 +476,7 @@ async function main() {
               config_root_boc: blockCfg.configCell,
             },
             expected: {
+              // Placeholder; replaced by fift oracle output below.
               exit_code: computePhase.exitCode,
               gas_used: computePhase.gasUsed.toString(10),
               gas_limit: gasInit.gasLimit.toString(10),
@@ -555,96 +502,11 @@ async function main() {
           if (sizeLimitsCell) fixture.stack_init.config_size_limits_boc = bocBase64(sizeLimitsCell);
           if (precompiledContractsCell) fixture.stack_init.config_precompiled_contracts_boc = bocBase64(precompiledContractsCell);
 
-          if (sandbox) {
-            const blockConfig = blockCfg.configCell;
-
-            const shardAcc0: any = { ...shardAcc, lastTransactionLt: 0n, lastTransactionHash: 0n };
-            const shardAccountBase64 = shardAccountToBase64(shardAcc0);
-
-            const exec: any = sandbox.executor;
-            if (typeof exec.runTransaction !== "function") {
-              throw new Error("sandbox executor does not support runTransaction");
-            }
-
-            const txRes = await exec.runTransaction({
-              config: blockConfig,
-              libs: libsCell ?? null,
-              verbosity: "full_location_stack_verbose",
-              shardAccount: shardAccountBase64,
-              message: inMsgCell,
-              now: rawTx.tx.now,
-              lt: rawTx.tx.lt,
-              randomSeed: randSeed,
-              ignoreChksig: false,
-              debugEnabled: true,
-            });
-
-            if (!txRes?.result?.success) throw new Error(`sandbox emulation failed: ${txRes?.result?.error ?? "unknown error"}`);
-
-            const shardAccountAfter = loadShardAccount(Cell.fromBase64(String(txRes.result.shardAccount)).asSlice());
-            const stAfter: any = shardAccountAfter.account?.storage?.state;
-            const finalDataCell: any = stAfter?.type === "active" ? stAfter.state?.data ?? emptyCell() : emptyCell();
-            fixture.expected.c4_boc = bocBase64(finalDataCell);
-
-            const actionsB64: any = txRes.result.actions;
-            if (typeof actionsB64 === "string" && actionsB64.length > 0) {
-              fixture.expected.c5_boc = actionsB64;
-            }
-
-            if (sandbox.debugExecutor) {
-              const dbg = sandbox.debugExecutor;
-              const { emptr } = dbg.sbsTransactionSetup({
-                config: blockConfig,
-                libs: libsCell ?? null,
-                verbosity: "full_location_stack_verbose",
-                shardAccount: shardAccountBase64,
-                message: inMsgCell,
-                now: rawTx.tx.now,
-                lt: rawTx.tx.lt,
-                randomSeed: randSeed,
-                ignoreChksig: false,
-                debugEnabled: true,
-              });
-
-              try {
-                const maxSteps = 5_000_000;
-                let steps = 0;
-                while (true) {
-                  steps++;
-                  const done = dbg.sbsTransactionStep(emptr);
-                  if (done) break;
-                  if (steps >= maxSteps) {
-                    throw new Error(`debugger step limit exceeded (>${maxSteps})`);
-                  }
-                }
-
-                const c7 = dbg.sbsTransactionC7(emptr);
-                const blockLt = rawTx.tx.lt - (rawTx.tx.lt % 1000000n);
-                fixture.expected.c7 = patchC7BlockLt(tupleItemToJson(c7), blockLt);
-
-                if (c7.type === "tuple" && c7.items[0]?.type === "tuple") {
-                  // Override balance/in_msg_value from c7 to match the exact VM init values used by the emulator.
-                  const env = c7.items[0];
-                  const bal = env.items[7];
-                  if (bal?.type === "tuple" && bal.items[0]?.type === "int") {
-                    fixture.stack_init.balance_grams = bal.items[0].value.toString(10);
-                  }
-                  const inMsgVal = env.items[11];
-                  if (inMsgVal?.type === "tuple" && inMsgVal.items[0]?.type === "int") {
-                    fixture.stack_init.msg_balance_grams = inMsgVal.items[0].value.toString(10);
-                  }
-
-                  // Capture MYCODE from c7 (can differ from `code_boc`, e.g. when the executable code was a resolved library).
-                  const myCode = c7.items[0].items[10];
-                  if (myCode?.type === "cell") {
-                    fixture.mycode_boc = bocBase64(myCode.cell);
-                  }
-                }
-              } finally {
-                dbg.destroyEmulator(emptr);
-              }
-            }
-          }
+          const fiftState = await computeExpectedStateWithFift(fixture);
+          fixture.expected.exit_code = fiftState.exitRaw;
+          fixture.expected.gas_used = fiftState.gasUsed.toString(10);
+          fixture.expected.c4_boc = fiftState.c4_boc;
+          fixture.expected.c5_boc = fiftState.c5_boc;
 
           const outPath = path.join(opts.runLean ? batchDir : opts.outDir, `${txHashHex}.json`);
           await writeFile(outPath, JSON.stringify(fixture, null, 2), "utf8");
@@ -660,8 +522,12 @@ async function main() {
             await mkdir(batchDir, { recursive: true });
           }
         } catch (e: any) {
-          skipped.errors++;
           const msg = e?.stack ?? e?.message ?? String(e);
+          if (msg.includes("precompiled contract detected")) {
+            skipped.precompiled++;
+            continue;
+          }
+          skipped.errors++;
           console.log(`✗ ${txHashHex}: ${msg}`);
         }
       }
@@ -682,7 +548,7 @@ async function main() {
   }
 
   console.log(
-    `skipped: nonFirst=${skipped.nonFirst} nonGeneric=${skipped.nonGeneric} computeNotVm=${skipped.computeNotVm} noInMsg=${skipped.noInMsg} noCode=${skipped.noCode} errors=${skipped.errors}`,
+    `skipped: nonFirst=${skipped.nonFirst} nonGeneric=${skipped.nonGeneric} computeNotVm=${skipped.computeNotVm} noInMsg=${skipped.noInMsg} noCode=${skipped.noCode} precompiled=${skipped.precompiled} errors=${skipped.errors}`,
   );
 }
 

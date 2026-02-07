@@ -12,17 +12,23 @@ def execInstrCryptoHashExt (i : Instr) (next : VM Unit) : VM Unit := do
       -- Stack (append=true):   ... builder x[cnt-1] ... x[0] cnt  -- ... builder'
       let mut hashId : Nat := hashId0
       if hashId = 255 then
-        -- C++: `pop_smallint_range(254)`
+        -- C++ (modern TVM): `check_underflow(2); pop_smallint_range(254)`.
+        VM.checkUnderflow 2
         hashId := (← VM.popNatUpTo 254)
 
       -- C++: `cnt = pop_smallint_range(stack.depth() - 1 - append)`
       let stBeforeCnt ← get
       let depth : Nat := stBeforeCnt.stack.size
-      let need : Nat := if append then 2 else 1
-      if depth < need then
-        throw .stkUnd
-      let maxCnt : Nat := depth - need
-      let cnt ← VM.popNatUpTo maxCnt
+      let maxCntInt : Int := Int.ofNat depth - 1 - (if append then 1 else 0)
+      let cntVal ← VM.popInt
+      let cnt : Nat ←
+        match cntVal with
+        | .nan => throw .rangeChk
+        | .num n =>
+            if decide (n < 0 ∨ n > maxCntInt) then
+              throw .rangeChk
+            else
+              pure n.toNat
 
       let bytesPerGasUnit ←
         match hashId with

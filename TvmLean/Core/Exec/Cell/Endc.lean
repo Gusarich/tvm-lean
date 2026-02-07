@@ -7,6 +7,7 @@ def execInstrCellEndc (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .endc =>
       let b ← VM.popBuilder
+      modify fun st => st.consumeGas cellCreateGasPrice
       VM.push (.cell b.finalize)
   | _ => next
 

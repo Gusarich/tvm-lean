@@ -10,20 +10,12 @@ import {
   findShardBlockForTx,
   getBlockConfig,
   getBlockAccount,
-  shardAccountToBase64,
 } from "txtracer-core";
 
-import { beginCell, Cell, Dictionary, loadShardAccount, storeMessage, type TupleItem } from "@ton/core";
-import { Blockchain, Executor } from "@ton/sandbox";
+import { beginCell, Cell, Dictionary, storeMessage } from "@ton/core";
 
 import { computeGasInit, parseGlobalConfig } from "./gas.js";
-
-type TupleItemJson =
-  | { type: "null" }
-  | { type: "nan" }
-  | { type: "int"; value: string }
-  | { type: "cell" | "slice" | "builder"; boc: string }
-  | { type: "tuple"; items: TupleItemJson[] };
+import { computeExpectedStateWithFift } from "./fift_oracle.js";
 
 type Fixture = {
   tx_hash: string;
@@ -57,6 +49,7 @@ type Fixture = {
     config_precompiled_contracts_boc?: string;
   };
   expected: {
+    // Uncomplemented compute exit code (blockchain-style).
     exit_code: number;
     gas_used?: string;
     gas_limit?: string;
@@ -64,9 +57,6 @@ type Fixture = {
     gas_credit?: string;
     c4_boc?: string;
     c5_boc?: string;
-    c7?: TupleItemJson;
-    // Optional verbose VM log from the sandbox emulator (useful for debugging gas/step mismatches).
-    vm_log?: string;
   };
 };
 
@@ -77,15 +67,11 @@ function parseArgs(argv: string[]) {
     txs: string[];
     txFile?: string;
     allowNonFirst: boolean;
-    expectedState: boolean;
-    includeVmLog: boolean;
   } = {
     testnet: false,
     outDir: path.resolve(process.cwd(), "..", "fixtures"),
     txs: [],
     allowNonFirst: false,
-    expectedState: true,
-    includeVmLog: false,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -100,12 +86,6 @@ function parseArgs(argv: string[]) {
       opts.txFile = argv[++i]!;
     } else if (a === "--allow-nonfirst") {
       opts.allowNonFirst = true;
-    } else if (a === "--expected-state") {
-      opts.expectedState = true;
-    } else if (a === "--no-expected-state") {
-      opts.expectedState = false;
-    } else if (a === "--include-vm-log") {
-      opts.includeVmLog = true;
     } else if (a === "--") {
       // ignore
     } else {
@@ -138,32 +118,6 @@ function bytesToBigIntBE(buf: Buffer): bigint {
   return x;
 }
 
-function tupleItemToJson(item: TupleItem): TupleItemJson {
-  if (item.type === "null") return { type: "null" };
-  if (item.type === "nan") return { type: "nan" };
-  if (item.type === "int") return { type: "int", value: item.value.toString(10) };
-  if (item.type === "cell") return { type: "cell", boc: bocBase64(item.cell) };
-  if (item.type === "slice") return { type: "slice", boc: bocBase64(item.cell) };
-  if (item.type === "builder") return { type: "builder", boc: bocBase64(item.cell) };
-  if (item.type === "tuple") return { type: "tuple", items: item.items.map(tupleItemToJson) };
-  // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-  throw new Error(`unsupported TupleItem type: ${(item as any).type}`);
-}
-
-function patchC7BlockLt(c7: TupleItemJson, blockLt: bigint): TupleItemJson {
-  if (c7.type !== "tuple") return c7;
-  const env = c7.items[0];
-  if (!env || env.type !== "tuple") return c7;
-
-  const envItems = [...env.items];
-  if (envItems.length <= 4) return c7;
-
-  envItems[4] = { type: "int", value: blockLt.toString(10) };
-  const c7Items = [...c7.items];
-  c7Items[0] = { type: "tuple", items: envItems };
-  return { type: "tuple", items: c7Items };
-}
-
 function extractConfigParamCell(configCellB64: string, idx: number): Cell | null {
   const params = Cell.fromBase64(configCellB64)
     .beginParse()
@@ -175,8 +129,6 @@ async function collectFixture(
   testnet: boolean,
   txHash: string,
   allowNonFirst: boolean,
-  sandbox?: { executor: any; debugExecutor?: Executor },
-  includeVmLog?: boolean,
 ): Promise<Fixture> {
   const baseTx = await findBaseTxByHash(testnet, txHash);
   if (!baseTx) throw new Error("tx not found via findBaseTxByHash");
@@ -218,7 +170,7 @@ async function collectFixture(
   if (!codeCell) throw new Error("no code cell (inactive account?)");
   const myCodeCell = codeCell;
 
-  const [libsCell, loadedCode] = await collectUsedLibraries(testnet, shardAcc, rawTx.tx as any, []);
+  const [_libsCell, loadedCode] = await collectUsedLibraries(testnet, shardAcc, rawTx.tx as any, []);
   if (loadedCode) codeCell = loadedCode;
 
   const inMsg = rawTx.tx.inMessage;
@@ -279,6 +231,7 @@ async function collectFixture(
       config_root_boc: blockConfig,
     },
     expected: {
+      // Placeholder; replaced by fift oracle output below.
       exit_code: computePhase.exitCode,
       gas_used: computePhase.gasUsed.toString(10),
       gas_limit: gasInit.gasLimit.toString(10),
@@ -304,100 +257,13 @@ async function collectFixture(
   if (sizeLimitsCell) fixture.stack_init.config_size_limits_boc = bocBase64(sizeLimitsCell);
   if (precompiledContractsCell) fixture.stack_init.config_precompiled_contracts_boc = bocBase64(precompiledContractsCell);
 
-  if (sandbox) {
-    const shardAcc0: any = { ...shardAcc, lastTransactionLt: 0n, lastTransactionHash: 0n };
-    const shardAccountBase64 = shardAccountToBase64(shardAcc0);
+  const fiftState = await computeExpectedStateWithFift(fixture);
 
-    const exec: any = sandbox.executor;
-    if (typeof exec.runTransaction !== "function") {
-      throw new Error("sandbox executor does not support runTransaction");
-    }
-    const verbosity = includeVmLog ? "full_location_gas" : "full_location_stack_verbose";
-
-    const txRes = await exec.runTransaction({
-      config: blockConfig,
-      libs: libsCell ?? null,
-      verbosity,
-      shardAccount: shardAccountBase64,
-      message: inMsgCell,
-      now: rawTx.tx.now,
-      lt: rawTx.tx.lt,
-      randomSeed: randSeed,
-      ignoreChksig: false,
-      debugEnabled: true,
-    });
-
-    if (!txRes?.result?.success) throw new Error(`sandbox emulation failed: ${txRes?.result?.error ?? "unknown error"}`);
-    if (includeVmLog) {
-      fixture.expected.vm_log = String(txRes.result.vmLog ?? "");
-    }
-
-    const shardAccountAfter = loadShardAccount(Cell.fromBase64(String(txRes.result.shardAccount)).asSlice());
-    const stAfter: any = shardAccountAfter.account?.storage?.state;
-    const finalDataCell: any = stAfter?.type === "active" ? stAfter.state?.data ?? emptyCell() : emptyCell();
-    fixture.expected.c4_boc = bocBase64(finalDataCell);
-
-    const actionsB64: any = txRes.result.actions;
-    if (typeof actionsB64 === "string" && actionsB64.length > 0) {
-      fixture.expected.c5_boc = actionsB64;
-    }
-
-    if (sandbox.debugExecutor) {
-      const dbg = sandbox.debugExecutor;
-      const { emptr } = dbg.sbsTransactionSetup({
-        config: blockConfig,
-        libs: libsCell ?? null,
-        verbosity,
-        shardAccount: shardAccountBase64,
-        message: inMsgCell,
-        now: rawTx.tx.now,
-        lt: rawTx.tx.lt,
-        randomSeed: randSeed,
-        ignoreChksig: false,
-        debugEnabled: true,
-      });
-
-      try {
-        const maxSteps = 5_000_000;
-        let steps = 0;
-        while (true) {
-          steps++;
-          const done = dbg.sbsTransactionStep(emptr);
-          if (done) break;
-          if (steps >= maxSteps) {
-            throw new Error(`debugger step limit exceeded (>${maxSteps})`);
-          }
-        }
-
-        const c7 = dbg.sbsTransactionC7(emptr);
-        const blockLt = rawTx.tx.lt - (rawTx.tx.lt % 1000000n);
-        fixture.expected.c7 = patchC7BlockLt(tupleItemToJson(c7), blockLt);
-
-        // Override balance/in_msg_value from c7 to match the exact VM init values used by the emulator.
-        if (c7.type === "tuple" && c7.items[0]?.type === "tuple") {
-          const env = c7.items[0];
-          const bal = env.items[7];
-          if (bal?.type === "tuple" && bal.items[0]?.type === "int") {
-            fixture.stack_init.balance_grams = bal.items[0].value.toString(10);
-          }
-          const inMsgVal = env.items[11];
-          if (inMsgVal?.type === "tuple" && inMsgVal.items[0]?.type === "int") {
-            fixture.stack_init.msg_balance_grams = inMsgVal.items[0].value.toString(10);
-          }
-        }
-
-        // Capture MYCODE from c7 (this may differ from `code_boc` if the executable code was a resolved library).
-        if (c7.type === "tuple" && c7.items[0]?.type === "tuple") {
-          const myCode = c7.items[0].items[10];
-          if (myCode?.type === "cell") {
-            fixture.mycode_boc = bocBase64(myCode.cell);
-          }
-        }
-      } finally {
-        dbg.destroyEmulator(emptr);
-      }
-    }
-  }
+  // `runvmx` returns the same compute exit code convention used by transaction compute phase.
+  fixture.expected.exit_code = fiftState.exitRaw;
+  fixture.expected.gas_used = fiftState.gasUsed.toString(10);
+  fixture.expected.c4_boc = fiftState.c4_boc;
+  fixture.expected.c5_boc = fiftState.c5_boc;
 
   return fixture;
 }
@@ -408,29 +274,23 @@ async function main() {
   if (txs.length === 0) {
     throw new Error("no tx hashes provided (use --tx or --tx-file)");
   }
-  if (opts.includeVmLog && !opts.expectedState) {
-    throw new Error("--include-vm-log requires --expected-state (sandbox emulation)");
-  }
 
   await mkdir(opts.outDir, { recursive: true });
-
-  let sandbox: { executor: any; debugExecutor?: Executor } | undefined = undefined;
-  if (opts.expectedState) {
-    const blockchain = await Blockchain.create();
-    blockchain.verbosity.print = false;
-    blockchain.verbosity.vmLogs = "vm_logs_verbose";
-    const debugExecutor = await Executor.create({ debug: true });
-    sandbox = { executor: blockchain.executor as any, debugExecutor };
-  }
 
   for (const txHash of txs) {
     const outPath = path.join(opts.outDir, `${txHash}.json`);
     try {
-      const fixture = await collectFixture(opts.testnet, txHash, opts.allowNonFirst, sandbox, opts.includeVmLog);
+      const fixture = await collectFixture(opts.testnet, txHash, opts.allowNonFirst);
       await writeFile(outPath, JSON.stringify(fixture, null, 2), "utf8");
       // eslint-disable-next-line no-console
       console.log(`✓ ${txHash}`);
     } catch (e: any) {
+      const msg = String(e?.message ?? e ?? "");
+      if (msg.includes("precompiled contract detected")) {
+        // eslint-disable-next-line no-console
+        console.log(`↷ ${txHash}: skipped precompiled contract`);
+        continue;
+      }
       // eslint-disable-next-line no-console
       console.log(`✗ ${txHash}: ${e?.stack ?? e?.message ?? String(e)}`);
     }

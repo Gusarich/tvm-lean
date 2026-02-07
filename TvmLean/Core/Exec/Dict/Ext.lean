@@ -283,33 +283,56 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
             VM.push (.slice stop)
 
       | .mutGet intKey unsigned byRef mode =>
+          VM.checkUnderflow (if mode == .del then 3 else 4)
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
-          let keyBits : BitString ←
-            if intKey then
-              let idxVal ← VM.popInt
-              match idxVal with
-              | .nan => throw .rangeChk
-              | .num idx =>
-                  match dictKeyBits? idx n unsigned with
-                  | some bs => pure bs
-                  | none => throw .rangeChk
-            else
-              let keySlice ← VM.popSlice
-              -- Match C++: key invalid => cell_und.
-              if keySlice.haveBits n then
-                pure (keySlice.readBits n)
+          let keyBits? : Option BitString ←
+            if mode == .del then
+              if intKey then
+                let idxVal ← VM.popInt
+                match idxVal with
+                | .nan => throw .rangeChk
+                | .num idx =>
+                    match dictKeyBits? idx n unsigned with
+                    | some bs => pure (some bs)
+                    | none => throw .rangeChk
               else
-                throw .cellUnd
+                let keySlice ← VM.popSlice
+                if keySlice.haveBits n then
+                  pure (some (keySlice.readBits n))
+                else
+                  throw .cellUnd
+            else
+              if intKey then
+                let idxVal ← VM.popInt
+                match idxVal with
+                | .nan => throw .rangeChk
+                | .num idx =>
+                    match dictKeyBits? idx n unsigned with
+                    | some bs => pure (some bs)
+                    | none => throw .rangeChk
+              else
+                let keySlice ← VM.popSlice
+                if keySlice.haveBits n then
+                  pure (some (keySlice.readBits n))
+                else
+                  pure none
 
           let okFlagFor (setMode : DictSetMode) : Bool := setMode != .add
 
           match mode with
           | .del =>
+              let keyBits ←
+                match keyBits? with
+                | some bs => pure bs
+                | none => throw .cellUnd
               if byRef then
                 DictExt.prechargeRootLoad dictCell?
                 match dictDeleteWithCells dictCell? keyBits with
-                | .error e => throw e
+                | .error e =>
+                    let loaded := DictExt.loadedWithoutRoot dictCell? (dictDeleteVisitedCells dictCell? keyBits)
+                    DictExt.registerLoaded loaded
+                    throw e
                 | .ok (oldVal?, newRoot?, created, loaded) =>
                     let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                     DictExt.registerLoaded loaded
@@ -325,7 +348,10 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
               else
                 DictExt.prechargeRootLoad dictCell?
                 match dictDeleteWithCells dictCell? keyBits with
-                | .error e => throw e
+                | .error e =>
+                    let loaded := DictExt.loadedWithoutRoot dictCell? (dictDeleteVisitedCells dictCell? keyBits)
+                    DictExt.registerLoaded loaded
+                    throw e
                 | .ok (oldVal?, newRoot?, created, loaded) =>
                     let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                     DictExt.registerLoaded loaded
@@ -348,9 +374,16 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
               let ok_f : Bool := okFlagFor setMode
               if byRef then
                 let newValueRef ← VM.popCell
+                let keyBits ←
+                  match keyBits? with
+                  | some bs => pure bs
+                  | none => throw .cellUnd
                 DictExt.prechargeRootLoad dictCell?
                 match dictLookupSetRefWithCells dictCell? keyBits newValueRef setMode with
-                | .error e => throw e
+                | .error e =>
+                    let loaded := DictExt.loadedWithoutRoot dictCell? (dictLookupVisitedCells dictCell? keyBits)
+                    DictExt.registerLoaded loaded
+                    throw e
                 | .ok (oldVal?, newRoot?, _ok, created, loaded) =>
                     let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                     DictExt.registerLoaded loaded
@@ -365,9 +398,16 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                         DictExt.pushBool (!ok_f)
               else
                 let newValue ← VM.popSlice
+                let keyBits ←
+                  match keyBits? with
+                  | some bs => pure bs
+                  | none => throw .cellUnd
                 DictExt.prechargeRootLoad dictCell?
                 match dictLookupSetSliceWithCells dictCell? keyBits newValue setMode with
-                | .error e => throw e
+                | .error e =>
+                    let loaded := DictExt.loadedWithoutRoot dictCell? (dictLookupVisitedCells dictCell? keyBits)
+                    DictExt.registerLoaded loaded
+                    throw e
                 | .ok (oldVal?, newRoot?, _ok, created, loaded) =>
                     let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                     DictExt.registerLoaded loaded
@@ -381,28 +421,36 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                         DictExt.pushBool (!ok_f)
 
       | .mutGetB intKey unsigned mode =>
+          VM.checkUnderflow 4
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
-          let keyBits : BitString ←
+          let keyBits? : Option BitString ←
             if intKey then
               let idxVal ← VM.popInt
               match idxVal with
               | .nan => throw .rangeChk
               | .num idx =>
                   match dictKeyBits? idx n unsigned with
-                  | some bs => pure bs
+                  | some bs => pure (some bs)
                   | none => throw .rangeChk
             else
               let keySlice ← VM.popSlice
               if keySlice.haveBits n then
-                pure (keySlice.readBits n)
+                pure (some (keySlice.readBits n))
               else
-                throw .cellUnd
+                pure none
           let newValue ← VM.popBuilder
+          let keyBits ←
+            match keyBits? with
+            | some bs => pure bs
+            | none => throw .cellUnd
           let ok_f : Bool := mode != .add
           DictExt.prechargeRootLoad dictCell?
           match dictLookupSetBuilderWithCells dictCell? keyBits newValue mode with
-          | .error e => throw e
+          | .error e =>
+              let loaded := DictExt.loadedWithoutRoot dictCell? (dictLookupVisitedCells dictCell? keyBits)
+              DictExt.registerLoaded loaded
+              throw e
           | .ok (oldVal?, newRoot?, _ok, created, loaded) =>
               let loaded := DictExt.loadedWithoutRoot dictCell? loaded
               DictExt.registerLoaded loaded
@@ -416,6 +464,7 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                   DictExt.pushBool (!ok_f)
 
       | .del intKey unsigned =>
+          VM.checkUnderflow 3
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
           let keyBits? : Option BitString ←
@@ -435,7 +484,10 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           | some keyBits =>
               DictExt.prechargeRootLoad dictCell?
               match dictDeleteWithCells dictCell? keyBits with
-              | .error e => throw e
+              | .error e =>
+                  let loaded := DictExt.loadedWithoutRoot dictCell? (dictDeleteVisitedCells dictCell? keyBits)
+                  DictExt.registerLoaded loaded
+                  throw e
               | .ok (oldVal?, newRoot?, created, loaded) =>
                   let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                   DictExt.registerLoaded loaded
@@ -444,6 +496,7 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                   DictExt.pushBool (oldVal?.isSome)
 
       | .getOptRef intKey unsigned =>
+          VM.checkUnderflow 3
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
           let keyBits? : Option BitString ←
@@ -462,7 +515,10 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           | some keyBits =>
               DictExt.prechargeRootLoad dictCell?
               match dictLookupWithCells dictCell? keyBits with
-              | .error e => throw e
+              | .error e =>
+                  let loaded := DictExt.loadedWithoutRoot dictCell? (dictLookupVisitedCells dictCell? keyBits)
+                  DictExt.registerLoaded loaded
+                  throw e
               | .ok (none, loaded) =>
                   let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                   DictExt.registerLoaded loaded
@@ -474,29 +530,37 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                   VM.push (.cell c)
 
       | .setGetOptRef intKey unsigned =>
+          VM.checkUnderflow 4
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
-          let keyBits : BitString ←
+          let keyBits? : Option BitString ←
             if intKey then
               let idxVal ← VM.popInt
               match idxVal with
               | .nan => throw .rangeChk
               | .num idx =>
                   match dictKeyBits? idx n unsigned with
-                  | some bs => pure bs
+                  | some bs => pure (some bs)
                   | none => throw .rangeChk
             else
               let keySlice ← VM.popSlice
               if keySlice.haveBits n then
-                pure (keySlice.readBits n)
+                pure (some (keySlice.readBits n))
               else
-                throw .cellUnd
+                pure none
           let newValue? ← VM.popMaybeCell
+          let keyBits : BitString ←
+            match keyBits? with
+            | some bs => pure bs
+            | none => throw .cellUnd
           match newValue? with
           | some newValue =>
               DictExt.prechargeRootLoad dictCell?
               match dictLookupSetRefWithCells dictCell? keyBits newValue .set with
-              | .error e => throw e
+              | .error e =>
+                  let loaded := DictExt.loadedWithoutRoot dictCell? (dictLookupVisitedCells dictCell? keyBits)
+                  DictExt.registerLoaded loaded
+                  throw e
               | .ok (oldVal?, newRoot?, _ok, created, loaded) =>
                   let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                   DictExt.registerLoaded loaded
@@ -510,7 +574,10 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           | none =>
               DictExt.prechargeRootLoad dictCell?
               match dictDeleteWithCells dictCell? keyBits with
-              | .error e => throw e
+              | .error e =>
+                  let loaded := DictExt.loadedWithoutRoot dictCell? (dictLookupVisitedCells dictCell? keyBits)
+                  DictExt.registerLoaded loaded
+                  throw e
               | .ok (oldVal?, newRoot?, created, loaded) =>
                   let loaded := DictExt.loadedWithoutRoot dictCell? loaded
                   DictExt.registerLoaded loaded
@@ -523,6 +590,7 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                       VM.push (.cell c)
 
       | .subdictGet intKey unsigned rp =>
+          VM.checkUnderflow 4
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
           let mk : Nat := if intKey then (if unsigned then 256 else 257) else 1023
@@ -539,21 +607,31 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
               pure (keySlice.readBits k)
             else
               throw .cellUnd
-          DictExt.prechargeRootLoad dictCell?
+          if k > 0 then
+            DictExt.prechargeRootLoad dictCell?
           match dictExtractPrefixSubdictWithCells dictCell? n prefixBits k rp with
+          -- Most SUBDICT* cases propagate `cell_und`, but signed-int RP extraction
+          -- can surface `dict_err` from C++ `cut_prefix_subdict()` for malformed tries.
+          | .error .cellUnd =>
+              if intKey && !unsigned && rp then
+                throw .dictErr
+              else
+                throw .cellUnd
           | .error e => throw e
           | .ok (newRoot?, _changed, created, loaded) =>
-              let loaded := DictExt.loadedWithoutRoot dictCell? loaded
+              let loaded :=
+                if k > 0 then
+                  DictExt.loadedWithoutRoot dictCell? loaded
+                else
+                  loaded
               DictExt.registerLoaded loaded
               DictExt.consumeCreatedGas created
               DictExt.pushDictRoot newRoot?
 
       | .pfxSet mode =>
+          VM.checkUnderflow 4
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
-          match dictCell? with
-          | some c => modify fun st => st.registerCellLoad c
-          | none => pure ()
           let keySlice ← VM.popSlice
           let newValue ← VM.popSlice
           let keyBits : BitString := keySlice.readBits keySlice.bitsRemaining
@@ -561,39 +639,33 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
             DictExt.pushDictRoot dictCell?
             DictExt.pushBool false
           else
+            DictExt.prechargeRootLoad dictCell?
             let storeVal : Builder → Except Excno Builder :=
               fun b => builderAppendCellChecked b newValue.toCellRemaining
             match DictExt.pfxSetGenAuxWithCells dictCell? keyBits n storeVal mode with
             | .error e => throw e
             | .ok (newRoot?, ok, created, loaded0) =>
-                let loaded :=
-                  match dictCell? with
-                  | none => loaded0
-                  | some root => loaded0.filter (fun c => c != root)
+                let loaded := DictExt.loadedWithoutRoot dictCell? loaded0
                 DictExt.registerLoaded loaded
                 DictExt.consumeCreatedGas created
                 DictExt.pushDictRoot newRoot?
                 DictExt.pushBool ok
 
       | .pfxDel =>
+          VM.checkUnderflow 3
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
-          match dictCell? with
-          | some c => modify fun st => st.registerCellLoad c
-          | none => pure ()
           let keySlice ← VM.popSlice
           let keyBits : BitString := keySlice.readBits keySlice.bitsRemaining
           if keyBits.size > n then
             DictExt.pushDictRoot dictCell?
             DictExt.pushBool false
           else
+            DictExt.prechargeRootLoad dictCell?
             match DictExt.pfxLookupDeleteWithCells dictCell? keyBits n with
             | .error e => throw e
             | .ok (oldVal?, newRoot?, created, loaded0) =>
-                let loaded :=
-                  match dictCell? with
-                  | none => loaded0
-                  | some root => loaded0.filter (fun c => c != root)
+                let loaded := DictExt.loadedWithoutRoot dictCell? loaded0
                 DictExt.registerLoaded loaded
                 DictExt.consumeCreatedGas created
                 let ok := oldVal?.isSome
@@ -603,12 +675,11 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                 DictExt.pushBool ok
 
       | .pfxGet kind =>
+          VM.checkUnderflow 3
           let n ← VM.popNatUpTo 1023
           let dictCell? ← VM.popMaybeCell
-          match dictCell? with
-          | some c => modify fun st => st.registerCellLoad c
-          | none => pure ()
           let cs0 ← VM.popSlice
+          DictExt.prechargeRootLoad dictCell?
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
           match DictExt.pfxLookupPrefixWithCells dictCell? keyBits keyBits.size n with
           | .error e => throw e
@@ -657,17 +728,16 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                     | _ => st.jumpTo cont
 
       | .pfxSwitch dictCell keyLen =>
-          modify fun st => st.registerCellLoad dictCell
           let cs0 ← VM.popSlice
+          modify fun st => st.registerCellLoad dictCell
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
           match DictExt.pfxLookupPrefixWithCells (some dictCell) keyBits keyBits.size keyLen with
           | .error e => throw e
           | .ok (none, _pos, loaded) =>
-              let loaded := loaded.filter (fun c => c != dictCell)
               DictExt.registerLoaded loaded
               VM.push (.slice cs0)
           | .ok (some valueSlice, pfxLen, loaded0) =>
-              let loaded := loaded0.filter (fun c => c != dictCell)
+              let loaded := loaded0
               DictExt.registerLoaded loaded
               let (pfxSlice, cs1) ←
                 match DictExt.slicePrefix cs0 pfxLen 0 with

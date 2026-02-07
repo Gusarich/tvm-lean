@@ -29,6 +29,15 @@ EOF
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="${ROOT}/.lake/build/bin/tvm-lean-diff-test"
 
+SUBSET_DIR=""
+CLEANUP_SUBSET=0
+cleanup() {
+  if [[ "${CLEANUP_SUBSET:-0}" -eq 1 ]] && [[ -n "${SUBSET_DIR:-}" ]] && [[ -d "${SUBSET_DIR}" ]]; then
+    rm -rf "${SUBSET_DIR}"
+  fi
+}
+trap cleanup EXIT
+
 DIR="${ROOT}/diff-test/fixtures"
 SHARDS=12
 MAX_CASES=0
@@ -80,7 +89,10 @@ fi
 RUN_DIR="$OUT"
 SUBSET_DIR="$DIR"
 if [[ "$MAX_CASES" -gt 0 ]]; then
-  SUBSET_DIR="${RUN_DIR}/subset_${MAX_CASES}"
+  # tvm-lean-diff-test ignores fixtures under any path segment starting with "_",
+  # so create subset in a safe temp directory regardless of --out path.
+  SUBSET_DIR="$(mktemp -d "${TMPDIR:-/tmp}/tvmlean-subset-${MAX_CASES}-XXXXXX")"
+  CLEANUP_SUBSET=1
   rm -rf "$SUBSET_DIR"
   mkdir -p "$SUBSET_DIR"
 
@@ -188,4 +200,3 @@ print(f"total={total} pass={pass_n} fail={fail_n} skip={skip_n} error={err_n} pa
 PY
 
 exit "$rc"
-

@@ -23,6 +23,43 @@ Outputs:
 
 - `docs/progress/instructions_full.csv`
 
+## Oracle parity sweeps (Lean vs Fift runvmx)
+
+Run per-instruction parity in parallel (all instructions by default):
+
+```sh
+tools/run_oracle_validate.sh --jobs 12 --variants 20 --code-variants 8 --cases 20
+```
+
+Notes:
+
+- `--cases auto` resolves to `variants * code-variants` to saturate the generated code×stack matrix.
+- Real-time per-instruction PASS/FAIL lines are printed to stdout.
+- Progress is also appended to `oracle/_runs/<ts>/progress.log`.
+
+Run the extensive all-instruction multi-seed matrix:
+
+```sh
+tools/run_oracle_validate_extensive.sh
+```
+
+## Collect a full day of fixtures in parallel
+
+Use this helper to collect a target number of fixtures for a single UTC day, with per-shard logs and de-duplication:
+
+```sh
+export TON_FIFT_BIN=/path/to/ton/build/crypto/fift
+export TON_FIFT_LIB=/path/to/ton/crypto/fift/lib
+
+tools/collect_fixtures_day.sh --day 2026-02-06 --count 10000 --jobs 12
+```
+
+Outputs by default:
+
+- `diff-test/fixtures_<day>/` final fixture set
+- `diff-test/fixtures_<day>_tmp/` temporary per-shard outputs
+- `diff-test/logs/collect_<day>/` per-shard logs + merge summary
+
 ## Sync Linear backlog (bulk)
 
 This repo tracks the full TVM instruction backlog in Linear (one issue per instruction + one issue per Fift alias).

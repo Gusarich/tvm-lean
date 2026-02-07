@@ -315,7 +315,7 @@ structure StackInit where
   config_mc_fwd_prices_boc : Option String := none
   config_fwd_prices_boc : Option String := none
   config_size_limits_boc : Option String := none -- ConfigParam 43 (SizeLimits)
-  -- ConfigParam 45 (PrecompiledContractsConfig), needed to populate GETPRECOMPILEDGAS and to override compute_phase.gas_used.
+  -- ConfigParam 45 (PrecompiledContractsConfig), needed to populate GETPRECOMPILEDGAS and to detect/skip precompiled contracts in diff tests.
   config_precompiled_contracts_boc : Option String := none
   deriving Repr
 
@@ -1027,17 +1027,26 @@ def defaultInitC7 (si : StackInit) (codeCell : Cell) (myCodeCell : Cell := codeC
   #[.tuple params13]
 
 def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
+  let expectedExitRaw : Int := tc.expected.exit_code
+  let expectedExit : Int :=
+    if expectedExitRaw < 0 then
+      -- Some fixture sets store `vm.run()`-style exit codes (-1 for success).
+      -- Normalize to blockchain `compute_exit_code` (like `cp.exit_code = ~vm.run()`).
+      ~~~ expectedExitRaw
+    else
+      expectedExitRaw
+
   let mkErr (msg : String) : TestResult :=
     { tx_hash := tc.tx_hash
       status := .error
-      expected_exit_code := tc.expected.exit_code
+      expected_exit_code := expectedExit
       expected_gas_used := tc.expected.gas_used
       error := some msg }
 
   let mkSkip (msg : String) : TestResult :=
     { tx_hash := tc.tx_hash
       status := .skip
-      expected_exit_code := tc.expected.exit_code
+      expected_exit_code := expectedExit
       expected_gas_used := tc.expected.gas_used
       error := some msg }
 
@@ -1110,20 +1119,28 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                             | _ => none
                         | _ => none
 
+                      match precompiledGasUsage? with
+                      | some g =>
+                          return mkSkip s!"precompiled contract detected (config_param_45 gas={g}); skipping"
+                      | none => pure ()
+
                       let mkBase (exitCode : Int) (stF : VmState) : TestResult :=
                         -- `VmState.run*` returns bitwise-complemented exit codes (like C++ `vm.run()`).
                         -- Blockchain `compute_exit_code` is the uncomplemented one (like C++ `cp.exit_code = ~vm.run()`).
                         let actualExit : Int := ~~~ exitCode
-                        let gasUsed0 : Int := min stF.gas.gasConsumed stF.gas.gasLimit
-                        let gasUsed : Int :=
-                          match precompiledGasUsage? with
-                          | some g => g
-                          | none => gasUsed0
+                        -- Fixtures use Fift `runvmx` GAS output, which reports `gas_consumed()`
+                        -- (not blockchain `compute_phase.gas_used = min(gas_consumed, gas_limit)`).
+                        let gasUsed : Int := stF.gas.gasConsumed
                         let isUnsupported := actualExit = Excno.invOpcode.toInt
                         let mismatches0 : Array String := #[]
+                        let expExitStr : String :=
+                          if expectedExitRaw < 0 then
+                            s!"{expectedExit} (normalized from {expectedExitRaw})"
+                          else
+                            s!"{expectedExit}"
                         let mismatches1 :=
-                          if actualExit ≠ tc.expected.exit_code then
-                            mismatches0.push s!"exit_code expected={tc.expected.exit_code} actual={actualExit}"
+                          if actualExit ≠ expectedExit then
+                            mismatches0.push s!"exit_code expected={expExitStr} actual={actualExit}"
                           else
                             mismatches0
                         let mismatches :=
@@ -1149,7 +1166,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                             none
                         { tx_hash := tc.tx_hash
                           status
-                          expected_exit_code := tc.expected.exit_code
+                          expected_exit_code := expectedExit
                           actual_exit_code := some actualExit
                           expected_gas_used := tc.expected.gas_used
                           actual_gas_used := some gasUsed
@@ -1251,8 +1268,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                                 | _ =>
                                     mismatches := mismatches.push "expected.c7: expected tuple"
                         | none =>
-                            -- We compare all registers unconditionally; missing expected.c7 is a fixture error.
-                            mismatches := mismatches.push "missing expected.c7 (re-collect with diff-test/collector --expected-state)"
+                            pure ()
 
                         if mismatches.isEmpty then
                           return base
@@ -1271,7 +1287,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                             return {
                               tx_hash := tc.tx_hash
                               status := .fail
-                              expected_exit_code := tc.expected.exit_code
+                              expected_exit_code := expectedExit
                               expected_gas_used := tc.expected.gas_used
                               error := some "fuel exhausted"
                               trace := some t
@@ -1287,7 +1303,7 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                             return {
                               tx_hash := tc.tx_hash
                               status := .fail
-                              expected_exit_code := tc.expected.exit_code
+                              expected_exit_code := expectedExit
                               expected_gas_used := tc.expected.gas_used
                               error := some "fuel exhausted"
                             }

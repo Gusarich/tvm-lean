@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellSdskiplast (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .sdskiplast =>
+      VM.checkUnderflow 2
       let bits ← VM.popNatUpTo 1023
       let s ← VM.popSlice
       if bits ≤ s.bitsRemaining then

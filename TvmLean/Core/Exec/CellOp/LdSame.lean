@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execCellOpLdSame (op : CellInstr) (next : VM Unit) : VM Unit := do
   match op with
   | .ldSame =>
+      VM.checkUnderflow 2
       let bNat ← VM.popNatUpTo 1
       let s ← VM.popSlice
       let b : Bool := bNat = 1

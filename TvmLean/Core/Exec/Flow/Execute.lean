@@ -7,7 +7,7 @@ def execInstrFlowExecute (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .execute =>
       let cont ← VM.popCont
-      modify fun st => st.callTo cont
+      VM.call cont
   | _ => next
 
 end TvmLean

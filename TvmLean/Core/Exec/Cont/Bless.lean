@@ -36,7 +36,10 @@ def execInstrContBless (i : Instr) (next : VM Unit) : VM Unit := do
         throw .rangeChk
       VM.blessArgsCommon copy more
   | .blessVarArgs =>
+      VM.checkUnderflow 2
       let more ← VM.popIntFinite
+      if decide (more < -1 ∨ more > 255) then
+        throw .rangeChk
       let copy ← VM.popNatUpTo 255
       VM.blessArgsCommon copy more
   | _ => next

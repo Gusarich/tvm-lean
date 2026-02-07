@@ -296,16 +296,17 @@ def ceilDivPow2 (n : Int) (bits : Nat) : Int :=
       (- (a / p))
 
 def roundNearestDivPow2 (n : Int) (bits : Nat) : Int :=
-  -- Round to nearest, ties away from zero (matches BigInt `round_mode = 0` behavior for pow2 shifts).
+  -- Round to nearest for divisor `2^bits`, with ties towards +∞ (C++ BigInt round_mode = 0).
   if bits == 0 then
     n
   else
-    let half : Int := intPow2 (bits - 1)
     let p : Int := intPow2 bits
-    if decide (n ≥ 0) then
-      (n + half) / p
+    let qF := floorDivPow2 n bits
+    let rF := n - qF * p
+    if decide (rF * 2 ≥ p) then
+      qF + 1
     else
-      -(((-n) + half) / p)
+      qF
 
 def rshiftPow2Round (n : Int) (bits : Nat) (roundMode : Int) : Int :=
   if decide (roundMode < 0) then
@@ -328,23 +329,9 @@ def euclidModPow2 (n : Int) (bits : Nat) : Int :=
       if m == 0 then 0 else p - m
 
 def modPow2Round (n : Int) (bits : Nat) (roundMode : Int) : Int :=
-  if bits == 0 then
-    0
-  else if decide (roundMode < 0) then
-    euclidModPow2 n bits
-  else if decide (roundMode > 0) then
-    -euclidModPow2 (-n) bits
-  else
-    if intSignedFitsBits n bits then
-      n
-    else
-      let p : Int := intPow2 bits
-      let r0 := euclidModPow2 n bits
-      let half : Int := intPow2 (bits - 1)
-      if decide (r0 ≥ half) then
-        r0 - p
-      else
-        r0
+  let p : Int := intPow2 bits
+  let q := rshiftPow2Round n bits roundMode
+  n - q * p
 
 def intAbs (n : Int) : Int :=
   if decide (n < 0) then -n else n
@@ -404,19 +391,14 @@ def divModRound (x y : Int) (roundMode : Int) : (Int × Int) :=
     let q := ceilDiv x y
     (q, x - q * y)
   else
+    -- roundMode = 0: nearest with ties towards +∞ (matches TON C++ BigInt::mod_div).
     let qF := floorDiv x y
     let rF := x - qF * y
-    let ay := intAbs y
-    let ar := intAbs rF
-    let twoAr := ar * 2
     let q :=
-      if decide (twoAr < ay) then
-        qF
-      else if decide (twoAr > ay) then
+      if (decide (y > 0) && decide (rF * 2 ≥ y)) || (decide (y < 0) && decide (rF * 2 ≤ y)) then
         qF + 1
       else
-        -- tie: away from zero
-        if decide (x * y ≥ 0) then qF + 1 else qF
+        qF
     (q, x - q * y)
 
 /-! Minimal SHA256 (used for TON cell hashes).
@@ -3070,12 +3052,7 @@ def instrGas (i : Instr) (totBits : Nat) : Int :=
   match i with
   | .debugOp (.extCall _) =>
       gasPerInstr
-  | _ =>
-      let base : Int := gasPerInstr + Int.ofNat totBits
-      match i with
-      | .endc => base + cellCreateGasPrice
-      | .cellOp .endxc => base + cellCreateGasPrice
-      | _ => base
+  | _ => gasPerInstr + Int.ofNat totBits
 
 /-! ### Minimal cp0 decoding (Milestone 2) -/
 
@@ -3252,6 +3229,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
     -- GETPARAMLONG / INMSGPARAMS (24-bit): 0xf88100..0xf881ff.
     if w24 >>> 8 = 0xf881 then
       let idx : Nat := w24 &&& 0xff
+      -- C++ uses two fixed ranges with an exclusive upper bound; 0xff is reserved/invalid.
+      if idx = 0xff then
+        throw .invOpcode
       let (_, s24) ← s.takeBitsAsNat 24
       return (.tonEnvOp (.getParam idx), 24, s24)
     if 0xf4a400 ≤ w24 ∧ w24 < 0xf4a800 then
@@ -3757,6 +3737,9 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       throw .invOpcode
     let (_, s8) ← s.takeBitsAsNat 8
     let (len5, s13) ← s8.takeBitsAsNat 5
+    -- C++ reserves len=31; upper bound of mkextrange is exclusive.
+    if len5 = 31 then
+      throw .invOpcode
     let l : Nat := len5 + 2
     let width : Nat := 3 + l * 8
     if !s13.haveBits width then
@@ -4430,6 +4413,8 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       -- GETPARAMLONG / GETPARAMLONG2: 24-bit opcode 0xf88100..0xf881ff (arg = low 8 bits).
       let (w24, s24) ← s.takeBitsAsNat 24
       let idx : Nat := w24 &&& 0xff
+      if idx = 0xff then
+        throw .invOpcode
       return (.tonEnvOp (.getParam idx), 24, s24)
     if w16 = 0xf835 then
       let (_, s16) ← s.takeBitsAsNat 16
@@ -5941,6 +5926,15 @@ def dictLabelBits (lbl : DictLabel) : BitString :=
   | some b => Array.replicate lbl.len b
   | none => lbl.remainder.readBits lbl.len
 
+def dictValidateNodeExt (lbl : DictLabel) (remaining : Nat) : Except Excno Nat := do
+  let rem0 : Nat := remaining - lbl.len
+  -- Match C++ `LabelParser::validate_ext` (used by `Dictionary`):
+  -- non-leaf nodes must keep exactly label payload bits and exactly two refs.
+  if rem0 > 0 then
+    if lbl.remainder.bitsRemaining != lbl.storedBits || lbl.remainder.refsRemaining != 2 then
+      throw .dictErr
+  return rem0
+
 def bitsCommonPrefixLen (a b : BitString) : Nat :=
   let m : Nat := Nat.min a.size b.size
   Id.run do
@@ -5951,9 +5945,9 @@ def bitsCommonPrefixLen (a b : BitString) : Nat :=
 
 partial def dictLookupAux (cell : Cell) (key : BitString) (pos remaining : Nat) : Except Excno (Option Slice) := do
   let lbl ← parseDictLabel cell remaining
+  let rem0 ← dictValidateNodeExt lbl remaining
   if !dictLabelMatches lbl key pos then
     return none
-  let rem0 : Nat := remaining - lbl.len
   if rem0 = 0 then
     return some (lbl.remainder.advanceBits lbl.storedBits)
   else
@@ -5961,8 +5955,6 @@ partial def dictLookupAux (cell : Cell) (key : BitString) (pos remaining : Nat) 
     if nextPos ≥ key.size then
       return none
     let sw : Bool := key[nextPos]!
-    if !lbl.remainder.haveRefs 2 then
-      throw .dictErr
     let child := lbl.remainder.cell.refs[if sw then 1 else 0]!
     dictLookupAux child key (nextPos + 1) (rem0 - 1)
 
@@ -5975,9 +5967,9 @@ def dictLookup (root : Option Cell) (key : BitString) : Except Excno (Option Sli
 partial def dictLookupAuxWithCells (cell : Cell) (key : BitString) (pos remaining : Nat) :
     Except Excno (Option Slice × Array Cell) := do
   let lbl ← parseDictLabel cell remaining
+  let rem0 ← dictValidateNodeExt lbl remaining
   if !dictLabelMatches lbl key pos then
     return (none, #[cell])
-  let rem0 : Nat := remaining - lbl.len
   if rem0 = 0 then
     return (some (lbl.remainder.advanceBits lbl.storedBits), #[cell])
   else
@@ -5985,8 +5977,6 @@ partial def dictLookupAuxWithCells (cell : Cell) (key : BitString) (pos remainin
     if nextPos ≥ key.size then
       return (none, #[cell])
     let sw : Bool := key[nextPos]!
-    if !lbl.remainder.haveRefs 2 then
-      throw .dictErr
     let child := lbl.remainder.cell.refs[if sw then 1 else 0]!
     match (← dictLookupAuxWithCells child key (nextPos + 1) (rem0 - 1)) with
     | (res, cells) => return (res, #[cell] ++ cells)
@@ -5997,12 +5987,113 @@ def dictLookupWithCells (root : Option Cell) (key : BitString) : Except Excno (O
   | some cell =>
       dictLookupAuxWithCells cell key 0 key.size
 
+partial def dictLookupVisitedCellsAux (cell : Cell) (key : BitString) (pos remaining : Nat) : Array Cell :=
+  let here : Array Cell := #[cell]
+  match parseDictLabel cell remaining with
+  | .error _ => here
+  | .ok lbl =>
+      let rem0 : Nat := remaining - lbl.len
+      if rem0 = 0 then
+        here
+      else if lbl.remainder.bitsRemaining != lbl.storedBits || lbl.remainder.refsRemaining != 2 then
+        here
+      else if !dictLabelMatches lbl key pos then
+        here
+      else
+        let nextPos : Nat := pos + lbl.len
+        if nextPos ≥ key.size then
+          here
+        else
+          let sw : Bool := key[nextPos]!
+          let child := lbl.remainder.cell.refs[if sw then 1 else 0]!
+          here ++ dictLookupVisitedCellsAux child key (nextPos + 1) (rem0 - 1)
+
+def dictLookupVisitedCells (root : Option Cell) (key : BitString) : Array Cell :=
+  match root with
+  | none => #[]
+  | some cell => dictLookupVisitedCellsAux cell key 0 key.size
+
+partial def dictMinMaxVisitedCellsAux (cell : Cell) (n pos : Nat) (firstBit restBit : Bool) : Array Cell :=
+  let here : Array Cell := #[cell]
+  match parseDictLabel cell n with
+  | .error _ => here
+  | .ok lbl =>
+      let rem0 : Nat := n - lbl.len
+      if rem0 = 0 then
+        here
+      else if lbl.remainder.bitsRemaining != lbl.storedBits || lbl.remainder.refsRemaining != 2 then
+        here
+      else
+        let posAfter : Nat := pos + lbl.len
+        let bit : Bool := if posAfter = 0 then firstBit else restBit
+        let child := lbl.remainder.cell.refs[if bit then 1 else 0]!
+        here ++ dictMinMaxVisitedCellsAux child (rem0 - 1) (posAfter + 1) firstBit restBit
+
+def dictMinMaxVisitedCells (root : Option Cell) (n : Nat) (fetchMax invertFirst : Bool) : Array Cell :=
+  match root with
+  | none => #[]
+  | some cell =>
+      let restBit : Bool := fetchMax
+      let firstBit : Bool := restBit != invertFirst
+      dictMinMaxVisitedCellsAux cell n 0 firstBit restBit
+
+inductive DictDeleteVisitStatus where
+  | found
+  | none
+  | err
+  deriving Inhabited
+
+structure DictDeleteVisit where
+  status : DictDeleteVisitStatus
+  loaded : Array Cell
+  deriving Inhabited
+
+private partial def dictDeleteVisitedTraceAux (cell : Cell) (key : BitString) (pos remaining : Nat) :
+    DictDeleteVisit :=
+  let here : Array Cell := #[cell]
+  match parseDictLabel cell remaining with
+  | .error _ =>
+      { status := .err, loaded := here }
+  | .ok lbl =>
+      match dictValidateNodeExt lbl remaining with
+      | .error _ =>
+          { status := .err, loaded := here }
+      | .ok rem0 =>
+          if !dictLabelMatches lbl key pos then
+            { status := .none, loaded := here }
+          else if rem0 = 0 then
+            { status := .found, loaded := here }
+          else
+            let nextPos : Nat := pos + lbl.len
+            if nextPos ≥ key.size then
+              { status := .err, loaded := here }
+            else
+              let swBit : Bool := key[nextPos]!
+              let left0 := lbl.remainder.cell.refs[0]!
+              let right0 := lbl.remainder.cell.refs[1]!
+              let child0 : Cell := if swBit then right0 else left0
+              let sibling0 : Cell := if swBit then left0 else right0
+              let childTrace := dictDeleteVisitedTraceAux child0 key (nextPos + 1) (rem0 - 1)
+              match childTrace.status with
+              | .err =>
+                  -- Error while descending: sibling merge path is not reached.
+                  { status := .err, loaded := here ++ childTrace.loaded }
+              | .none =>
+                  { status := .none, loaded := here ++ childTrace.loaded ++ #[sibling0] }
+              | .found =>
+                  { status := .found, loaded := here ++ childTrace.loaded ++ #[sibling0] }
+
+def dictDeleteVisitedCells (root : Option Cell) (key : BitString) : Array Cell :=
+  match root with
+  | none => #[]
+  | some cell => (dictDeleteVisitedTraceAux cell key 0 key.size).loaded
+
 partial def dictReplaceBuilderAuxWithCells (cell : Cell) (key : BitString) (pos remaining : Nat) (newVal : Builder) :
     Except Excno (Cell × Bool × Nat × Array Cell) := do
   let lbl ← parseDictLabel cell remaining
+  let rem0 ← dictValidateNodeExt lbl remaining
   if !dictLabelMatches lbl key pos then
     return (cell, false, 0, #[cell])
-  let rem0 : Nat := remaining - lbl.len
   if rem0 = 0 then
     let valueStart := lbl.remainder.advanceBits lbl.storedBits
     let prefixBits := cell.bits.take valueStart.bitPos
@@ -6110,17 +6201,15 @@ def builderAppendBuilderChecked (b : Builder) (v : Builder) : Except Excno Build
 partial def dictMinMaxAuxWithCells (cell : Cell) (n pos : Nat) (firstBit restBit : Bool) :
     Except Excno (Slice × BitString × Array Cell) := do
   let lbl ← parseDictLabel cell n
+  let rem0 ← dictValidateNodeExt lbl n
   let labelBits := dictLabelBits lbl
   let payload := lbl.remainder.advanceBits lbl.storedBits
-  let rem0 : Nat := n - lbl.len
   if rem0 = 0 then
     return (payload, labelBits, #[cell])
 
-  if cell.refs.size < 2 then
-    throw .dictErr
   let posAfter : Nat := pos + lbl.len
   let bit : Bool := if posAfter = 0 then firstBit else restBit
-  let child := cell.refs[if bit then 1 else 0]!
+  let child := lbl.remainder.cell.refs[if bit then 1 else 0]!
   let (val, keyTail, loaded) ← dictMinMaxAuxWithCells child (rem0 - 1) (posAfter + 1) firstBit restBit
   return (val, labelBits ++ #[bit] ++ keyTail, #[cell] ++ loaded)
 
@@ -6137,6 +6226,7 @@ def dictMinMaxWithCells (root : Option Cell) (n : Nat) (fetchMax invertFirst : B
 partial def dictNearestAuxWithCells (cell : Cell) (hint : BitString) (n pos : Nat) (allowEq : Bool)
     (firstBit restBit : Bool) : Except Excno (Option (Slice × BitString) × Array Cell) := do
   let lbl ← parseDictLabel cell n
+  let rem0 ← dictValidateNodeExt lbl n
   let labelBits := dictLabelBits lbl
 
   -- Compare the hint against the edge label.
@@ -6154,7 +6244,6 @@ partial def dictNearestAuxWithCells (cell : Cell) (hint : BitString) (n pos : Na
 
   -- Label fully matches: recurse into child.
   let payload := lbl.remainder.advanceBits lbl.storedBits
-  let rem0 : Nat := n - lbl.len
   let posAfter : Nat := pos + lbl.len
   let hintRest : BitString := hint.extract lbl.len hint.size
   if rem0 = 0 then
@@ -6163,12 +6252,10 @@ partial def dictNearestAuxWithCells (cell : Cell) (hint : BitString) (n pos : Na
     else
       return (none, #[cell])
 
-  if cell.refs.size < 2 then
-    throw .dictErr
   if hintRest.isEmpty then
     throw .dictErr
   let bit : Bool := hintRest[0]!
-  let child := cell.refs[if bit then 1 else 0]!
+  let child := lbl.remainder.cell.refs[if bit then 1 else 0]!
   let hintChild : BitString := hintRest.extract 1 hintRest.size
   let (resChild, loadedChild) ← dictNearestAuxWithCells child hintChild (rem0 - 1) (posAfter + 1) allowEq firstBit restBit
   match resChild with
@@ -6179,7 +6266,7 @@ partial def dictNearestAuxWithCells (cell : Cell) (hint : BitString) (n pos : Na
       if bit = expectedBit then
         return (none, #[cell] ++ loadedChild)
       else
-        let altChild := cell.refs[if expectedBit then 1 else 0]!
+        let altChild := lbl.remainder.cell.refs[if expectedBit then 1 else 0]!
         let firstBit' : Bool := !firstBit
         let restBit' : Bool := !restBit
         let (valAlt, keyAlt, loadedAlt) ← dictMinMaxAuxWithCells altChild (rem0 - 1) (posAfter + 1) firstBit' restBit'
@@ -6194,23 +6281,103 @@ def dictNearestWithCells (root : Option Cell) (hint : BitString) (fetchNext allo
       let firstBit : Bool := restBit != invertFirst
       dictNearestAuxWithCells cell hint hint.size 0 allowEq firstBit restBit
 
+inductive DictNearestVisitStatus where
+  | found
+  | none
+  | err
+  deriving Inhabited
+
+structure DictNearestVisit where
+  status : DictNearestVisitStatus
+  loaded : Array Cell
+  deriving Inhabited
+
+private partial def dictNearestVisitedTraceAux (cell : Cell) (hint : BitString) (n pos : Nat) (allowEq : Bool)
+    (firstBit restBit : Bool) : DictNearestVisit :=
+  let here : Array Cell := #[cell]
+  match parseDictLabel cell n with
+  | .error _ =>
+      { status := .err, loaded := here }
+  | .ok lbl =>
+      let rem0 : Nat := n - lbl.len
+      if rem0 > 0 && (lbl.remainder.bitsRemaining != lbl.storedBits || lbl.remainder.refsRemaining != 2) then
+        { status := .err, loaded := here }
+      else
+        let labelBits : BitString := dictLabelBits lbl
+        let pfxLen : Nat := bitsCommonPrefixLen labelBits (hint.take lbl.len)
+        if pfxLen < lbl.len then
+          let hintBit : Bool := hint[pfxLen]!
+          let expectedBit : Bool := if pos = 0 ∧ pfxLen = 0 then firstBit else restBit
+          if hintBit = expectedBit then
+            { status := .none, loaded := here }
+          else
+            let firstBit' : Bool := !firstBit
+            let restBit' : Bool := !restBit
+            let loadedMin : Array Cell := dictMinMaxVisitedCellsAux cell n pos firstBit' restBit'
+            match dictMinMaxAuxWithCells cell n pos firstBit' restBit' with
+            | .ok _ =>
+                -- Includes a second visit of this node (reload) via `loadedMin`.
+                { status := .found, loaded := here ++ loadedMin }
+            | .error _ =>
+                { status := .err, loaded := here ++ loadedMin }
+        else if rem0 = 0 then
+          { status := (if allowEq then .found else .none), loaded := here }
+        else
+          let hintRest : BitString := hint.extract lbl.len hint.size
+          if hintRest.isEmpty then
+            { status := .err, loaded := here }
+          else
+            let posAfter : Nat := pos + lbl.len
+            let bit : Bool := hintRest[0]!
+            let child := lbl.remainder.cell.refs[if bit then 1 else 0]!
+            let hintChild : BitString := hintRest.extract 1 hintRest.size
+            let childTrace :=
+              dictNearestVisitedTraceAux child hintChild (rem0 - 1) (posAfter + 1) allowEq firstBit restBit
+            match childTrace.status with
+            | .err =>
+                { status := .err, loaded := here ++ childTrace.loaded }
+            | .found =>
+                { status := .found, loaded := here ++ childTrace.loaded }
+            | .none =>
+                let expectedBit : Bool := if posAfter = 0 then firstBit else restBit
+                if bit = expectedBit then
+                  { status := .none, loaded := here ++ childTrace.loaded }
+                else
+                  let altChild := lbl.remainder.cell.refs[if expectedBit then 1 else 0]!
+                  let firstBit' : Bool := !firstBit
+                  let restBit' : Bool := !restBit
+                  let loadedAlt : Array Cell :=
+                    dictMinMaxVisitedCellsAux altChild (rem0 - 1) (posAfter + 1) firstBit' restBit'
+                  match dictMinMaxAuxWithCells altChild (rem0 - 1) (posAfter + 1) firstBit' restBit' with
+                  | .ok _ =>
+                      { status := .found, loaded := here ++ childTrace.loaded ++ loadedAlt }
+                  | .error _ =>
+                      { status := .err, loaded := here ++ childTrace.loaded ++ loadedAlt }
+
+def dictNearestVisitedCells (root : Option Cell) (hint : BitString) (fetchNext allowEq invertFirst : Bool) :
+    Array Cell :=
+  match root with
+  | none => #[]
+  | some cell =>
+      let restBit : Bool := fetchNext
+      let firstBit : Bool := restBit != invertFirst
+      (dictNearestVisitedTraceAux cell hint hint.size 0 allowEq firstBit restBit).loaded
+
 partial def dictDeleteAuxWithCells (cell : Cell) (key : BitString) (pos remaining : Nat) :
     Except Excno (Option Slice × Option Cell × Nat × Array Cell) := do
   let lbl ← parseDictLabel cell remaining
+  let rem0 ← dictValidateNodeExt lbl remaining
   if !dictLabelMatches lbl key pos then
     return (none, some cell, 0, #[cell])
   let payload := lbl.remainder.advanceBits lbl.storedBits
-  let rem0 : Nat := remaining - lbl.len
   if rem0 = 0 then
     -- Delete leaf.
     return (some payload, none, 0, #[cell])
 
-  if cell.refs.size < 2 then
-    throw .dictErr
   let nextPos : Nat := pos + lbl.len
   let swBit : Bool := key[nextPos]!
-  let left0 := cell.refs[0]!
-  let right0 := cell.refs[1]!
+  let left0 := lbl.remainder.cell.refs[0]!
+  let right0 := lbl.remainder.cell.refs[1]!
   let child0 := if swBit then right0 else left0
   let (oldVal?, childNew?, createdChild, loadedChild) ← dictDeleteAuxWithCells child0 key (nextPos + 1) (rem0 - 1)
   match oldVal? with
@@ -6278,6 +6445,7 @@ partial def dictSetGenAuxWithCells (root : Option Cell) (key : BitString)
       return (some b2.finalize, true, 1, #[])
   | some cell =>
       let lbl ← parseDictLabel cell n
+      let rem0 ← dictValidateNodeExt lbl n
       let pfxLen : Nat := dictCommonPrefixLen lbl key
       if pfxLen < lbl.len then
         if mode == .replace then
@@ -6317,7 +6485,7 @@ partial def dictSetGenAuxWithCells (root : Option Cell) (key : BitString)
         let bF ← builderStoreRefChecked bF right
         return (some bF.finalize, true, 3, #[cell])
 
-      if lbl.len == n then
+      if rem0 = 0 then
         -- Leaf node: key matches the whole label.
         if mode == .add then
           return (some cell, false, 0, #[cell])
@@ -6327,12 +6495,10 @@ partial def dictSetGenAuxWithCells (root : Option Cell) (key : BitString)
         return (some b0.finalize, true, 1, #[cell])
 
       -- Fork node: recurse into the selected child.
-      if cell.refs.size < 2 then
-        throw .dictErr
       let swBit : Bool := key[lbl.len]!
       let childKey : BitString := key.extract (lbl.len + 1) n
-      let left0 := cell.refs[0]!
-      let right0 := cell.refs[1]!
+      let left0 := lbl.remainder.cell.refs[0]!
+      let right0 := lbl.remainder.cell.refs[1]!
       if swBit then
         let (rightNew?, ok, created, loaded) ← dictSetGenAuxWithCells (some right0) childKey storeVal mode
         if !ok then
@@ -6394,6 +6560,7 @@ partial def dictLookupSetGenAuxWithCells (root : Option Cell) (key : BitString)
       return (none, some b2.finalize, true, 1, #[])
   | some cell =>
       let lbl ← parseDictLabel cell n
+      let rem0 ← dictValidateNodeExt lbl n
       let pfxLen : Nat := dictCommonPrefixLen lbl key
       if pfxLen < lbl.len then
         if mode == .replace then
@@ -6430,7 +6597,7 @@ partial def dictLookupSetGenAuxWithCells (root : Option Cell) (key : BitString)
         let bF ← builderStoreRefChecked bF right
         return (none, some bF.finalize, true, 3, #[cell])
 
-      if lbl.len == n then
+      if rem0 = 0 then
         -- Leaf node.
         let oldVal : Slice := lbl.remainder.advanceBits lbl.storedBits
         if mode == .add then
@@ -6441,12 +6608,10 @@ partial def dictLookupSetGenAuxWithCells (root : Option Cell) (key : BitString)
         return (some oldVal, some b0.finalize, true, 1, #[cell])
 
       -- Fork node: recurse into the selected child.
-      if cell.refs.size < 2 then
-        throw .dictErr
       let swBit : Bool := key[lbl.len]!
       let childKey : BitString := key.extract (lbl.len + 1) n
-      let left0 := cell.refs[0]!
-      let right0 := cell.refs[1]!
+      let left0 := lbl.remainder.cell.refs[0]!
+      let right0 := lbl.remainder.cell.refs[1]!
       if swBit then
         let (oldVal?, rightNew?, ok, created, loaded) ←
           dictLookupSetGenAuxWithCells (some right0) childKey storeVal mode
@@ -6894,7 +7059,7 @@ def encodeTonEnvInstr (op : TonEnvInstr) : Except Excno BitString := do
       -- To keep decode∘encode a roundtrip on the `getParam` AST node, only use the short form for 0..2.
       if idx ≤ 2 then
         return natToBits (0xf820 + idx) 16
-      else if idx ≤ 255 then
+      else if idx ≤ 254 then
         return natToBits (0xf88100 + idx) 24
       else
         throw .rangeChk
@@ -7050,8 +7215,17 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         return natToBits 0x81 8 ++ natToBits imm 16
       else
         -- PUSHINT_LONG encoding (0x82 + len5 + value bits).
-        -- For MVP assembly, pick the max width; it always decodes correctly and stays within 257-bit range checks.
-        let len5 : Nat := 31
+        -- C++ reserves len5=31; use the smallest valid len5 in [0,30].
+        let len5 : Nat := Id.run do
+          let mut out : Nat := 30
+          let mut found : Bool := false
+          for k in [0:31] do
+            if !found then
+              let widthK : Nat := 3 + (k + 2) * 8
+              if intSignedFitsBits n widthK then
+                out := k
+                found := true
+          return out
         let l := len5 + 2
         let width := 3 + l * 8
         let prefix13 : Nat := (0x82 <<< 5) + len5
@@ -8161,7 +8335,10 @@ def VM.popBool : VM Bool := do
 def VM.pushIntQuiet (i : IntVal) (quiet : Bool) : VM Unit := do
   match i with
   | .nan =>
-      VM.push (.int .nan)
+      if quiet then
+        VM.push (.int .nan)
+      else
+        throw .intOv
   | .num _ =>
       if i.signedFits257 then
         VM.push (.int i)
@@ -8290,63 +8467,124 @@ def VM.jump (cont : Continuation) (passArgs : Int := -1) : VM Unit := do
           modify fun st => st.consumeStackGas newStack.size
   modify fun st => { st with cc := cont }
 
-  def VM.ret (passArgs : Int := -1) : VM Unit := do
+def VM.callComputeStacks (stack captured : Stack) (nargs passArgs : Int) : VM (Stack × Stack × Bool) := do
+  let depth : Nat := stack.size
+  if decide (nargs > Int.ofNat depth) then
+    throw .stkUnd
+  if decide (passArgs ≥ 0 ∧ nargs > passArgs) then
+    throw .stkUnd
+
+  let mut copy : Int := nargs
+  let mut skip : Int := 0
+  if decide (passArgs ≥ 0) then
+    if decide (copy ≥ 0) then
+      skip := passArgs - copy
+    else
+      copy := passArgs
+
+  let skipN : Nat := if decide (skip > 0) then skip.toNat else 0
+  if captured.isEmpty then
+    if decide (copy ≥ 0) then
+      let n : Nat := copy.toNat
+      if n > depth then
+        throw .stkUnd
+      let split : Nat := depth - n
+      let afterCopy : Stack := stack.take split
+      if skipN > afterCopy.size then
+        throw .stkUnd
+      let savedDepth : Nat := afterCopy.size - skipN
+      let savedStack : Stack := afterCopy.take savedDepth
+      let newStack : Stack := stack.extract split depth
+      return (savedStack, newStack, true)
+    else
+      return (#[], stack, false)
+  else
+    if decide (copy < 0) then
+      let newStack : Stack := captured ++ stack
+      return (#[], newStack, true)
+    else
+      let n : Nat := copy.toNat
+      if n > depth then
+        throw .stkUnd
+      let split : Nat := depth - n
+      let afterCopy : Stack := stack.take split
+      if skipN > afterCopy.size then
+        throw .stkUnd
+      let savedDepth : Nat := afterCopy.size - skipN
+      let savedStack : Stack := afterCopy.take savedDepth
+      let argsStack : Stack := stack.extract split depth
+      let newStack : Stack := captured ++ argsStack
+      return (savedStack, newStack, true)
+
+def VM.call (cont : Continuation) (passArgs : Int := -1) (retArgs : Int := -1) : VM Unit := do
+  let installReturnCont (frame : CallFrame) (k : Continuation) : VM Unit := do
     let st ← get
-    let mut passArgsForJump : Int := passArgs
-    if h : 0 < st.callStack.size then
-      let frame := st.callStack.back (h := h)
-      let expected : Int := frame.retArgs
-      let copy : Int :=
-        if decide (expected ≥ 0) then
-          expected
-        else if decide (passArgs ≥ 0) then
-          passArgs
+    let oldC0 := st.regs.c0
+    let retCont :=
+      match st.cc with
+      | .ordinary code _ _ _ =>
+          let cregsRet : OrdCregs := { OrdCregs.empty with c0 := some oldC0 }
+          let cdataRet : OrdCdata := { stack := frame.savedStack, nargs := frame.retArgs }
+          .ordinary code (.quit 0) cregsRet cdataRet
+      | _ => .quit 0
+    set { st with regs := { st.regs with c0 := retCont }, cc := k }
+
+  let st ← get
+  let depth : Nat := st.stack.size
+  if decide (passArgs ≥ 0) then
+    let n : Nat := passArgs.toNat
+    if n > depth then
+      throw .stkUnd
+
+  match cont with
+  | .ordinary code saved cregs cdata =>
+      if cregs.c0.isSome then
+        -- C++: call reduces to jump if callee already defines c0.
+        VM.jump cont passArgs
+      else
+        let (savedStack, newStack, chargeStackGas) ← VM.callComputeStacks st.stack cdata.stack cdata.nargs passArgs
+        set { st with stack := newStack }
+        if chargeStackGas then
+          modify fun st => st.consumeStackGas newStack.size
+        let frame : CallFrame := { savedStack, retArgs := retArgs }
+        let cont' : Continuation := .ordinary code saved cregs OrdCdata.empty
+        installReturnCont frame cont'
+  | .envelope ext cregs cdata =>
+      if cregs.c0.isSome then
+        VM.jump cont passArgs
+      else
+        let (savedStack, newStack, chargeStackGas) ← VM.callComputeStacks st.stack cdata.stack cdata.nargs passArgs
+        set { st with stack := newStack }
+        if chargeStackGas then
+          modify fun st => st.consumeStackGas newStack.size
+        let frame : CallFrame := { savedStack, retArgs := retArgs }
+        let cont' : Continuation := .envelope ext cregs OrdCdata.empty
+        installReturnCont frame cont'
+  | _ =>
+      let (savedStack, newStack, chargeStackGas) :=
+        if decide (passArgs ≥ 0) then
+          let n : Nat := passArgs.toNat
+          let split : Nat := depth - n
+          (st.stack.take split, st.stack.extract split depth, true)
         else
-          -1
-      let vals : Stack ←
-        if decide (copy < 0) then
-          pure st.stack
-        else
-          let k : Nat := copy.toNat
-          if k > st.stack.size then
-            throw .stkUnd
-          pure (st.stack.extract (st.stack.size - k) st.stack.size)
-      let newStack : Stack := frame.savedStack ++ vals
-      set { st with stack := newStack, callStack := st.callStack.pop }
-      passArgsForJump := -1
+          (#[], st.stack, false)
+      set { st with stack := newStack }
+      if chargeStackGas then
+        modify fun st => st.consumeStackGas newStack.size
+      let frame : CallFrame := { savedStack, retArgs := retArgs }
+      installReturnCont frame cont
+
+  def VM.ret (passArgs : Int := -1) : VM Unit := do
     let st ← get
     let cont := st.regs.c0
     set { st with regs := { st.regs with c0 := .quit 0 } }
-    VM.jump cont passArgsForJump
+    VM.jump cont passArgs
 
   def VM.retAlt (passArgs : Int := -1) : VM Unit := do
     let st ← get
-    let mut passArgsForJump : Int := passArgs
-    if h : 0 < st.callStack.size then
-      let frame := st.callStack.back (h := h)
-      let expected : Int := frame.retArgs
-      let copy : Int :=
-        if decide (expected ≥ 0) then
-          expected
-        else if decide (passArgs ≥ 0) then
-          passArgs
-        else
-          -1
-      let vals : Stack ←
-        if decide (copy < 0) then
-          pure st.stack
-        else
-          let k : Nat := copy.toNat
-          if k > st.stack.size then
-            throw .stkUnd
-          pure (st.stack.extract (st.stack.size - k) st.stack.size)
-      let newStack : Stack := frame.savedStack ++ vals
-      set { st with stack := newStack, callStack := st.callStack.pop }
-      passArgsForJump := -1
-    let st ← get
     let cont := st.regs.c1
     set { st with regs := { st.regs with c1 := .quit 1 } }
-    VM.jump cont passArgsForJump
+    VM.jump cont passArgs
 
 def VmState.jumpTo (st : VmState) (k : Continuation) : VmState :=
   { st with cc := k }
@@ -8358,9 +8596,10 @@ def VmState.callToWithFrame (st : VmState) (frame : CallFrame) (k : Continuation
     | .ordinary code _ _ _ =>
         -- Store the "old c0" in the return continuation's saved cregs, matching C++ `ControlData.save.c0`.
         let cregsRet : OrdCregs := { OrdCregs.empty with c0 := some oldC0 }
-        .ordinary code (.quit 0) cregsRet OrdCdata.empty
+        let cdataRet : OrdCdata := { stack := frame.savedStack, nargs := frame.retArgs }
+        .ordinary code (.quit 0) cregsRet cdataRet
     | _ => .quit 0
-  { st with regs := { st.regs with c0 := retCont }, cc := k, callStack := st.callStack.push frame }
+  { st with regs := { st.regs with c0 := retCont }, cc := k }
 
 def VmState.callTo (st : VmState) (k : Continuation) : VmState :=
   st.callToWithFrame CallFrame.identity k
@@ -8377,16 +8616,37 @@ def VmState.getCtr (st : VmState) (idx : Nat) : Except Excno Value :=
   | _ => .error .rangeChk
 
 def VmState.setCtr (st : VmState) (idx : Nat) (v : Value) : Except Excno VmState :=
-  match idx, v with
-  | 0, .cont k => .ok { st with regs := { st.regs with c0 := k } }
-  | 1, .cont k => .ok { st with regs := { st.regs with c1 := k } }
-  | 2, .cont k => .ok { st with regs := { st.regs with c2 := k } }
-  | 3, .cont k => .ok { st with regs := { st.regs with c3 := k } }
-  | 4, .cell c => .ok { st with regs := { st.regs with c4 := c } }
-  | 5, .cell c => .ok { st with regs := { st.regs with c5 := c } }
-  | 7, .tuple t => .ok { st with regs := { st.regs with c7 := t } }
-  | 6, _ => .error .rangeChk
-  | _, _ => .error .typeChk
+  match idx with
+  | 0 =>
+      match v with
+      | .cont k => .ok { st with regs := { st.regs with c0 := k } }
+      | _ => .error .typeChk
+  | 1 =>
+      match v with
+      | .cont k => .ok { st with regs := { st.regs with c1 := k } }
+      | _ => .error .typeChk
+  | 2 =>
+      match v with
+      | .cont k => .ok { st with regs := { st.regs with c2 := k } }
+      | _ => .error .typeChk
+  | 3 =>
+      match v with
+      | .cont k => .ok { st with regs := { st.regs with c3 := k } }
+      | _ => .error .typeChk
+  | 4 =>
+      match v with
+      | .cell c => .ok { st with regs := { st.regs with c4 := c } }
+      | _ => .error .typeChk
+  | 5 =>
+      match v with
+      | .cell c => .ok { st with regs := { st.regs with c5 := c } }
+      | _ => .error .typeChk
+  | 7 =>
+      match v with
+      | .tuple t => .ok { st with regs := { st.regs with c7 := t } }
+      | _ => .error .typeChk
+  | _ =>
+      .error .rangeChk
 
 def tupleExtendSetIndex (t : Array Value) (idx : Nat) (v : Value) : Array Value × Nat :=
   if idx < t.size then

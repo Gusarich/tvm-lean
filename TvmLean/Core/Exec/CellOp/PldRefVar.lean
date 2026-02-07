@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execCellOpPldRefVar (op : CellInstr) (next : VM Unit) : VM Unit := do
   match op with
   | .pldRefVar =>
+      VM.checkUnderflow 2
       let idx ← VM.popNatUpTo 3
       let s ← VM.popSlice
       if s.haveRefs (idx + 1) then

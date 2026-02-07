@@ -13,6 +13,7 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
       -- - We parse MessageRelaxed enough to compute forwarding fees and to detect when init/body must be treated
       --   as references to satisfy root-cell limits (1023 bits / 4 refs).
       -- - We do not attempt to validate all TL-B invariants beyond what is needed here.
+      VM.checkUnderflow 2
       let modeNat ← VM.popNatUpTo 2047
       let send : Bool := (modeNat &&& 1024) = 0
       let mode : Nat := modeNat &&& 0x3ff -- clear the "no-send" flag (bit 10)

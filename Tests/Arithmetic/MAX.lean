@@ -33,11 +33,12 @@ def testMax : IO Unit := do
   match VmState.run 20 st0Nan with
   | .continue _ => throw (IO.userError "max(nan): did not halt")
   | .halt exitCode st =>
-      assert (exitCode == -1) s!"max(nan): unexpected exitCode={exitCode}"
+      -- MAX is non-quiet: NaN inputs raise integer overflow (see TON `exec_minmax` + `push_int_quiet`).
+      expectExitExc "max(nan)" .intOv exitCode
       assert (st.stack.size == 1) s!"max(nan): unexpected stack size={st.stack.size}"
       match st.stack[0]! with
-      | .int .nan => pure ()
-      | v => throw (IO.userError s!"max(nan): unexpected stack value {v.pretty}")
+      | .int (.num n) => assert (n == 0) s!"max(nan): expected 0, got {n}"
+      | v => throw (IO.userError s!"max(nan): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/max" testMax

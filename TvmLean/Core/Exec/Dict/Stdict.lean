@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrDictStdict (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .stdict =>
+      VM.checkUnderflow 2
       -- Builder is on top, dict root cell (or null) below.
       let b ← VM.popBuilder
       let d? ← VM.popMaybeCell

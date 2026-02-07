@@ -2,11 +2,26 @@ import TvmLean.Core.Exec.Common
 
 namespace TvmLean
 
+private def dropFirstRootLoad (dictCell? : Option Cell) (loaded : Array Cell) : Array Cell :=
+  match dictCell? with
+  | none => loaded
+  | some root =>
+      Id.run do
+        let mut skipped : Bool := false
+        let mut out : Array Cell := #[]
+        for c in loaded do
+          if (!skipped) && c == root then
+            skipped := true
+          else
+            out := out.push c
+        out
+
 set_option maxHeartbeats 1000000 in
 def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .dictGetMinMax args5 =>
       -- Matches C++ `exec_dict_getmin` (dictops.cpp).
+      VM.checkUnderflow 2
       let byRef : Bool := (args5 &&& 1) = 1
       let unsigned : Bool := (args5 &&& 2) = 2
       let intKey : Bool := (args5 &&& 4) = 4
@@ -20,12 +35,13 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
       | some c => modify fun st => st.registerCellLoad c
       | none => pure ()
       match dictMinMaxWithCells dictCell? n fetchMax invertFirst with
-      | .error e => throw e
+      | .error e =>
+          let loaded := dropFirstRootLoad dictCell? (dictMinMaxVisitedCells dictCell? n fetchMax invertFirst)
+          for c in loaded do
+            modify fun st => st.registerCellLoad c
+          throw e
       | .ok (none, loaded) =>
-          let loaded :=
-            match dictCell? with
-            | none => loaded
-            | some root => loaded.filter (fun c => c != root)
+          let loaded := dropFirstRootLoad dictCell? loaded
           for c in loaded do
             modify fun st => st.registerCellLoad c
           if remove then
@@ -34,10 +50,7 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
             | some c => VM.push (.cell c)
           VM.pushSmallInt 0
       | .ok (some (val0, keyBits), loaded0) =>
-          let loaded0 :=
-            match dictCell? with
-            | none => loaded0
-            | some root => loaded0.filter (fun c => c != root)
+          let loaded0 := dropFirstRootLoad dictCell? loaded0
           for c in loaded0 do
             modify fun st => st.registerCellLoad c
           let mut val := val0
@@ -46,7 +59,11 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
           let mut loaded1 : Array Cell := #[]
           if remove then
             match dictDeleteWithCells dictCell? keyBits with
-            | .error e => throw e
+            | .error e =>
+                let loadedDel := dictDeleteVisitedCells dictCell? keyBits
+                for c in loadedDel do
+                  modify fun st => st.registerCellLoad c
+                throw e
             | .ok (oldVal?, newRoot?, created1, loadedDel) =>
                 match oldVal? with
                 | none => throw .dictErr

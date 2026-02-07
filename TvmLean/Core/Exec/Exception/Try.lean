@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrExceptionTry (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .try_ =>
+      VM.checkUnderflow 2
       let handler ← VM.popCont
       let cont ← VM.popCont
       let st ← get
@@ -26,11 +27,10 @@ def execInstrExceptionTry (i : Instr) (next : VM Unit) : VM Unit := do
       -- Mirrors `extract_cc` clearing `c1 := quit1` for the TRY body.
       set { st with regs := { st.regs with c0 := cc, c1 := .quit 1, c2 := handler' }, cc := cont }
   | .tryArgs params retVals =>
+      VM.checkUnderflow (params + 2)
       let handler ← VM.popCont
       let cont ← VM.popCont
       let st ← get
-      if params > st.stack.size then
-        throw .stkUnd
       let codeAfter : Slice ←
         match st.cc with
         | .ordinary code _ _ _ => pure code

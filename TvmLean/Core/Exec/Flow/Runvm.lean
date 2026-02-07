@@ -120,6 +120,26 @@ def tryCommit (st : VmState) : Bool × VmState :=
   else
     (false, st)
 
+def cp0InvOpcodeGasBitsRunvm (code : Slice) : Nat :=
+  -- Mirror the main-step fallback (`cp0InvOpcodeGasBits`) for child VM decode errors.
+  -- C++ may charge one opcode slot for invalid/too-short prefixes.
+  let bits0 : BitString := code.readBits code.bitsRemaining
+  let bitsPad : BitString :=
+    if bits0.size < 24 then
+      bits0 ++ Array.replicate (24 - bits0.size) false
+    else
+      bits0
+  let refs0 : Array Cell := code.cell.refs.extract code.refPos code.cell.refs.size
+  let refsPad : Array Cell :=
+    if refs0.size < 4 then
+      refs0 ++ Array.replicate (4 - refs0.size) Cell.empty
+    else
+      refs0
+  match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary bitsPad refsPad)) with
+  | .ok (_instr, totBits, _rest) => totBits
+  | .error _ =>
+      if code.bitsRemaining < 4 then 16 else 8
+
 set_option maxHeartbeats 1000000 in
 def execInstrFlowChildNoRunvm (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrFlowSetcp i <|
@@ -324,7 +344,13 @@ def childStep (st : VmState) : ChildStepResult :=
             .error .invOpcode
         match decoded with
         | .error e =>
-            let st0 := st.throwException e.toInt
+            let st0 :=
+              if e = .invOpcode ∧ code.bitsRemaining > 0 then
+                let invalBits : Nat := cp0InvOpcodeGasBitsRunvm code
+                st.consumeGas (gasPerInstr + Int.ofNat invalBits)
+              else
+                st
+            let st0 := st0.throwException e.toInt
             let st0 := st0.consumeGas exceptionGasPrice
             if decide (st0.gas.gasRemaining < 0) then
               outOfGasHalt st0
@@ -438,7 +464,8 @@ def runChildVm (parent : VmState) (mode : Nat) : VM VmState := do
 
   modify fun st => st.consumeStackGas stackSize
 
-  if push0 then
+  -- C++ `init_cregs`: `push_0` is honored only when `same_c3` is set.
+  if sameC3 && push0 then
     childStack := childStack.push (.int (.num 0))
 
   let childCc : Continuation := .ordinary codeSlice (.quit 0) OrdCregs.empty OrdCdata.empty
@@ -492,6 +519,9 @@ def runChildVm (parent : VmState) (mode : Nat) : VM VmState := do
         retCnt := depth
   else
     retCnt := Nat.min depth 1
+
+  -- C++ `restore_parent_vm`: charge stack gas for returned value count before pushes.
+  parentAfter := parentAfter.consumeStackGas retCnt
 
   for i in List.range retCnt |>.reverse do
     let pos := depth - 1 - i

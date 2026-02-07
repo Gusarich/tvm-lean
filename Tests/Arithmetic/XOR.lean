@@ -12,11 +12,12 @@ def testXor : IO Unit := do
   | v => throw (IO.userError s!"xor(-1,1): unexpected stack value {v.pretty}")
 
   let (exitCodeNan, stNan) ← expectHalt (← runProg [ .pushInt .nan, .pushInt (.num 1), .xor ])
-  expectExitOk "xor(nan,1)" exitCodeNan
+  -- XOR is non-quiet: NaN inputs raise integer overflow (see TON `exec_xor` + `push_int_quiet`).
+  expectExitExc "xor(nan,1)" .intOv exitCodeNan
   assert (stNan.stack.size == 1) s!"xor(nan,1): unexpected stack size={stNan.stack.size}"
   match stNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"xor(nan,1): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"xor(nan,1): expected 0, got {n}"
+  | v => throw (IO.userError s!"xor(nan,1): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/xor" testXor

@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellStIntFixed (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .stIntFixed unsigned rev quiet bits =>
+      VM.checkUnderflow 2
       let (x, b) ←
         if rev then
           let x ← VM.popInt

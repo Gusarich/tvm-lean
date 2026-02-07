@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execCellOpSchkBits (op : CellInstr) (next : VM Unit) : VM Unit := do
   match op with
   | .schkBits quiet =>
+      VM.checkUnderflow 2
       let bits ← VM.popNatUpTo 1023
       let s ← VM.popSlice
       let ok : Bool := s.haveBits bits

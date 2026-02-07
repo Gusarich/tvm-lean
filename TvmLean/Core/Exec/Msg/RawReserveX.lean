@@ -7,6 +7,7 @@ def execInstrMsgRawReserveX (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .tonEnvOp .rawReserveX =>
       -- Matches C++ `exec_reserve_raw` (mode=1; tonops.cpp).
+      VM.checkUnderflow 3
       let f ← VM.popNatUpTo 31
       let y? ← VM.popMaybeCell
       let x ← VM.popIntFinite
@@ -15,7 +16,7 @@ def execInstrMsgRawReserveX (i : Instr) (next : VM Unit) : VM Unit := do
       let bitsLen : Nat := natLenBits x.toNat
       let lenBytes : Nat := (bitsLen + 7) / 8
       if lenBytes ≥ 16 then
-        throw .rangeChk
+        throw .cellOv
       let gramsBits : BitString := natToBits lenBytes 4 ++ natToBits x.toNat (lenBytes * 8)
       let hasY : Bool := y?.isSome
       let bits : BitString := natToBits 0x36e6b809 32 ++ natToBits f 8 ++ gramsBits ++ #[hasY]

@@ -114,6 +114,28 @@ def VmState.applyCregsCdata (st : VmState) (cregs : OrdCregs) (cdata : OrdCdata)
     let newStack := cdata.stack ++ stack1
     ( { st1' with stack := newStack } ).consumeStackGas newStack.size
 
+def cp0InvOpcodeGasBits (code : Slice) : Nat :=
+  -- Approximate C++ opcode-table charging for invalid/too-short opcodes:
+  -- decode the same prefix after zero-padding bits so short fixed/ext opcodes
+  -- report their declared bit length (e.g. 16/24) instead of falling back to 8.
+  let bits0 : BitString := code.readBits code.bitsRemaining
+  let bitsPad : BitString :=
+    if bits0.size < 24 then
+      bits0 ++ Array.replicate (24 - bits0.size) false
+    else
+      bits0
+  let refs0 : Array Cell := code.cell.refs.extract code.refPos code.cell.refs.size
+  let refsPad : Array Cell :=
+    if refs0.size < 4 then
+      refs0 ++ Array.replicate (4 - refs0.size) Cell.empty
+    else
+      refs0
+  match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary bitsPad refsPad)) with
+  | .ok (_instr, totBits, _rest) => totBits
+  | .error _ =>
+      -- Conservative fallback kept for prefixes that still don't decode.
+      if code.bitsRemaining < 4 then 16 else 8
+
 def VmState.step (st : VmState) : StepResult :=
   match st.cc with
   | .quit n =>
@@ -257,7 +279,15 @@ def VmState.step (st : VmState) : StepResult :=
             .error .invOpcode
         match decoded with
         | .error e =>
-            let st0 := st.throwException e.toInt
+            -- Align with C++ opcode-table behavior: some invalid/too-short opcode paths
+            -- charge one instruction slot before raising `inv_opcode`.
+            let st0 :=
+              if e = .invOpcode ∧ code.bitsRemaining > 0 then
+                let invalBits : Nat := cp0InvOpcodeGasBits code
+                st.consumeGas (gasPerInstr + Int.ofNat invalBits)
+              else
+                st
+            let st0 := st0.throwException e.toInt
             let st0 := st0.consumeGas exceptionGasPrice
             if decide (st0.gas.gasRemaining < 0) then
               st0.outOfGasHalt
@@ -468,7 +498,15 @@ def VmState.stepTrace (st : VmState) (step : Nat) : TraceEntry × StepResult :=
             .error .invOpcode
         match decoded with
         | .error e =>
-            let st0 := st.throwException e.toInt
+            -- Align with C++ opcode-table behavior: some invalid/too-short opcode paths
+            -- charge one instruction slot before raising `inv_opcode`.
+            let st0 :=
+              if e = .invOpcode ∧ code.bitsRemaining > 0 then
+                let invalBits : Nat := cp0InvOpcodeGasBits code
+                st.consumeGas (gasPerInstr + Int.ofNat invalBits)
+              else
+                st
+            let st0 := st0.throwException e.toInt
             let st0 := st0.consumeGas exceptionGasPrice
             let res :=
               if decide (st0.gas.gasRemaining < 0) then

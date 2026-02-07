@@ -8,20 +8,25 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
   | .contExt op =>
       match op with
       | .pushCtrX =>
-          let idx ← VM.popNatUpTo 255
+          VM.checkUnderflow 1
+          let idx ← VM.popNatUpTo 16
           let st ← get
           match st.getCtr idx with
           | .ok v => VM.push v
           | .error e => throw e
       | .popCtrX =>
-          let idx ← VM.popNatUpTo 255
+          VM.checkUnderflow 2
+          let idx ← VM.popNatUpTo 16
           let v ← VM.pop
           let st ← get
           match st.setCtr idx v with
           | .ok st' => set st'
           | .error e => throw e
       | .setContCtrX =>
-          let idx ← VM.popNatUpTo 255
+          VM.checkUnderflow 3
+          let idx ← VM.popNatUpTo 16
+          if idx = 6 || idx > 7 then
+            throw .rangeChk
           let cont ← VM.popCont
           let v ← VM.pop
           match cont.defineCtr idx v with
@@ -43,6 +48,7 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
               | .error e => throw e
           VM.push (.cont cont')
       | .setContCtrManyX =>
+          VM.checkUnderflow 2
           let mask ← VM.popNatUpTo 255
           if (mask &&& (1 <<< 6)) ≠ 0 then
             throw .rangeChk
@@ -59,6 +65,7 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
               | .error e => throw e
           VM.push (.cont cont')
       | .setRetCtr idx =>
+          VM.checkUnderflow 1
           let v ← VM.pop
           let st ← get
           match st.regs.c0.defineCtr idx v with
@@ -66,6 +73,7 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
               set { st with regs := { st.regs with c0 := c0' } }
           | .error e => throw e
       | .setAltCtr idx =>
+          VM.checkUnderflow 1
           let v ← VM.pop
           let st ← get
           match st.regs.c1.defineCtr idx v with
@@ -73,6 +81,7 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
               set { st with regs := { st.regs with c1 := c1' } }
           | .error e => throw e
       | .popSave idx =>
+          VM.checkUnderflow 1
           let v ← VM.pop
           let st ← get
           match st.getCtr idx with

@@ -22,11 +22,12 @@ def testModc : IO Unit := do
 
   let (exitCodeZ, stZ) ←
     expectHalt (← runProg [ .pushInt (.num 1), .pushInt (.num 0), .divMod 2 1 false false ])
-  expectExitOk "modc(1,0)" exitCodeZ
+  -- MODC is non-quiet: division by zero returns NaN internally, then `push_int_quiet` raises int overflow.
+  expectExitExc "modc(1,0)" .intOv exitCodeZ
   assert (stZ.stack.size == 1) s!"modc(1,0): unexpected stack size={stZ.stack.size}"
   match stZ.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"modc(1,0): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"modc(1,0): expected 0, got {n}"
+  | v => throw (IO.userError s!"modc(1,0): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/modc" testModc

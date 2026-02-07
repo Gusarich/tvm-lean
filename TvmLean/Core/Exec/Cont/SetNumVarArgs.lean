@@ -7,12 +7,10 @@ def execInstrContSetNumVarArgs (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .setNumVarArgs =>
       -- Mirrors `SETNUMVARARGS` from `crypto/vm/contops.cpp` (exec_setnum_varargs + exec_setcontargs_common copy=0).
+      VM.checkUnderflow 2
       let more ← VM.popIntFinite
       if decide (more < -1 ∨ more > 255) then
         throw .rangeChk
-      let st ← get
-      if 1 > st.stack.size then
-        throw .stkUnd
       let cont ← VM.popCont
       if more = -1 then
         -- copy=0, more=-1: do not force cdata / wrap the continuation.
@@ -41,4 +39,3 @@ def execInstrContSetNumVarArgs (i : Instr) (next : VM Unit) : VM Unit := do
   | _ => next
 
 end TvmLean
-

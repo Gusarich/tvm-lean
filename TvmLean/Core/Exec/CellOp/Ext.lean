@@ -11,28 +11,34 @@ set_option maxHeartbeats 1000000 in
 def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
   match op with
   | .sdFirst =>
+      VM.checkUnderflow 1
       let s ← VM.popSlice
       let ok : Bool := s.haveBits 1 && s.cell.bits[s.bitPos]!
       VM.pushSmallInt (if ok then -1 else 0)
   | .sdSfx =>
+      VM.checkUnderflow 2
       let s2 ← VM.popSlice
       let s1 ← VM.popSlice
       VM.pushSmallInt (if sliceBitsSuffixEq s1 s2 then -1 else 0)
   | .sdSfxRev =>
+      VM.checkUnderflow 2
       let s2 ← VM.popSlice
       let s1 ← VM.popSlice
       VM.pushSmallInt (if sliceBitsSuffixEq s2 s1 then -1 else 0)
   | .sdPsfx =>
+      VM.checkUnderflow 2
       let s2 ← VM.popSlice
       let s1 ← VM.popSlice
       let ok : Bool := s1.bitsRemaining < s2.bitsRemaining && sliceBitsSuffixEq s1 s2
       VM.pushSmallInt (if ok then -1 else 0)
   | .sdPsfxRev =>
+      VM.checkUnderflow 2
       let s2 ← VM.popSlice
       let s1 ← VM.popSlice
       let ok : Bool := s2.bitsRemaining < s1.bitsRemaining && sliceBitsSuffixEq s2 s1
       VM.pushSmallInt (if ok then -1 else 0)
   | .sdCntLead1 =>
+      VM.checkUnderflow 1
       let s ← VM.popSlice
       let rem : Nat := s.bitsRemaining
       let mut cnt : Nat := 0
@@ -40,6 +46,7 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
         cnt := cnt + 1
       VM.pushSmallInt (Int.ofNat cnt)
   | .sdCntTrail1 =>
+      VM.checkUnderflow 1
       let s ← VM.popSlice
       let rem : Nat := s.bitsRemaining
       let mut cnt : Nat := 0
@@ -50,6 +57,7 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
           cnt := cnt + 1
         VM.pushSmallInt (Int.ofNat cnt)
   | .strefR quiet =>
+      VM.checkUnderflow 2
       let c ← VM.popCell
       let b ← VM.popBuilder
       if b.canExtendBy 0 1 then
@@ -64,14 +72,19 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
         else
           throw .cellOv
   | .endxc =>
+      VM.checkUnderflow 2
       let special ← VM.popBool
       let b ← VM.popBuilder
+      -- Match C++: charge cell-create gas when finalization is attempted (after stack/type checks),
+      -- even if `finalizeCopy` then throws (e.g. invalid special-cell request).
+      modify fun st => st.consumeGas cellCreateGasPrice
       let c ←
         match b.finalizeCopy special with
         | .ok c => pure c
         | .error e => throw e
       VM.push (.cell c)
   | .sdSubstr =>
+      VM.checkUnderflow 3
       let bits ← VM.popNatUpTo 1023
       let offs ← VM.popNatUpTo 1023
       let s ← VM.popSlice
@@ -81,11 +94,12 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
         let newCell : Cell :=
           Cell.mkOrdinary
             (s.cell.bits.extract fromPos toPos)
-            (s.cell.refs.extract s.refPos s.cell.refs.size)
+            #[]
         VM.push (.slice (Slice.ofCell newCell))
       else
         throw .cellUnd
   | .scutfirst =>
+      VM.checkUnderflow 3
       let refs ← VM.popNatUpTo 4
       let bits ← VM.popNatUpTo 1023
       let s ← VM.popSlice
@@ -98,6 +112,7 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
       else
         throw .cellUnd
   | .sskipfirst =>
+      VM.checkUnderflow 3
       let refs ← VM.popNatUpTo 4
       let bits ← VM.popNatUpTo 1023
       let s ← VM.popSlice
@@ -106,6 +121,7 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
       else
         throw .cellUnd
   | .scutlast =>
+      VM.checkUnderflow 3
       let refs ← VM.popNatUpTo 4
       let bits ← VM.popNatUpTo 1023
       let s ← VM.popSlice
@@ -122,6 +138,7 @@ def execCellOpExt (op : CellInstr) (next : VM Unit) : VM Unit := do
       else
         throw .cellUnd
   | .sskiplast =>
+      VM.checkUnderflow 3
       let refs ← VM.popNatUpTo 4
       let bits ← VM.popNatUpTo 1023
       let s ← VM.popSlice
