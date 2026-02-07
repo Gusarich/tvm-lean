@@ -1,5 +1,10 @@
 import Std
-import TvmLean.Model
+import TvmLean.Model.Basics.Bytes
+import TvmLean.Model.Cell.Bitstring
+import TvmLean.Model.Cell.Cell
+import TvmLean.Model.Cell.Slice
+import TvmLean.Model.Cell.Builder
+import TvmLean.Model.Cell.Primitives
 
 namespace TvmLean
 
