@@ -1,5 +1,6 @@
 import Std
-import TvmLean.Core
+import TvmLean.Model
+import TvmLean.Semantics
 
 namespace TvmLean
 

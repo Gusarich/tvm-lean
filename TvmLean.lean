@@ -1,3 +1,4 @@
 -- Root of the `TvmLean` library.
-import TvmLean.Core
+import TvmLean.Model
+import TvmLean.Semantics
 import TvmLean.Boc

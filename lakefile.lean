@@ -19,11 +19,26 @@ package "tvm-lean" where
       -- and Lean's sysroot toolchain on CI (Ubuntu x86_64).
       #["/usr/lib/x86_64-linux-gnu/libsodium.a"]
 
-lean_lib «TvmLean» where
-  -- add library configuration options here
+@[default_target]
+lean_lib TvmLeanModel where
+  roots := #[`TvmLean.Model, `TvmLean.Boc, `TvmLean.Spec]
 
-lean_lib «Tests» where
-  -- Test modules under `Tests/`
+@[default_target]
+lean_lib TvmLeanSemantics where
+  roots := #[`TvmLean.Semantics]
+
+lean_lib TvmLean where
+  roots := #[`TvmLean]
+
+lean_lib TvmLeanNative where
+  roots := #[`TvmLean.Native]
+
+lean_lib TvmLeanValidation where
+  roots := #[`TvmLean.Validation]
+
+lean_lib TvmLeanTests where
+  srcDir := "."
+  roots := #[`Tests]
 
 target tvmlean_crypto.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto.o"
@@ -82,27 +97,32 @@ extern_lib libtvmlean_crypto pkg := do
   let name := nameToStaticLib "tvmlean_crypto"
   buildStaticLib (pkg.staticLibDir / name) #[o, oHash, oKeccak, oExt]
 
-@[default_target]
 lean_exe "tvm-lean" where
-  root := `Main
+  root := `Apps.Demo
 
 lean_exe "tvm-lean-tests" where
-  root := `Tests
+  root := `Apps.Tests
 
 lean_exe "tvm-lean-diff-test" where
-  root := `DiffTestMain
+  root := `Apps.DiffTest
 
 lean_exe "tvm-lean-actions-debug" where
-  root := `ActionsDebugMain
+  root := `Apps.ActionsDebug
 
 lean_exe "tvm-lean-trace-inspect" where
-  root := `TraceInspectMain
+  root := `Apps.TraceInspect
 
 lean_exe "tvm-lean-precompiled-snapshot" where
-  root := `PrecompiledSnapshotMain
+  root := `Apps.PrecompiledSnapshot
 
 lean_exe "tvm-lean-progress" where
-  root := `ProgressMain
+  root := `Apps.Progress
+
+lean_exe "tvm-lean-coverage" where
+  root := `Apps.Coverage
+
+lean_exe "tvm-lean-oracle" where
+  root := `Apps.Oracle
 
 lean_exe "tvm-lean-oracle-validate" where
-  root := `OracleValidateMain
+  root := `Apps.Oracle
