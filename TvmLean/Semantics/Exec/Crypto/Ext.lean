@@ -89,7 +89,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             VM.pushSmallInt 0
           else
             if publicKey.size != 65 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             let h : UInt8 := publicKey.get! 0
             let x1 := publicKey.extract 1 33
             let x2 := publicKey.extract 33 65
@@ -118,7 +118,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             VM.pushSmallInt 0
           else
             if publicKey.size != 65 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             let h : UInt8 := publicKey.get! 0
             let x1 := publicKey.extract 1 33
             let x2 := publicKey.extract 33 65
@@ -190,7 +190,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let r := host.rist255FromHash (ByteArray.mk x1Bytes) (ByteArray.mk x2Bytes)
           if r.size != 32 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           pushUInt256FromByteArrayBE r
 
       | .rist255Validate =>
@@ -396,7 +396,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
 
           let out := host.blsAggregate sigs
           if out.size != 96 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsFastAggregateVerify =>
@@ -485,7 +485,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsG1AddBytes (ByteArray.mk ab) (ByteArray.mk bb)
           if out.size != 48 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG1Sub =>
@@ -505,7 +505,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsG1SubBytes (ByteArray.mk ab) (ByteArray.mk bb)
           if out.size != 48 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG1Neg =>
@@ -517,7 +517,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsG1NegBytes (ByteArray.mk ab)
           if out.size != 48 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG1Mul =>
@@ -534,7 +534,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
           if x == 0 then
             let out := host.blsG1ZeroBytes ()
             if out.size != 48 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
           else
             let xMod : Int := x % blsR
@@ -544,7 +544,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
               | .error e => throw e
             let out := host.blsG1MulBytes (ByteArray.mk pb) (ByteArray.mk xb)
             if out.size != 48 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
 
       | .blsG1MultiExp =>
@@ -570,7 +570,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
           if n == 0 then
             let out := host.blsG1ZeroBytes ()
             if out.size != 48 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
           else if n == 1 then
             let x := xs[0]!
@@ -578,7 +578,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             if x == 0 then
               let out := host.blsG1ZeroBytes ()
               if out.size != 48 then
-                throw .unknown
+                VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
               VM.push (.slice (sliceOfByteArray out))
             else
               let xMod : Int := x % blsR
@@ -588,7 +588,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
                 | .error e => throw e
               let out := host.blsG1MulBytes p (ByteArray.mk xb)
               if out.size != 48 then
-                throw .unknown
+                VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
               VM.push (.slice (sliceOfByteArray out))
           else
             let mut scalars : Array ByteArray := Array.replicate n (ByteArray.mk #[])
@@ -601,13 +601,13 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
               scalars := scalars.set! k (ByteArray.mk xbBe.reverse)
             let out := host.blsG1MultiExpBytes ps scalars
             if out.size != 48 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
 
       | .blsG1Zero =>
           let out := host.blsG1ZeroBytes ()
           if out.size != 48 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsMapToG1 =>
@@ -619,7 +619,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsMapToG1Bytes (ByteArray.mk ab)
           if out.size != 48 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG1InGroup =>
@@ -658,7 +658,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsG2AddBytes (ByteArray.mk ab) (ByteArray.mk bb)
           if out.size != 96 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG2Sub =>
@@ -678,7 +678,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsG2SubBytes (ByteArray.mk ab) (ByteArray.mk bb)
           if out.size != 96 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG2Neg =>
@@ -690,7 +690,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsG2NegBytes (ByteArray.mk ab)
           if out.size != 96 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG2Mul =>
@@ -707,7 +707,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
           if x == 0 then
             let out := host.blsG2ZeroBytes ()
             if out.size != 96 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
           else
             let xMod : Int := x % blsR
@@ -717,7 +717,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
               | .error e => throw e
             let out := host.blsG2MulBytes (ByteArray.mk pb) (ByteArray.mk xb)
             if out.size != 96 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
 
       | .blsG2MultiExp =>
@@ -743,7 +743,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
           if n == 0 then
             let out := host.blsG2ZeroBytes ()
             if out.size != 96 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
           else if n == 1 then
             let x := xs[0]!
@@ -751,7 +751,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             if x == 0 then
               let out := host.blsG2ZeroBytes ()
               if out.size != 96 then
-                throw .unknown
+                VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
               VM.push (.slice (sliceOfByteArray out))
             else
               let xMod : Int := x % blsR
@@ -761,7 +761,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
                 | .error e => throw e
               let out := host.blsG2MulBytes p (ByteArray.mk xb)
               if out.size != 96 then
-                throw .unknown
+                VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
               VM.push (.slice (sliceOfByteArray out))
           else
             let mut scalars : Array ByteArray := Array.replicate n (ByteArray.mk #[])
@@ -774,13 +774,13 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
               scalars := scalars.set! k (ByteArray.mk xbBe.reverse)
             let out := host.blsG2MultiExpBytes ps scalars
             if out.size != 96 then
-              throw .unknown
+              VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
             VM.push (.slice (sliceOfByteArray out))
 
       | .blsG2Zero =>
           let out := host.blsG2ZeroBytes ()
           if out.size != 96 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsMapToG2 =>
@@ -792,7 +792,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
             | .error e => throw e
           let out := host.blsMapToG2Bytes (ByteArray.mk ab)
           if out.size != 96 then
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
           VM.push (.slice (sliceOfByteArray out))
 
       | .blsG2InGroup =>
@@ -841,7 +841,7 @@ def execInstrCryptoExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit := d
           else if rc == 1 then
             VM.pushSmallInt (-1)
           else
-            throw .unknown
+            VM.unimplementedInstr { name := Instr.pretty i } "crypto ext backend path is not fully implemented"
 
       | .blsPushR =>
           VM.push (.int (.num blsR))

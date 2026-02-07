@@ -70,6 +70,7 @@ def probeImplemented (cell : Cell) : Bool :=
       let (res, _st1) := (execInstr nativeHost instr).run st0
       match res with
       | .error .invOpcode => false
+      | .error .unimplemented => false
       | _ => true
 
 def probeDecoded (cell : Cell) : Bool :=

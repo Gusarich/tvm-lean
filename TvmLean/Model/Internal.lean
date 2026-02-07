@@ -25,6 +25,7 @@ inductive Excno : Type
   | cellUnd
   | dictErr
   | unknown
+  | unimplemented
   | fatal
   | outOfGas
   | virtErr
@@ -46,6 +47,7 @@ def Excno.toInt : Excno → Int
   | .fatal => 12
   | .outOfGas => 13
   | .virtErr => 14
+  | .unimplemented => 15
 
 instance : ToString Excno := ⟨fun
   | .none => "none"
@@ -60,6 +62,7 @@ instance : ToString Excno := ⟨fun
   | .cellUnd => "cellUnd"
   | .dictErr => "dictErr"
   | .unknown => "unknown"
+  | .unimplemented => "unimplemented"
   | .fatal => "fatal"
   | .outOfGas => "outOfGas"
   | .virtErr => "virtErr"⟩

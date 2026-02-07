@@ -41,8 +41,7 @@ private def probeImplStatus (row : InstrSpecRow) : InstrImplStatus :=
         let (res, _st1) := (execInstr nativeHost instr).run st0
         match res with
         | .error .invOpcode => .missing
-        | .error .unknown => .stub
-        | .error .fatal => .stub
+        | .error .unimplemented => .stub
         | .error _ => .ok
         | .ok _ => .ok
 

@@ -16,7 +16,7 @@ inductive VmError where
 
 def VmError.toExcno : VmError → Excno
   | .excno e => e
-  | .unimplemented _ _ => .unknown
+  | .unimplemented _ _ => .unimplemented
 
 def Excno.toVmError (e : Excno) : VmError :=
   .excno e

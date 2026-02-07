@@ -94,7 +94,7 @@ def execInstrCryptoHashExt (host : Host) (i : Instr) (next : VM Unit) : VM Unit 
         | _ => ByteArray.mk #[]
 
       if digest.size != digestSize then
-        throw .unknown
+        VM.unimplementedInstr { name := Instr.pretty i } "hashExt host backend returned unexpected digest size"
 
       if append then
         let b ← VM.popBuilder
