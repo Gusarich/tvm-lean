@@ -47,14 +47,26 @@ jobs:
             ubuntu-lake-${{ hashFiles('lean-toolchain') }}-
             ubuntu-lake-
 
-      - name: Build
-        run: lake build
+      - name: Build core + validation + tests
+        run: |
+          lake build TvmLeanModel TvmLeanSemantics TvmLeanNative TvmLeanValidation TvmLeanTests
 
       - name: Unit tests
         run: lake exe tvm-lean-tests
 
       - name: Diff tests (offline CI fixtures)
         run: lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
+
+      - name: Generate coverage report
+        run: |
+          mkdir -p build
+          lake exe tvm-lean-coverage -- --format json --out build/coverage.json
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/coverage.json
 
       - name: Save elan toolchain cache
         if: ${{ always() && steps.elan-cache.outputs.cache-hit != 'true' }}
