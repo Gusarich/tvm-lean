@@ -1,4 +1,9 @@
 import TvmLean.Model
+import TvmLean.Semantics.VM.Ops.Stack
+import TvmLean.Semantics.VM.Ops.Cells
+import TvmLean.Semantics.VM.Ops.Gas
+import TvmLean.Semantics.VM.Ops.Cont
+import TvmLean.Semantics.VM.Ops.State
 
 namespace TvmLean
 

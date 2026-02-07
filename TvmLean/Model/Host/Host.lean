@@ -1,4 +1,4 @@
-import TvmLean.Model.Internal
+import Std
 
 namespace TvmLean
 

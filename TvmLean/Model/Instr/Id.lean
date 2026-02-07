@@ -1,5 +1,3 @@
-import TvmLean.Model.Internal
-
 namespace TvmLean
 
 /-- Canonical instruction identifier used for spec indexing and coverage. -/
