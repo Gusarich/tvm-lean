@@ -45,7 +45,7 @@ TVM_SUBISSUES: tuple[SubissueSpec, ...] = (
         ws_label="ws/tests",
         title_suffix="tests",
         checklist_lines=(
-            "- [ ] Add focused unit test(s) in `Tests.lean`",
+            "- [ ] Add focused unit/oracle/fuzz cases in `Tests/Instr/<Family>/<Instr>.lean`",
             "- [ ] (Optional) Add encode/decode roundtrip coverage",
             "- [ ] Run `lake exe tvm-lean-tests`",
         ),
@@ -219,4 +219,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

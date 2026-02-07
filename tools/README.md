@@ -1,6 +1,6 @@
 # Tools
 
-Small helper scripts used to keep the vendored TVM spec and progress tables in sync.
+Small helper scripts for spec indexing, test scaffolding, validation runs, and backlog sync.
 
 ## Generate spec index
 
@@ -12,6 +12,18 @@ Outputs:
 
 - `docs/progress/tvm_spec_index.json`
 - `docs/progress/tvm_spec_index.csv`
+- `TvmLean/Spec/Index.lean`
+
+## Generate test scaffold + import index
+
+```sh
+python3 tools/gen_test_scaffold.py
+```
+
+Outputs:
+
+- `Tests/Instr/<Family>/*.lean` skeletons (for missing instructions)
+- `Tests/All.lean`
 
 ## Generate progress table
 
@@ -43,22 +55,31 @@ Run the extensive all-instruction multi-seed matrix:
 tools/run_oracle_validate_extensive.sh
 ```
 
-## Collect a full day of fixtures in parallel
+## Collect and promote diff fixtures
 
-Use this helper to collect a target number of fixtures for a single UTC day, with per-shard logs and de-duplication:
+Build collector and sweep:
 
 ```sh
 export TON_FIFT_BIN=/path/to/ton/build/crypto/fift
 export TON_FIFT_LIB=/path/to/ton/crypto/fift/lib
 
-tools/collect_fixtures_day.sh --day 2026-02-06 --count 10000 --jobs 12
+cd diff-test/collector
+npm ci
+npm run build
+npm run sweep -- --since 2026-02-06 --until 2026-02-07 --max-fixtures 500 --keep-fixtures --out-dir ../work
 ```
 
-Outputs by default:
+Test scratch fixtures:
 
-- `diff-test/fixtures_<day>/` final fixture set
-- `diff-test/fixtures_<day>_tmp/` temporary per-shard outputs
-- `diff-test/logs/collect_<day>/` per-shard logs + merge summary
+```sh
+lake exe tvm-lean-diff-test -- --dir diff-test/work --strict-exit
+```
+
+Promote one validated fixture:
+
+```sh
+python3 tools/promote_fixture.py diff-test/work/<fixture>.json
+```
 
 ## Sync Linear backlog (bulk)
 

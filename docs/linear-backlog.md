@@ -2,7 +2,7 @@
 
 This repo uses Linear to track the full TVM instruction backlog from the vendored spec.
 
-If you're implementing opcodes, start with `docs/implementing-instructions.md`.
+If you're implementing opcodes, start with `docs/development/implementing-instructions.md`.
 
 ## Projects
 
