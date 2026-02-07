@@ -1,0 +1,16 @@
+[{"tx_hash": "C2E2A78CBAA0C03FED74C3E813E3F1911CEAD1264C2C7FD89EDEBEC366715D28",
+  "status": "FAIL",
+  "expected_gas_used": 7747,
+  "expected_exit_code": 9,
+  "error":
+  "exit_code expected=9 actual=0; gas_used expected=7747 actual=1000; c4 mismatch expected=0xf07d2140594b8c29f7b88667157fa8d0011429f3f6e1cc85eaa8a0bd72a46eb7 actual=0xb20a1afa1952ba25990b3dd8e2c83cc2d5d9ef994ed43840d15e139248bc6d27; c5 mismatch expected=0x96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7 actual=0xc2cc219ce91a6f09b197c64cd74867e3139335b5ef20b325b50cd7ee3538fdb0",
+  "actual_gas_used": 1000,
+  "actual_exit_code": 0},
+ {"tx_hash": "EB417F4346D4EA3B745607E87C99F31F8A17CC306A0AE4DFEDA0B537D2CD8A49",
+  "status": "FAIL",
+  "expected_gas_used": 7365,
+  "expected_exit_code": 9,
+  "error":
+  "exit_code expected=9 actual=0; gas_used expected=7365 actual=1000; c4 mismatch expected=0x6e3a760661b21204eddaa45ecb3d4d8e9f8304f2e337b32dd38d8819662ac4be actual=0x255fb03053d495ce0fb6a5042c07fa1cc967acf2ec73684ad23e472885eb51d6; c5 mismatch expected=0x96a296d224f285c67bee93c30f8a309157f0daa35dc5b87e410b78630a09cfc7 actual=0xfaca3156d8cac5b2ffc694c7236b121b62ccc459317edf2145f143491cb6829a",
+  "actual_gas_used": 1000,
+  "actual_exit_code": 0}]

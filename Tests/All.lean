@@ -3,6 +3,7 @@
 
 import Tests.Boc
 import Tests.Counter
+import Tests.OracleParity
 
 import Tests.Address.PARSEMSGADDR
 import Tests.Address.PARSEMSGADDRQ

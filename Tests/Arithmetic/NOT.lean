@@ -12,11 +12,12 @@ def testNot : IO Unit := do
   | v => throw (IO.userError s!"not(0): unexpected stack value {v.pretty}")
 
   let (exitCodeNan, stNan) ← expectHalt (← runProg [ .pushInt .nan, .not_ ])
-  expectExitOk "not(nan)" exitCodeNan
+  -- NOT is non-quiet: NaN inputs raise integer overflow (see TON `exec_not` + `push_int_quiet`).
+  expectExitExc "not(nan)" .intOv exitCodeNan
   assert (stNan.stack.size == 1) s!"not(nan): unexpected stack size={stNan.stack.size}"
   match stNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"not(nan): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"not(nan): expected 0, got {n}"
+  | v => throw (IO.userError s!"not(nan): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/not" testNot

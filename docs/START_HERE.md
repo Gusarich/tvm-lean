@@ -48,7 +48,8 @@ For instruction-level correctness, there is an oracle-based validator that runs 
 - once in **Lean**
 - then compares exit code, gas used, `c4`/`c5` hashes, and canonicalized stack
 
-This is deterministic (no fuzz/random) and is meant for generating 10–20 meaningful cases per opcode.
+This supports both deterministic and seeded-random coverage (`--random-cases`) and can be scaled from quick checks to
+high-volume bounded-exhaustive sweeps.
 
 Prereqs:
 
@@ -73,6 +74,12 @@ Run a sweep in parallel and store logs:
 tools/run_oracle_validate.sh --jobs 12 --variants 20 --code-variants 8 --cases 20 --out oracle/_runs/latest
 ```
 
+To run an all-instruction extensive matrix (strict Lean-vs-Fift parity, multi-seed, high case counts):
+
+```sh
+tools/run_oracle_validate_extensive.sh
+```
+
 Optional env overrides:
 
 ```sh
@@ -90,6 +97,8 @@ Prereqs:
 
 - Node.js + `npm`
 - Optional: set `TONCENTER_API_KEY` to avoid rate limits (Toncenter)
+- TON `fift` (with `runvmx`) from the local TON repo
+- `TON_FIFT_BIN` and `TON_FIFT_LIB` environment variables
 
 Build the Lean diff-test runner:
 
@@ -103,6 +112,13 @@ Install + build the fixture collector:
 cd diff-test/collector
 npm install
 npm run build
+```
+
+Configure `fift` paths:
+
+```sh
+export TON_FIFT_BIN=/workspace/ton/build/crypto/fift
+export TON_FIFT_LIB=/workspace/ton/crypto/fift/lib
 ```
 
 Collect a single transaction fixture:

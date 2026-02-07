@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellStIntVar (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .stIntVar unsigned rev quiet =>
+      VM.checkUnderflow 3
       let maxBits : Nat := if unsigned then 256 else 257
       let bits ← VM.popNatUpTo maxBits
       let (x, b) ←

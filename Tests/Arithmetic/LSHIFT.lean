@@ -15,11 +15,12 @@ def testLshift : IO Unit := do
       | v => throw (IO.userError s!"lshift: unexpected stack value {v.pretty}")
 
   let (exitCodeXNan, stXNan) ← expectHalt (← runProg [ .pushInt .nan, .lshiftConst false 5 ])
-  expectExitOk "lshift(nan,5)" exitCodeXNan
+  -- LSHIFT is non-quiet: NaN inputs raise integer overflow (see TON `exec_lshift` + `push_int_quiet`).
+  expectExitExc "lshift(nan,5)" .intOv exitCodeXNan
   assert (stXNan.stack.size == 1) s!"lshift(nan,5): unexpected stack size={stXNan.stack.size}"
   match stXNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"lshift(nan,5): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"lshift(nan,5): expected 0, got {n}"
+  | v => throw (IO.userError s!"lshift(nan,5): expected 0, got {v.pretty}")
 
   let (exitCodeOv, _) ← expectHalt (← runProg [ .pushInt (.num 1), .lshiftConst false 256 ])
   expectExitExc "lshift(1,256)" .intOv exitCodeOv

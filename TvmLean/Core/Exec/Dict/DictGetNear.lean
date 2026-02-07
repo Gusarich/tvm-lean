@@ -2,11 +2,26 @@ import TvmLean.Core.Exec.Common
 
 namespace TvmLean
 
+private def dropFirstRootLoad (dictCell? : Option Cell) (loaded : Array Cell) : Array Cell :=
+  match dictCell? with
+  | none => loaded
+  | some root =>
+      Id.run do
+        let mut skipped : Bool := false
+        let mut out : Array Cell := #[]
+        for c in loaded do
+          if (!skipped) && c == root then
+            skipped := true
+          else
+            out := out.push c
+        out
+
 set_option maxHeartbeats 1000000 in
 def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .dictGetNear args4 =>
       -- Matches C++ `exec_dict_getnear` (dictops.cpp).
+      VM.checkUnderflow 3
       let allowEq : Bool := (args4 &&& 1) = 1
       let goUp : Bool := (args4 &&& 2) = 0
       let intKey : Bool := (args4 &&& 8) = 8
@@ -24,7 +39,11 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
               | some c => modify fun st => st.registerCellLoad c
               | none => pure ()
               match dictNearestWithCells dictCell? hintBits goUp allowEq sgnd with
-              | .error e => throw e
+              | .error e =>
+                  let loaded := dropFirstRootLoad dictCell? (dictNearestVisitedCells dictCell? hintBits goUp allowEq sgnd)
+                  for c in loaded do
+                    modify fun st => st.registerCellLoad c
+                  throw e
               | .ok r => pure r
           | none =>
               let cond : Bool := (decide (0 ≤ key)) != goUp
@@ -33,16 +52,16 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
                 | some c => modify fun st => st.registerCellLoad c
                 | none => pure ()
                 match dictMinMaxWithCells dictCell? n (!goUp) sgnd with
-                | .error e => throw e
+                | .error e =>
+                    let loaded := dropFirstRootLoad dictCell? (dictMinMaxVisitedCells dictCell? n (!goUp) sgnd)
+                    for c in loaded do
+                      modify fun st => st.registerCellLoad c
+                    throw e
                 | .ok r => pure r
               else
                 pure (none, #[])
 
-        let loaded :=
-          match dictCell? with
-          | none => loaded0
-          | some root => loaded0.filter (fun c => c != root)
-        for c in loaded do
+        for c in dropFirstRootLoad dictCell? loaded0 do
           modify fun st => st.registerCellLoad c
 
         match out? with
@@ -66,21 +85,17 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
         | some c => modify fun st => st.registerCellLoad c
         | none => pure ()
         match dictNearestWithCells dictCell? hintBits goUp allowEq false with
-        | .error e => throw e
-        | .ok (none, loaded) =>
-            let loaded :=
-              match dictCell? with
-              | none => loaded
-              | some root => loaded.filter (fun c => c != root)
+        | .error e =>
+            let loaded := dropFirstRootLoad dictCell? (dictNearestVisitedCells dictCell? hintBits goUp allowEq false)
             for c in loaded do
+              modify fun st => st.registerCellLoad c
+            throw e
+        | .ok (none, loaded) =>
+            for c in dropFirstRootLoad dictCell? loaded do
               modify fun st => st.registerCellLoad c
             VM.pushSmallInt 0
         | .ok (some (val, keyBits), loaded) =>
-            let loaded :=
-              match dictCell? with
-              | none => loaded
-              | some root => loaded.filter (fun c => c != root)
-            for c in loaded do
+            for c in dropFirstRootLoad dictCell? loaded do
               modify fun st => st.registerCellLoad c
             VM.push (.slice val)
             modify fun st => st.consumeGas cellCreateGasPrice

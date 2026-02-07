@@ -8,6 +8,7 @@ def execInstrCellSti (i : Instr) (next : VM Unit) : VM Unit := do
   | .sti bits =>
       if bits == 0 then
         throw .rangeChk
+      VM.checkUnderflow 2
       -- Match C++ operand order for `STI`: builder is on top, integer is below.
       let b ← VM.popBuilder
       let x ← VM.popInt

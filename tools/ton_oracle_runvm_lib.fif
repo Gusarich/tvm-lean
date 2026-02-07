@@ -46,14 +46,24 @@ variable stack_i
 {  // pushes Value
   dup "CB:" $pos 0= { 3 $| nip x>B B>boc } {
   dup "SB:" $pos 0= { 3 $| nip x>B B>boc <s } {
+  dup "C4" $= { drop <b 361 9 u, b> } {
+  dup "C3" $= { drop <b 50 6 u, b> } {
   dup "C2" $= { drop <b 10 4 u, b> } {
   dup "C1" $= { drop <b 1 1 u, b> } {
+  dup "S4" $= { drop <b 361 9 u, b> <s } {
+  dup "S3" $= { drop <b 50 6 u, b> <s } {
   dup "S2" $= { drop <b 10 4 u, b> <s } {
   dup "S1" $= { drop <b 1 1 u, b> <s } {
+  dup "B4" $= { drop <b 361 9 u, } {
+  dup "B3" $= { drop <b 50 6 u, } {
   dup "B2" $= { drop <b 10 4 u, } {
   dup "B1" $= { drop <b 1 1 u, } {
+  dup "T4" $= { drop <b 50 6 u, b> <b 50 6 u, b> <s <b 8 4 u, 3 32 i, b> <s vmcont@ swap drop 42 4 tuple } {
+  dup "T3" $= { drop <b 1 1 u, b> -1 <b 10 4 u, b> <s 3 tuple } {
   dup "T2" $= { drop 1 2 2 tuple } {
   dup "T1" $= { drop 1 1 tuple } {
+  dup "K4" $= { drop <b 8 4 u, 4 32 i, b> <s vmcont@ swap drop } {
+  dup "K3" $= { drop <b 8 4 u, 3 32 i, b> <s vmcont@ swap drop } {
   dup "K2" $= { drop <b 8 4 u, 2 32 i, b> <s vmcont@ swap drop } {
   dup "K1" $= { drop <b 8 4 u, 1 32 i, b> <s vmcont@ swap drop } {
   dup "I" $= { drop 0 } {
@@ -62,9 +72,9 @@ variable stack_i
   dup "S" $= { drop <b b> <s } {
   dup "B" $= { drop <b } {
   dup "T" $= { drop nil } {
-	  dup "K" $= { drop <b 8 4 u, 0 32 i, b> <s vmcont@ swap drop } {
-	    parse-int
-	  } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond
+  dup "K" $= { drop <b 8 4 u, 0 32 i, b> <s vmcont@ swap drop } {
+    parse-int
+  } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond
 } : push-token
 
 // ( header$ tuple n i conv acc$ -- header$ conv acc$ )
@@ -106,6 +116,8 @@ recursive val>$ {
       } {
         dup (dump)
         dup "C{null}" $= { 2drop "null" } {
+        dup "CS{null}" $= { 2drop "null" } {
+        dup "BC{null}" $= { 2drop "null" } {
         dup "C{" $pos 0= { drop cell>hash$ "cell:" swap $+ } {
           dup "CS{" $pos 0= { drop slice>hash$ "slice:" swap $+ } {
             dup "BC{" $pos 0= { drop builder>hash$ "builder:" swap $+ } {
@@ -114,7 +126,7 @@ recursive val>$ {
               } cond
             } cond
           } cond
-        } cond } cond
+        } cond } cond } cond } cond
       } cond
     } cond
   } cond

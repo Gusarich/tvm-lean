@@ -31,11 +31,12 @@ def testMuldiv : IO Unit := do
 
   let (exitCodeZ, stZ) ←
     expectHalt (← runProg [ .pushInt (.num 5), .pushInt (.num 4), .pushInt (.num 0), .mulDivMod 1 (-1) false false ])
-  expectExitOk "muldiv(5,4,0)" exitCodeZ
+  -- MULDIV is non-quiet: division by zero returns NaN internally, then `push_int_quiet` raises int overflow.
+  expectExitExc "muldiv(5,4,0)" .intOv exitCodeZ
   assert (stZ.stack.size == 1) s!"muldiv(5,4,0): unexpected stack size={stZ.stack.size}"
   match stZ.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"muldiv(5,4,0): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"muldiv(5,4,0): expected 0, got {n}"
+  | v => throw (IO.userError s!"muldiv(5,4,0): expected 0, got {v.pretty}")
 
   let (exitCodeOv, _) ←
     expectHalt (← runProg [ .pushInt (.num bigMulA), .pushInt (.num bigMulB), .pushInt (.num 1), .mulDivMod 1 (-1) false false ])

@@ -44,10 +44,12 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
   | .cellExt op =>
       match op with
       | .btos =>
+          VM.checkUnderflow 1
           let b ← VM.popBuilder
           let c : Cell := b.finalize
           VM.push (.slice (Slice.ofCell c))
       | .stLeInt unsigned bytes =>
+          VM.checkUnderflow 2
           if bytes != 4 ∧ bytes != 8 then
             throw .rangeChk
           let bits : Nat := bytes * 8
@@ -66,22 +68,29 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
                   intSignedFitsBits n bits
               if !ok then
                 throw .rangeChk
-              match intToBitsTwos n bits with
-              | .error e => throw e
-              | .ok be =>
-                  let le := leBytesToBitString be bytes
-                  VM.push (.builder (b.storeBits le))
+              let be : BitString ←
+                if unsigned then
+                  pure (natToBits n.toNat bits)
+                else
+                  match intToBitsTwos n bits with
+                  | .error e => throw e
+                  | .ok bs => pure bs
+              let le := leBytesToBitString be bytes
+              VM.push (.builder (b.storeBits le))
       | .stRefConst c =>
+          VM.checkUnderflow 1
           let b ← VM.popBuilder
           if !b.canExtendBy 0 1 then
             throw .cellOv
           VM.push (.builder { b with refs := b.refs.push c })
       | .stRef2Const c1 c2 =>
+          VM.checkUnderflow 1
           let b ← VM.popBuilder
           if !b.canExtendBy 0 2 then
             throw .cellOv
           VM.push (.builder { b with refs := (b.refs.push c1).push c2 })
       | .hashbu =>
+          VM.checkUnderflow 1
           let b ← VM.popBuilder
           let c : Cell := b.finalize
           let h : Nat := bytesToNatBE (Cell.hashBytes c)
@@ -89,6 +98,7 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
       | .cdataSize _ | .sdataSize _ =>
           next
       | .plduz c =>
+          VM.checkUnderflow 1
           -- Mirrors TON `exec_preload_uint_fixed_0e` (cellops.cpp): prefetch `bits` with zero-extension.
           let bits : Nat := 32 * (c + 1)
           let s ← VM.popSlice
@@ -98,6 +108,7 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
           VM.push (.slice s)
           VM.push (.int (.num (Int.ofNat u')))
       | .ldVarInt signed kind =>
+          VM.checkUnderflow 1
           -- Mirrors TON `exec_load_var_integer` with quiet=false (tonops.cpp).
           let lenBits : Nat ←
             if kind = 16 then
@@ -120,6 +131,7 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
           VM.push (.int (.num n))
           VM.push (.slice (s1.advanceBits dataBits))
       | .stVarInt signed kind =>
+          VM.checkUnderflow 2
           -- Mirrors TON `exec_store_var_integer` with quiet=false (tonops.cpp).
           let lenBits : Nat ←
             if kind = 16 then
@@ -157,6 +169,7 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
               let bs := natToBits lenBytes lenBits ++ payload
               VM.push (.builder (b.storeBits bs))
       | .xload quiet =>
+          VM.checkUnderflow 1
           -- Mirrors TON `exec_load_special_cell` (cellops.cpp) for modern TVM:
           -- - Always charges a cell load for the popped cell.
           -- - Resolves library exotic cells via the library collections in `VmState.libraries`.

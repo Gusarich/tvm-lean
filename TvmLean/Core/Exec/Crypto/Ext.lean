@@ -356,22 +356,24 @@ def execInstrCryptoExt (i : Instr) (next : VM Unit) : VM Unit := do
           if st0.stack.size < 3 then
             throw .stkUnd
           modify fun st => st.consumeGas blsVerifyGasPrice
-          let sigSlice ← VM.popSlice
-          let msgSlice ← VM.popSlice
-          let pubSlice ← VM.popSlice
-
           let sigBytes ←
-            match sigSlice.prefetchBytesCellUnd 96 with
-            | .ok bs => pure bs
-            | .error e => throw e
+            do
+              let sigSlice ← VM.popSlice
+              match sigSlice.prefetchBytesCellUnd 96 with
+              | .ok bs => pure bs
+              | .error e => throw e
           let msgBytes ←
-            match sliceToFullBytes msgSlice with
-            | .ok bs => pure bs
-            | .error e => throw e
+            do
+              let msgSlice ← VM.popSlice
+              match sliceToFullBytes msgSlice with
+              | .ok bs => pure bs
+              | .error e => throw e
           let pubBytes ←
-            match pubSlice.prefetchBytesCellUnd 48 with
-            | .ok bs => pure bs
-            | .error e => throw e
+            do
+              let pubSlice ← VM.popSlice
+              match pubSlice.prefetchBytesCellUnd 48 with
+              | .ok bs => pure bs
+              | .error e => throw e
 
           let ok := blsVerify (ByteArray.mk pubBytes) (ByteArray.mk msgBytes) (ByteArray.mk sigBytes)
           VM.pushSmallInt (if ok then (-1) else 0)
@@ -472,11 +474,11 @@ def execInstrCryptoExt (i : Instr) (next : VM Unit) : VM Unit := do
             throw .stkUnd
           modify fun st => st.consumeGas blsG1AddSubGasPrice
           let b ← VM.popSlice
-          let a ← VM.popSlice
           let bb ←
             match b.prefetchBytesCellUnd 48 with
             | .ok bs => pure bs
             | .error e => throw e
+          let a ← VM.popSlice
           let ab ←
             match a.prefetchBytesCellUnd 48 with
             | .ok bs => pure bs
@@ -492,11 +494,11 @@ def execInstrCryptoExt (i : Instr) (next : VM Unit) : VM Unit := do
             throw .stkUnd
           modify fun st => st.consumeGas blsG1AddSubGasPrice
           let b ← VM.popSlice
-          let a ← VM.popSlice
           let bb ←
             match b.prefetchBytesCellUnd 48 with
             | .ok bs => pure bs
             | .error e => throw e
+          let a ← VM.popSlice
           let ab ←
             match a.prefetchBytesCellUnd 48 with
             | .ok bs => pure bs
@@ -645,11 +647,11 @@ def execInstrCryptoExt (i : Instr) (next : VM Unit) : VM Unit := do
             throw .stkUnd
           modify fun st => st.consumeGas blsG2AddSubGasPrice
           let b ← VM.popSlice
-          let a ← VM.popSlice
           let bb ←
             match b.prefetchBytesCellUnd 96 with
             | .ok bs => pure bs
             | .error e => throw e
+          let a ← VM.popSlice
           let ab ←
             match a.prefetchBytesCellUnd 96 with
             | .ok bs => pure bs
@@ -665,11 +667,11 @@ def execInstrCryptoExt (i : Instr) (next : VM Unit) : VM Unit := do
             throw .stkUnd
           modify fun st => st.consumeGas blsG2AddSubGasPrice
           let b ← VM.popSlice
-          let a ← VM.popSlice
           let bb ←
             match b.prefetchBytesCellUnd 96 with
             | .ok bs => pure bs
             | .error e => throw e
+          let a ← VM.popSlice
           let ab ←
             match a.prefetchBytesCellUnd 96 with
             | .ok bs => pure bs

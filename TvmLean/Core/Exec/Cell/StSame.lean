@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellStSame (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .stSame =>
+      VM.checkUnderflow 3
       let vNat ← VM.popNatUpTo 1
       let bits ← VM.popNatUpTo 1023
       let b ← VM.popBuilder

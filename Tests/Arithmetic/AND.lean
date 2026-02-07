@@ -12,11 +12,12 @@ def testAnd : IO Unit := do
   | v => throw (IO.userError s!"and(-1,15): unexpected stack value {v.pretty}")
 
   let (exitCodeNan, stNan) ← expectHalt (← runProg [ .pushInt .nan, .pushInt (.num 1), .and_ ])
-  expectExitOk "and(nan,1)" exitCodeNan
+  -- AND is non-quiet: NaN operands raise integer overflow (see TON `exec_and` + `push_int_quiet`).
+  expectExitExc "and(nan,1)" .intOv exitCodeNan
   assert (stNan.stack.size == 1) s!"and(nan,1): unexpected stack size={stNan.stack.size}"
   match stNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"and(nan,1): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"and(nan,1): expected 0, got {n}"
+  | v => throw (IO.userError s!"and(nan,1): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/and" testAnd

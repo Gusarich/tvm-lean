@@ -7,6 +7,7 @@ def execInstrCellStref (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .stref =>
       -- Stack: ... cell builder -- ...  (builder on top)
+      VM.checkUnderflow 2
       let b ← VM.popBuilder
       let c ← VM.popCell
       if b.canExtendBy 0 1 then
@@ -15,6 +16,7 @@ def execInstrCellStref (i : Instr) (next : VM Unit) : VM Unit := do
         throw .cellOv
   | .strefq =>
       -- Stack: ... cell builder -- ...  (builder on top)
+      VM.checkUnderflow 2
       let b ← VM.popBuilder
       let c ← VM.popCell
       if b.canExtendBy 0 1 then

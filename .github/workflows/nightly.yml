@@ -16,7 +16,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsodium-dev
+          sudo apt-get install -y libsodium-dev cmake ninja-build gperf ccache libsecp256k1-dev libmicrohttpd-dev
 
       - name: Restore elan toolchain cache
         uses: actions/cache/restore@v4
@@ -62,6 +62,14 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build TON fift
+        run: |
+          git clone --depth 1 https://github.com/ton-blockchain/ton.git /tmp/ton
+          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/ton/build --target fift -j"$(nproc)"
+          echo "TON_FIFT_BIN=/tmp/ton/build/crypto/fift" >> "$GITHUB_ENV"
+          echo "TON_FIFT_LIB=/tmp/ton/crypto/fift/lib" >> "$GITHUB_ENV"
+
       - name: Collect + run Lean on mainnet (previous UTC day)
         run: |
           SINCE="$(date -u -d 'yesterday' +%Y-%m-%d)"
@@ -74,7 +82,6 @@ jobs:
             --until "$UNTIL" \
             --max-fixtures 50 \
             --batch-size 50 \
-            --expected-state \
             --run-lean \
             --results "../nightly_${SINCE}_results.jsonl" \
             --out-dir "../fixtures_sweep_tmp" \

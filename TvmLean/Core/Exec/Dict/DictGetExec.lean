@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrDictDictGetExec (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .dictGetExec unsigned doCall pushZ =>
+      VM.checkUnderflow 3
       let n ← VM.popNatUpTo 1023
       let dictCell? ← VM.popMaybeCell
       let idx ← VM.popIntFinite
@@ -16,10 +17,25 @@ def execInstrDictDictGetExec (i : Instr) (next : VM Unit) : VM Unit := do
           else
             pure ()
       | some keyBits =>
+          -- Match C++ `Dictionary` lookup path: entering dictionary traversal loads root once.
+          match dictCell? with
+          | some c => modify fun st => st.registerCellLoad c
+          | none => pure ()
           match dictLookupWithCells dictCell? keyBits with
           | .error e =>
+              let loadedAll := dictLookupVisitedCells dictCell? keyBits
+              let loaded :=
+                match dictCell? with
+                | none => loadedAll
+                | some root => loadedAll.filter (fun c => c != root)
+              for c in loaded do
+                modify fun st => st.registerCellLoad c
               throw e
-          | .ok (res?, loaded) =>
+          | .ok (res?, loaded0) =>
+              let loaded :=
+                match dictCell? with
+                | none => loaded0
+                | some root => loaded0.filter (fun c => c != root)
               for c in loaded do
                 modify fun st => st.registerCellLoad c
               match res? with

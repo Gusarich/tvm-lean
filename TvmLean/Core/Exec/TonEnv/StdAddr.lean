@@ -76,6 +76,7 @@ def execInstrTonEnvStdAddr (i : Instr) (next : VM Unit) : VM Unit := do
   | .tonEnvOp (.stStdAddr _quiet) =>
       let quiet := _quiet
       -- Stack: ... slice builder -- ...
+      VM.checkUnderflow 2
       let b ← VM.popBuilder
       let cs ← VM.popSlice
       let c := cs.toCellRemaining
@@ -95,6 +96,7 @@ def execInstrTonEnvStdAddr (i : Instr) (next : VM Unit) : VM Unit := do
   | .tonEnvOp (.stOptStdAddr _quiet) =>
       let quiet := _quiet
       -- Stack: ... (slice|null) builder -- ...
+      VM.checkUnderflow 2
       let b ← VM.popBuilder
       let v ← VM.pop
       match v with
@@ -128,7 +130,8 @@ def execInstrTonEnvStdAddr (i : Instr) (next : VM Unit) : VM Unit := do
               throw .cellOv
       | _ =>
           if quiet then
-            VM.push v
+            -- C++ pushes `as_slice()` result (null) on quiet type mismatch.
+            VM.push .null
             VM.push (.builder b)
             VM.pushSmallInt (-1)
           else

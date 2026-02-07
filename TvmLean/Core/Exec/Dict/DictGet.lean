@@ -29,6 +29,13 @@ def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
           | none => pure ()
           match dictLookupWithCells dictCell? keyBits with
           | .error e =>
+              let loadedAll := dictLookupVisitedCells dictCell? keyBits
+              let loaded :=
+                match dictCell? with
+                | none => loadedAll
+                | some root => loadedAll.filter (fun c => c != root)
+              for c in loaded do
+                modify fun st => st.registerCellLoad c
               throw e
           | .ok (none, loaded) =>
               let loaded :=

@@ -8,6 +8,7 @@ def execInstrContSetContVarArgs (i : Instr) (next : VM Unit) : VM Unit := do
   | .setContVarArgs =>
       -- Mirrors `SETCONTVARARGS` from `crypto/vm/contops.cpp` (exec_setcont_varargs + exec_setcontargs_common).
       -- Stack effect: ... <args...> cont copy more -- ... cont
+      VM.checkUnderflow 2
       let more ← VM.popIntFinite
       if decide (more < -1 ∨ more > 255) then
         throw .rangeChk

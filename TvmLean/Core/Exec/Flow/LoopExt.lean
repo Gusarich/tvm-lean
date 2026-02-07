@@ -26,6 +26,7 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
   | .contExt op =>
       match op with
       | .repeat brk =>
+          VM.checkUnderflow 2
           let body ← VM.popCont
           let c ← popSmallintRepeatCount
           if c ≤ 0 then
@@ -39,6 +40,7 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
             let (st', after) := if brk then st.c1Envelope afterRaw else (st, afterRaw)
             set { st' with cc := .repeatBody body after c.toNat }
       | .repeatEnd brk =>
+          VM.checkUnderflow 1
           let c ← popSmallintRepeatCount
           if c ≤ 0 then
             VM.ret
@@ -49,6 +51,7 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
             let (st', after) := if brk then st.c1Envelope afterRaw else (st, afterRaw)
             set { st' with cc := .repeatBody body after c.toNat }
       | .until brk =>
+          VM.checkUnderflow 1
           let body ← VM.popCont
           let st ← get
           let afterRaw :=
@@ -70,6 +73,7 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
           else
             set { st' with regs := { st'.regs with c0 := .untilBody body after }, cc := body }
       | .while brk =>
+          VM.checkUnderflow 2
           let body ← VM.popCont
           let cond ← VM.popCont
           let st ← get
@@ -80,6 +84,7 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
           let (st', after) := if brk then st.c1Envelope afterRaw else (st, afterRaw)
           set { st' with regs := { st'.regs with c0 := .whileCond cond body after }, cc := cond }
       | .whileEnd brk =>
+          VM.checkUnderflow 1
           let cond ← VM.popCont
           let st ← get
           let body := st.cc
@@ -87,6 +92,7 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
           let (st', after) := if brk then st.c1Envelope afterRaw else (st, afterRaw)
           set { st' with regs := { st'.regs with c0 := .whileCond cond body after }, cc := cond }
       | .again brk =>
+          VM.checkUnderflow 1
           let body ← VM.popCont
           let st ← get
           if brk then
@@ -103,11 +109,11 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
           set { st with cc := .againBody st.cc }
       | .jmpDict idx =>
           VM.pushSmallInt (Int.ofNat idx)
-          modify fun st => st.jumpTo st.regs.c3
+          let st ← get
+          VM.jump st.regs.c3
       | _ =>
           next
   | _ =>
       next
 
 end TvmLean
-

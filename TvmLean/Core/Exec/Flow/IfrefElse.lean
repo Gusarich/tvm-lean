@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrFlowIfrefElse (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .ifrefElse code =>
+      VM.checkUnderflow 2
       let cont ← VM.popCont
       if (← VM.popBool) then
         modify fun st => st.registerCellLoad code.cell

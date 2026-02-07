@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellStbRef (i : Instr) (next : VM Unit) : VM Unit := do
   let handle (rev quiet : Bool) : VM Unit := do
     -- Matches C++ `exec_store_builder_as_ref(_rev)` (cellops.cpp).
+    VM.checkUnderflow 2
     if rev then
       -- Stack: ... builder cb2 -- ...  (cb2 on top)
       let cb2 ← VM.popBuilder

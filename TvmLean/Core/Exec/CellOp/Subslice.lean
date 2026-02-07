@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execCellOpSubslice (op : CellInstr) (next : VM Unit) : VM Unit := do
   match op with
   | .subslice =>
+      VM.checkUnderflow 5
       let r2 ← VM.popNatUpTo 4
       let l2 ← VM.popNatUpTo 1023
       let r1 ← VM.popNatUpTo 4

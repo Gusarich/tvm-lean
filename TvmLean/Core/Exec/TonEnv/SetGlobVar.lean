@@ -6,6 +6,8 @@ set_option maxHeartbeats 1000000 in
 def execInstrTonEnvSetGlobVar (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .tonEnvOp .setGlobVar =>
+      -- Match C++: check stack underflow before decoding index from the stack.
+      VM.checkUnderflow 2
       let idx ← VM.popNatUpTo 254
       let x ← VM.pop
       let st ← get

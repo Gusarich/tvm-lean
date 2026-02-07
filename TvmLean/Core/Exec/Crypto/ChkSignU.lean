@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCryptoChkSignU (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .cryptoOp .chkSignU =>
+      VM.checkUnderflow 3
       let key ← VM.popInt
       let sigSlice ← VM.popSlice
       let hash ← VM.popInt

@@ -22,11 +22,12 @@ def testMulmod : IO Unit := do
 
   let (exitCodeZ, stZ) ←
     expectHalt (← runProg [ .pushInt (.num 5), .pushInt (.num 4), .pushInt (.num 0), .mulDivMod 2 (-1) false false ])
-  expectExitOk "mulmod(5,4,0)" exitCodeZ
+  -- MULMOD is non-quiet: division by zero returns NaN internally, then `push_int_quiet` raises int overflow.
+  expectExitExc "mulmod(5,4,0)" .intOv exitCodeZ
   assert (stZ.stack.size == 1) s!"mulmod(5,4,0): unexpected stack size={stZ.stack.size}"
   match stZ.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"mulmod(5,4,0): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"mulmod(5,4,0): expected 0, got {n}"
+  | v => throw (IO.userError s!"mulmod(5,4,0): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/mulmod" testMulmod

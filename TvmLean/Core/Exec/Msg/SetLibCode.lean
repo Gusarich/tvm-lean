@@ -8,6 +8,7 @@ def execInstrMsgSetLibCode (i : Instr) (next : VM Unit) : VM Unit := do
   | .tonEnvOp .setLibCode =>
       -- Mirrors C++ `exec_set_lib_code` (tonops.cpp) for global_version >= 4:
       -- mode ∈ {0,1,2} ∪ {16,17,18}; other values are rangeChk.
+      VM.checkUnderflow 2
       let mode ← VM.popNatUpTo 31
       if (mode &&& 0x0f) > 2 then
         throw .rangeChk
@@ -22,4 +23,3 @@ def execInstrMsgSetLibCode (i : Instr) (next : VM Unit) : VM Unit := do
   | _ => next
 
 end TvmLean
-

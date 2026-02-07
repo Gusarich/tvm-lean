@@ -14,11 +14,12 @@ def testRshiftVar : IO Unit := do
 
   let (exitCodeNan, stNan) ←
     expectHalt (← runProg [ .pushInt .nan, .pushInt (.num 5), .rshift ])
-  expectExitOk "rshift_var(nan,5)" exitCodeNan
+  -- RSHIFT is non-quiet: NaN inputs raise integer overflow (see TON `exec_rshift` + `push_int_quiet`).
+  expectExitExc "rshift_var(nan,5)" .intOv exitCodeNan
   assert (stNan.stack.size == 1) s!"rshift_var(nan,5): unexpected stack size={stNan.stack.size}"
   match stNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"rshift_var(nan,5): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"rshift_var(nan,5): expected 0, got {n}"
+  | v => throw (IO.userError s!"rshift_var(nan,5): expected 0, got {v.pretty}")
 
   let (exitCodeBadShift, _) ←
     expectHalt (← runProg [ .pushInt (.num 1), .pushInt (.num 1024), .rshift ])

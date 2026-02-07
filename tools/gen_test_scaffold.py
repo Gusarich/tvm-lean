@@ -101,6 +101,7 @@ def main() -> int:
         lines.append("")
         lines.append("import Tests.Boc")
         lines.append("import Tests.Counter")
+        lines.append("import Tests.OracleParity")
         lines.append("")
         for cat_dir, mod_name in modules_sorted:
             lines.append(f"import Tests.{cat_dir}.{mod_name}")
@@ -112,4 +113,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

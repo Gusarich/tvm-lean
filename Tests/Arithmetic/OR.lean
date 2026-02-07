@@ -12,11 +12,12 @@ def testOr : IO Unit := do
   | v => throw (IO.userError s!"or(0,5): unexpected stack value {v.pretty}")
 
   let (exitCodeNan, stNan) ← expectHalt (← runProg [ .pushInt (.num 1), .pushInt .nan, .or ])
-  expectExitOk "or(1,nan)" exitCodeNan
+  -- OR is non-quiet: NaN inputs raise integer overflow (see TON `exec_or` + `push_int_quiet`).
+  expectExitExc "or(1,nan)" .intOv exitCodeNan
   assert (stNan.stack.size == 1) s!"or(1,nan): unexpected stack size={stNan.stack.size}"
   match stNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"or(1,nan): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"or(1,nan): expected 0, got {n}"
+  | v => throw (IO.userError s!"or(1,nan): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/or" testOr

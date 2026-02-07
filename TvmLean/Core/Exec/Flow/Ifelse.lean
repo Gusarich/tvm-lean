@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrFlowIfelse (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .ifelse =>
+      VM.checkUnderflow 3
       let cont0 ← VM.popCont
       let cont1 ← VM.popCont
       if (← VM.popBool) then

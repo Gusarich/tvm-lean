@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execTupleOpSetIndexVarQ (op : TupleInstr) (next : VM Unit) : VM Unit := do
   match op with
   | .setIndexVarQ =>
+      VM.checkUnderflow 3
       let idx ← VM.popNatUpTo 254
       let x ← VM.pop
       let v ← VM.pop

@@ -15,11 +15,12 @@ def testRshift : IO Unit := do
       | v => throw (IO.userError s!"rshift: unexpected stack value {v.pretty}")
 
   let (exitCodeXNan, stXNan) ← expectHalt (← runProg [ .pushInt .nan, .rshiftConst false 5 ])
-  expectExitOk "rshift(nan,5)" exitCodeXNan
+  -- RSHIFT is non-quiet: NaN inputs raise integer overflow (see TON `exec_rshift` + `push_int_quiet`).
+  expectExitExc "rshift(nan,5)" .intOv exitCodeXNan
   assert (stXNan.stack.size == 1) s!"rshift(nan,5): unexpected stack size={stXNan.stack.size}"
   match stXNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"rshift(nan,5): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"rshift(nan,5): expected 0, got {n}"
+  | v => throw (IO.userError s!"rshift(nan,5): expected 0, got {v.pretty}")
 
 initialize
   Tests.registerTest "arith/rshift" testRshift

@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellStSlice (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .stSlice rev quiet =>
+      VM.checkUnderflow 2
       let (b, s) ←
         if rev then
           -- Stack: ... builder slice -- ...

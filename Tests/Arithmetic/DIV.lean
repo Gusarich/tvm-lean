@@ -28,19 +28,21 @@ def testDiv : IO Unit := do
 
   let (exitCodeZ, stZ) ←
     expectHalt (← runProg [ .pushInt (.num 1), .pushInt (.num 0), .divMod 1 (-1) false false ])
-  expectExitOk "div(1,0)" exitCodeZ
+  -- DIV is non-quiet: division by zero returns NaN internally, then `push_int_quiet` raises int overflow.
+  expectExitExc "div(1,0)" .intOv exitCodeZ
   assert (stZ.stack.size == 1) s!"div(1,0): unexpected stack size={stZ.stack.size}"
   match stZ.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"div(1,0): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"div(1,0): expected 0, got {n}"
+  | v => throw (IO.userError s!"div(1,0): expected 0, got {v.pretty}")
 
   let (exitCodeNan, stNan) ←
     expectHalt (← runProg [ .pushInt .nan, .pushInt (.num 3), .divMod 1 (-1) false false ])
-  expectExitOk "div(nan,3)" exitCodeNan
+  -- DIV is non-quiet: NaN propagates to the result and triggers int overflow on push.
+  expectExitExc "div(nan,3)" .intOv exitCodeNan
   assert (stNan.stack.size == 1) s!"div(nan,3): unexpected stack size={stNan.stack.size}"
   match stNan.stack[0]! with
-  | .int .nan => pure ()
-  | v => throw (IO.userError s!"div(nan,3): expected NaN, got {v.pretty}")
+  | .int (.num n) => assert (n == 0) s!"div(nan,3): expected 0, got {n}"
+  | v => throw (IO.userError s!"div(nan,3): expected 0, got {v.pretty}")
 
   -- The only in-range division overflow case: MIN_INT / -1.
   let (exitCodeOv, _) ←

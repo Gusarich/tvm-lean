@@ -19,6 +19,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrFlowIfBitJmp (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .contExt (.ifbitjmp idx) =>
+      VM.checkUnderflow 2
       let body ← VM.popCont
       let x ← VM.fetch 0
       match x with
@@ -29,6 +30,7 @@ def execInstrFlowIfBitJmp (i : Instr) (next : VM Unit) : VM Unit := do
           | .error e => throw e
       | _ => throw .typeChk
   | .contExt (.ifnbitjmp idx) =>
+      VM.checkUnderflow 2
       let body ← VM.popCont
       let x ← VM.fetch 0
       match x with
