@@ -510,6 +510,7 @@ inductive Instr : Type
   | sdBeginsX (quiet : Bool)        -- SDBEGINSX{Q}
   | sdBeginsConst (quiet : Bool) (pref : Slice) -- SDBEGINS{Q} <const>
   | lessInt (n : Int) -- LESSINT <tinyint8>
+  | qlessInt (n : Int) -- QLESSINT <tinyint8>
   | eqInt (n : Int)   -- EQINT <tinyint8>
   | gtInt (n : Int)   -- GTINT <tinyint8>
   | neqInt (n : Int)  -- NEQINT <tinyint8>
@@ -1247,6 +1248,7 @@ def Instr.pretty : Instr → String
       let q := if quiet then "Q" else ""
       s!"SDBEGINS{q}(bits={pref.bitsRemaining})"
   | .lessInt n => s!"LESSINT {n}"
+  | .qlessInt n => s!"QLESSINT {n}"
   | .eqInt n => s!"EQINT {n}"
   | .gtInt n => s!"GTINT {n}"
   | .neqInt n => s!"NEQINT {n}"
@@ -1460,6 +1462,7 @@ instance : BEq Instr := ⟨fun a b =>
   | .sdBeginsConst qx sx, .sdBeginsConst qy sy =>
       qx == qy && sx.bitPos == sy.bitPos && sx.refPos == sy.refPos && sx.cell == sy.cell
   | .lessInt x, .lessInt y => x == y
+  | .qlessInt x, .qlessInt y => x == y
   | .eqInt x, .eqInt y => x == y
   | .gtInt x, .gtInt y => x == y
   | .neqInt x, .neqInt y => x == y

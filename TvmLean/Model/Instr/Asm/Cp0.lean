@@ -1252,6 +1252,12 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         return natToBits 0xc1 8 ++ natToBits imm 8
       else
         throw .rangeChk
+  | .qlessInt n =>
+      if decide (-128 ≤ n ∧ n ≤ 127) then
+        let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
+        return natToBits 0xb7c1 16 ++ natToBits imm 8
+      else
+        throw .rangeChk
   | .eqInt n =>
       if decide (-128 ≤ n ∧ n ≤ 127) then
         let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
