@@ -6,6 +6,10 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithMulDivMod (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .mulDivMod d roundMode addMode quiet =>
+      let st ← get
+      let need : Nat := if addMode then 4 else 3
+      if st.stack.size < need then
+        throw .stkUnd
       -- Matches C++ `exec_muldivmod` (arithops.cpp).
       let z ← VM.popInt
       let w ←
