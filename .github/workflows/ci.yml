@@ -16,7 +16,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsodium-dev
+          sudo apt-get install -y libsodium-dev cmake ninja-build gperf ccache libsecp256k1-dev libmicrohttpd-dev
 
       - name: Restore elan toolchain cache
         uses: actions/cache/restore@v4
@@ -50,6 +50,21 @@ jobs:
       - name: Build core + validation + tests
         run: |
           lake build TvmLeanModel TvmLeanSemantics TvmLeanNative TvmLeanValidation TvmLeanTests
+
+      - name: Build TON fift
+        run: |
+          git clone --depth 1 https://github.com/ton-blockchain/ton.git /tmp/ton
+          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/ton/build --target fift -j"$(nproc)"
+          echo "TON_FIFT_BIN=/tmp/ton/build/crypto/fift" >> "$GITHUB_ENV"
+          echo "TON_FIFT_LIB=/tmp/ton/crypto/fift/lib" >> "$GITHUB_ENV"
+
+      - name: Verify oracle runtime
+        run: |
+          test -x "$TON_FIFT_BIN"
+          test -d "$TON_FIFT_LIB"
+          test -f "oracle/fif/ton_oracle_runvm.fif"
+          test -f "oracle/fif/ton_oracle_runvm_lib.fif"
 
       - name: Unit tests
         run: lake exe tvm-lean-tests
