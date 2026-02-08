@@ -1,0 +1,15 @@
+{
+  "all_passed": true,
+  "runs": [
+    {
+      "fail": 0,
+      "failures": [],
+      "pass": 2,
+      "run_dir": "oracle/smoke/_smoke_extensive2/seed_1",
+      "summary_path": "oracle/smoke/_smoke_extensive2/seed_1/summary.json",
+      "total": 2
+    }
+  ],
+  "total_runs": 1,
+  "union_failures": []
+}

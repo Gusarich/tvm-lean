@@ -12,7 +12,7 @@ Defaults:
 Examples:
   tools/run_oracle_validate_matrix.sh --seeds 4040,9001,1337 --variants 220 --code-variants 64 --cases 1024
   tools/run_oracle_validate_matrix.sh --seeds 1,7,42 --variants 64 --code-variants 64 --cases auto
-  tools/run_oracle_validate_matrix.sh --seeds 1,2,3 --limit 200 --out oracle/_runs/matrix_smoke
+  tools/run_oracle_validate_matrix.sh --seeds 1,2,3 --limit 200 --out oracle/runs/matrix_smoke
 EOF
 }
 
@@ -46,7 +46,7 @@ done
 
 if [[ -z "$OUT" ]]; then
   ts="$(date +%Y%m%d_%H%M%S)"
-  OUT="${ROOT}/oracle/_runs/matrix_${ts}"
+  OUT="${ROOT}/oracle/runs/matrix_${ts}"
 fi
 mkdir -p "$OUT"
 

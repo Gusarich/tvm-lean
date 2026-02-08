@@ -1,0 +1,43 @@
+// TON TVM oracle runner (via `fift` / `runvmx`).
+//
+// Usage:
+//   /Users/daniil/Coding/ton/build/crypto/fift -I/Users/daniil/Coding/ton/crypto/fift/lib -s oracle/fif/ton_oracle_runvm.fif \
+//     <code_boc_hex> [stack_args...]
+//
+// `code_boc_hex` is a hex-encoded BOC of a *code cell* (no 0x prefix).
+//
+// `stack_args` are initial VM stack values, in left-to-right order (bottom -> top):
+//   I   -> push int 0
+//   N   -> push null
+//   C   -> push empty cell
+//   S   -> push empty slice
+//   B   -> push empty builder
+//   T   -> push empty tuple (nil)
+//   K   -> push quit continuation (exit_code=0)
+//   CB:<boc_hex> -> push Cell from hex-encoded BOC
+//   SB:<boc_hex> -> push Slice from hex-encoded BOC
+//   <n> -> push integer parsed from decimal string (e.g. "-3", "10")
+//
+// Output is produced by `oracle-run` from `oracle/fif/ton_oracle_runvm_lib.fif`:
+//   EXIT  <exit_code>
+//   GAS   <gas_used>
+//   C4    <hash256>
+//   C5    <hash256>
+//   DEPTH <stack_depth>
+//   STACK <idx_from_top> <val>
+
+"oracle/fif/ton_oracle_runvm_lib.fif" include
+
+variable argi
+
+// Push initial stack args from $2..$#
+2 argi !
+$# 1- {
+  argi @ $() push-token
+  argi @ 1+ argi !
+} swap times
+
+// Run and print
+$1 oracle-run
+
+bye

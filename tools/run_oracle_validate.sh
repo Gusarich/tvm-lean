@@ -14,13 +14,13 @@ Examples:
   tools/run_oracle_validate.sh --limit 50
   tools/run_oracle_validate.sh --only ADDINT --verbose
   tools/run_oracle_validate.sh --variants 64 --code-variants 64 --cases auto
-  tools/run_oracle_validate.sh --jobs 12 --out oracle/_runs/latest
+  tools/run_oracle_validate.sh --jobs 12 --out oracle/runs/latest
 
 Env overrides (optional):
   TON_FIFT_BIN=/Users/daniil/Coding/ton/build/crypto/fift
   TON_FIFT_LIB=/Users/daniil/Coding/ton/crypto/fift/lib
-  TVMLEANTON_ORACLE_FIF=tools/ton_oracle_runvm.fif
-  TVMLEANTON_ORACLE_LIB_FIF=tools/ton_oracle_runvm_lib.fif
+  TVMLEANTON_ORACLE_FIF=oracle/fif/ton_oracle_runvm.fif
+  TVMLEANTON_ORACLE_LIB_FIF=oracle/fif/ton_oracle_runvm_lib.fif
 EOF
 }
 
@@ -66,7 +66,7 @@ done
 
 if [[ -z "$OUT" ]]; then
   ts="$(date +%Y%m%d_%H%M%S)"
-  OUT="${ROOT}/oracle/_runs/${ts}"
+  OUT="${ROOT}/oracle/runs/${ts}"
 fi
 
 is_uint() {

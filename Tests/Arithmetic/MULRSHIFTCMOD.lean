@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction MULRSHIFTCMOD (category: arithmetic).

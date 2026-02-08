@@ -19,11 +19,39 @@ package "tvm-lean" where
       -- and Lean's sysroot toolchain on CI (Ubuntu x86_64).
       #["/usr/lib/x86_64-linux-gnu/libsodium.a"]
 
-lean_lib «TvmLean» where
-  -- add library configuration options here
+@[default_target]
+lean_lib TvmLeanModel where
+  roots := #[`TvmLean.Model, `TvmLean.Boc, `TvmLean.Spec]
 
-lean_lib «Tests» where
-  -- Test modules under `Tests/`
+@[default_target]
+lean_lib TvmLeanSemantics where
+  roots := #[`TvmLean.Semantics]
+
+lean_lib TvmLean where
+  roots := #[`TvmLean]
+
+lean_lib TvmLeanNative where
+  roots := #[`TvmLean.Native]
+  needs := #[`@/libtvmlean_crypto]
+  extraDepTargets := #[`libtvmlean_crypto]
+  defaultFacets := #[LeanLib.leanArtsFacet, LeanLib.extraDepFacet]
+
+lean_lib TvmLeanValidation where
+  roots := #[`TvmLean.Validation]
+
+lean_lib TvmLeanTests where
+  srcDir := "."
+  roots := #[
+    `Tests.Tests,
+    `Tests.All,
+    `Tests.Instr,
+    `Tests.Harness.Registry,
+    `Tests.Harness.OracleHarness,
+    `Tests.Harness.FuzzHarness,
+    `Tests.Harness.Runner,
+    `Tests.Harness.Cli,
+    `Tests.Harness.Coverage
+  ]
 
 target tvmlean_crypto.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto.o"
@@ -39,7 +67,7 @@ target tvmlean_hash.o pkg : FilePath := do
   let weakArgs :=
     #["-I", (← getLeanIncludeDir).toString, "-I", (pkg.dir / "c").toString, "-I", "/opt/homebrew/include", "-I",
       "/usr/local/include"]
-  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
+  buildO oFile srcJob weakArgs #["-fPIC", "-std=c++11"] "cc" getLeanTrace
 
 target tvmlean_crypto_ext.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto_ext.o"
@@ -72,7 +100,7 @@ target tvmlean_keccak.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_keccak.o"
   let srcJob ← inputTextFile <| pkg.dir / "c" / "keccak.cpp"
   let weakArgs := #["-I", (pkg.dir / "c").toString]
-  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
+  buildO oFile srcJob weakArgs #["-fPIC", "-std=c++11"] "cc" getLeanTrace
 
 extern_lib libtvmlean_crypto pkg := do
   let o ← tvmlean_crypto.o.fetch
@@ -82,27 +110,32 @@ extern_lib libtvmlean_crypto pkg := do
   let name := nameToStaticLib "tvmlean_crypto"
   buildStaticLib (pkg.staticLibDir / name) #[o, oHash, oKeccak, oExt]
 
-@[default_target]
 lean_exe "tvm-lean" where
-  root := `Main
+  root := `Apps.Demo
 
 lean_exe "tvm-lean-tests" where
-  root := `Tests
+  root := `Apps.Tests
 
 lean_exe "tvm-lean-diff-test" where
-  root := `DiffTestMain
+  root := `Apps.DiffTest
 
 lean_exe "tvm-lean-actions-debug" where
-  root := `ActionsDebugMain
+  root := `Apps.ActionsDebug
 
 lean_exe "tvm-lean-trace-inspect" where
-  root := `TraceInspectMain
+  root := `Apps.TraceInspect
 
 lean_exe "tvm-lean-precompiled-snapshot" where
-  root := `PrecompiledSnapshotMain
+  root := `Apps.PrecompiledSnapshot
 
 lean_exe "tvm-lean-progress" where
-  root := `ProgressMain
+  root := `Apps.Progress
+
+lean_exe "tvm-lean-coverage" where
+  root := `Apps.Coverage
+
+lean_exe "tvm-lean-oracle" where
+  root := `Apps.Oracle
 
 lean_exe "tvm-lean-oracle-validate" where
-  root := `OracleValidateMain
+  root := `Apps.Oracle

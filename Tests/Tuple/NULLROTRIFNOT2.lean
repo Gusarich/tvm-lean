@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction NULLROTRIFNOT2 (category: tuple).

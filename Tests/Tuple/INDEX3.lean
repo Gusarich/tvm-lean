@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction INDEX3 (category: tuple).

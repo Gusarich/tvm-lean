@@ -14,11 +14,9 @@ __pycache__/
 # Codex AutoPR local state
 /.autopr/
 
-# Diff testing (generated fixtures/results; keep smoke fixtures checked in)
-/diff-test/fixtures/*.json
-!/diff-test/fixtures/smoke_*.json
-/diff-test/fixtures/_batch/
-/diff-test/fixtures/batch/
+# Diff testing (generated fixtures/results)
+/diff-test/work/
+/diff-test/reports/
 /diff-test/results*.json
 /diff-test/*.jsonl
 /diff-test/_report*.json
@@ -30,5 +28,5 @@ __pycache__/
 /diff-test/collector/dist/
 
 # Oracle instruction validation (local runs)
-/oracle/_runs/
+/oracle/runs/
 /oracle/_tmp/

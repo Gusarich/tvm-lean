@@ -1,1 +1,0 @@
--- Auto-generated stub for TVM instruction MODPOW2C (category: arithmetic).

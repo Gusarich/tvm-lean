@@ -1,0 +1,87 @@
+import Lean
+import Tests.Harness.Registry
+import Tests.Harness.OracleHarness
+
+namespace Tests
+
+open Lean
+
+structure FuzzRunResult where
+  seed : UInt64
+  total : Nat
+  failures : Array OracleRunResult
+  artifacts : Array System.FilePath
+  deriving Repr
+
+private def sanitizeFileToken (s : String) : String :=
+  String.map (fun c => if c.isAlphanum || c = '_' || c = '-' then c else '_') s
+
+private def fuzzArtifactDir : IO System.FilePath := do
+  let dir := (← IO.getEnv "TVMLEAN_FUZZ_FAILURE_DIR").getD "build/fuzz-failures"
+  pure dir
+
+private def oracleCaseJson (c : OracleCase) : Json :=
+  Json.mkObj
+    [ ("name", Json.str c.name)
+    , ("instr", Json.str c.instr.name)
+    , ("program", Json.str (reprStr c.program))
+    , ("initStack", Json.str (reprStr c.initStack))
+    , ("initCregs", Json.str (reprStr c.initCregs))
+    , ("initC7", Json.str (reprStr c.initC7))
+    , ("gasLimits", Json.mkObj
+        [ ("gasLimit", ToJson.toJson c.gasLimits.gasLimit)
+        , ("gasMax", ToJson.toJson c.gasLimits.gasMax)
+        , ("gasCredit", ToJson.toJson c.gasLimits.gasCredit)
+        ])
+    , ("fuel", ToJson.toJson c.fuel)
+    ]
+
+private def dumpFailureArtifact
+    (seed : UInt64)
+    (iteration : Nat)
+    (oracleCase : OracleCase)
+    (runResult : OracleRunResult) : IO (Option System.FilePath) := do
+  try
+    let dir ← fuzzArtifactDir
+    IO.FS.createDirAll dir
+    let fileName :=
+      s!"{sanitizeFileToken oracleCase.instr.name}_seed_{seed.toNat}_iter_{iteration}.json"
+    let outPath := dir / fileName
+    let body :=
+      Json.mkObj
+        [ ("instruction", Json.str oracleCase.instr.name)
+        , ("seed", ToJson.toJson seed.toNat)
+        , ("iteration", ToJson.toJson iteration)
+        , ("case", oracleCaseJson oracleCase)
+        , ("comparison",
+            match runResult.comparison? with
+            | some cmp => ToJson.toJson cmp
+            | none => Json.null)
+        , ("error",
+            match runResult.error? with
+            | some e => Json.str e
+            | none => Json.null)
+        ]
+    IO.FS.writeFile outPath body.pretty
+    pure (some outPath)
+  catch _ =>
+    pure none
+
+def runFuzzSpec (spec : FuzzSpec) : IO FuzzRunResult := do
+  let mut gen := mkStdGen spec.seed.toNat
+  let mut i : Nat := 0
+  let mut failures : Array OracleRunResult := #[]
+  let mut artifacts : Array System.FilePath := #[]
+  while i < spec.count do
+    let (oracleCase, gen') := spec.gen gen
+    gen := gen'
+    let out ← runOracleCase oracleCase
+    if !out.ok then
+      failures := failures.push out
+      match (← dumpFailureArtifact spec.seed i oracleCase out) with
+      | some p => artifacts := artifacts.push p
+      | none => pure ()
+    i := i + 1
+  pure { seed := spec.seed, total := spec.count, failures := failures, artifacts := artifacts }
+
+end Tests

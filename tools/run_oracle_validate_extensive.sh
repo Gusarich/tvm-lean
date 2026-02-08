@@ -23,7 +23,7 @@ Defaults:
 Examples:
   tools/run_oracle_validate_extensive.sh
   tools/run_oracle_validate_extensive.sh --jobs 24 --variants 128 --code-variants 128
-  tools/run_oracle_validate_extensive.sh --limit 200 --out oracle/_runs/extensive_smoke
+  tools/run_oracle_validate_extensive.sh --limit 200 --out oracle/runs/extensive_smoke
   tools/run_oracle_validate_extensive.sh --only ADDINT --seeds 1,2,3 --verbose
 EOF
 }
@@ -151,7 +151,7 @@ fi
 
 if [[ -z "$OUT" ]]; then
   ts="$(date +%Y%m%d_%H%M%S)"
-  OUT="${ROOT}/oracle/_runs/extensive_${ts}"
+  OUT="${ROOT}/oracle/runs/extensive_${ts}"
 fi
 mkdir -p "$OUT"
 

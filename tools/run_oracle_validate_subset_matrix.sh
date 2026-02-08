@@ -16,7 +16,7 @@ Defaults:
 
 Examples:
   tools/run_oracle_validate_subset_matrix.sh \
-    --names-file oracle/_runs/hot_names_from_history.txt \
+    --names-file oracle/runs/hot_names_from_history.txt \
     --seeds 42,1337,7 \
     --variants 260 --code-variants 520 --cases 260 --random-cases 12288
 EOF
@@ -106,7 +106,7 @@ fi
 
 if [[ -z "$OUT" ]]; then
   ts="$(date +%Y%m%d_%H%M%S)"
-  OUT="${ROOT}/oracle/_runs/subset_matrix_${ts}"
+  OUT="${ROOT}/oracle/runs/subset_matrix_${ts}"
 fi
 mkdir -p "$OUT"
 
