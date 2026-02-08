@@ -307,7 +307,7 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
       | 0xb7c0 => return (.arithExt (.qeqInt n), 24, s24)
       | 0xb7c1 => return (.qlessInt n, 24, s24)
       | 0xb7c2 => return (.arithExt (.qgtInt n), 24, s24)
-      | _ => return (.neqInt n, 24, s24)
+      | _ => return (.arithExt (.qneqInt n), 24, s24)
 
     -- QFITS / QUFITS (24-bit): 0xb7b4/0xb7b5 + width8 (delta=1).
     if p16 = 0xb7b4 ∨ p16 = 0xb7b5 then

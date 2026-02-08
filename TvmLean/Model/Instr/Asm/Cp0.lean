@@ -260,6 +260,12 @@ def encodeArithExtInstr (op : ArithExtInstr) : Except Excno BitString := do
         return natToBits 0xb7c0 16 ++ natToBits imm 8
       else
         throw .rangeChk
+  | .qneqInt n =>
+      if decide (-128 ≤ n ∧ n ≤ 127) then
+        let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
+        return natToBits 0xb7c3 16 ++ natToBits imm 8
+      else
+        throw .rangeChk
   | .qgtInt n =>
       if decide (-128 ≤ n ∧ n ≤ 127) then
         let imm : Nat := if n ≥ 0 then n.toNat else (256 - (-n).toNat)
