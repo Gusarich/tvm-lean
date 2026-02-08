@@ -1,6 +1,7 @@
 import Lean
 import TvmLean
 import TvmLean.Native
+import TvmLean.Validation.Canon.Value
 
 open TvmLean
 
@@ -123,30 +124,6 @@ def decodeCellBoc (s : String) : Except String Cell := do
   match stdBocDeserialize bytes with
   | .ok c => pure c
   | .error e => throw s!"stdBocDeserialize failed: {e}"
-
-def canonContTy : Continuation → String
-  | .ordinary .. => "vmc_std"
-  | .envelope .. => "vmc_envelope"
-  | .quit _ => "vmc_quit"
-  | .excQuit => "vmc_quit_exc"
-  | .whileCond .. => "vmc_while_cond"
-  | .whileBody .. => "vmc_while_body"
-  | .untilBody .. => "vmc_until"
-  | .repeatBody .. => "vmc_repeat"
-  | .againBody .. => "vmc_again"
-
-partial def canonValue (v : Value) : String :=
-  match v with
-  | .null => "null"
-  | .int .nan => "nan"
-  | .int (.num n) => s!"int:{n}"
-  | .cell c => s!"cell:{hashHex (Cell.hashBytes c)}"
-  | .slice s => s!"slice:{hashHex (Cell.hashBytes s.toCellRemaining)}"
-  | .builder b => s!"builder:{hashHex (Cell.hashBytes b.finalize)}"
-  | .tuple t =>
-      let inner := String.intercalate "," (t.toList.map canonValue)
-      "tuple[" ++ toString t.size ++ "]{" ++ inner ++ "}"
-  | .cont k => "cont:Cont{" ++ canonContTy k ++ "}"
 
 def mkProbeCell (pfxBits : Nat) (checkLen : Nat) (argsVal : Nat) (argsLen : Nat) (tail : BitString := #[])
     (refs : Array Cell := Array.replicate 4 Cell.empty) : Cell :=

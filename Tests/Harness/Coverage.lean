@@ -41,10 +41,11 @@ private def probeImplStatus (row : InstrSpecRow) : InstrImplStatus :=
         let (res, _st1) := (execInstr nativeHost instr).run st0
         match res with
         | .error .unimplemented => .stub
+        | .error .invOpcode => .missing
         | .error .fatal => .broken
         | .error .unknown => .broken
         | .error .outOfGas => .broken
-        | .error _ => .ok
+        | .error _ => .broken
         | .ok _ => .ok
 
 private def countCasesFor (id : InstrId) (suites : Array InstrSuite) : Nat × Nat × Nat :=

@@ -10,12 +10,31 @@ structure UnitCase where
   name : String
   run : IO Unit
 
+structure OracleInitCregs where
+  c0 : Option Continuation := none
+  c1 : Option Continuation := none
+  c2 : Option Continuation := none
+  c3 : Option Continuation := none
+  c4 : Option Cell := none
+  c5 : Option Cell := none
+  deriving Repr
+
+structure OracleGasLimits where
+  gasLimit : Int := 1_000_000
+  gasMax : Int := 1_000_000
+  gasCredit : Int := 0
+  deriving Repr
+
 structure OracleCase where
   name : String
   instr : InstrId
   program : Array Instr := #[]
   initStack : Array Value := #[]
+  initCregs : OracleInitCregs := {}
+  initC7 : Array Value := #[]
+  gasLimits : OracleGasLimits := {}
   fuel : Nat := 1_000_000
+  deriving Repr
 
 structure FuzzSpec where
   seed : UInt64

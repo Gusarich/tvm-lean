@@ -32,6 +32,9 @@ lean_lib TvmLean where
 
 lean_lib TvmLeanNative where
   roots := #[`TvmLean.Native]
+  needs := #[`@/libtvmlean_crypto]
+  extraDepTargets := #[`libtvmlean_crypto]
+  defaultFacets := #[LeanLib.leanArtsFacet, LeanLib.extraDepFacet]
 
 lean_lib TvmLeanValidation where
   roots := #[`TvmLean.Validation]
