@@ -14,6 +14,9 @@ def minInt257 : Int :=
 def maxInt257 : Int :=
   (pow2 256) - 1
 
+def intV (n : Int) : Value :=
+  .int (.num n)
+
 def int257BoundaryPool : Array Int :=
   #[
     0, 1, -1, 2, -2, 3, -3,
@@ -40,6 +43,9 @@ def pickLogUniformSigned257ish (rng0 : StdGen) : Int × StdGen := Id.run do
     let (neg, rng3) := randBool rng2
     let n := Int.ofNat magnitude
     return (if neg then -n else n, rng3)
+
+def randLogUniformSigned (rng : StdGen) : Int × StdGen :=
+  pickLogUniformSigned257ish rng
 
 /--
   10% boundary sampling, 90% log-uniform signed values with magnitudes up to `2^256 - 1`.
@@ -76,5 +82,72 @@ def singleInstrCp0OracleGasExactMinusOne (instr : Instr) : Except Excno OracleGa
 def singleInstrCp0OracleGasPair (instr : Instr) : Except Excno (OracleGasLimits × OracleGasLimits) := do
   let budget ← singleInstrCp0GasBudget instr
   pure (oracleGasLimitsExact budget, oracleGasLimitsExactMinusOne budget)
+
+private def gasForInstrWithFallback (instr : Instr) : Int :=
+  match singleInstrCp0GasBudget instr with
+  | .ok budget => budget
+  | .error _ => instrGas instr 16
+
+private def setGasNeedForInstr (instr : Instr) (n : Int) : Int :=
+  gasForInstrWithFallback (.pushInt (.num n))
+    + gasForInstrWithFallback (.tonEnvOp .setGasLimit)
+    + gasForInstrWithFallback instr
+    + implicitRetGasPrice
+
+private def exactGasBudgetFixedPoint (instr : Instr) (n : Int) : Nat → Int
+  | 0 => n
+  | k + 1 =>
+      let n' := setGasNeedForInstr instr n
+      if n' = n then n else exactGasBudgetFixedPoint instr n' k
+
+def computeExactGasBudget (instr : Instr) : Int :=
+  exactGasBudgetFixedPoint instr 64 16
+
+def computeExactGasBudgetMinusOne (instr : Instr) : Int :=
+  let budget := computeExactGasBudget instr
+  if budget > 0 then budget - 1 else 0
+
+def runHandlerDirectWithNext
+    (handler : Instr → VM Unit → VM Unit)
+    (instr : Instr)
+    (next : VM Unit)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
+  let (res, st1) := (handler instr next).run st0
+  match res with
+  | .ok _ => .ok st1.stack
+  | .error e => .error e
+
+def runHandlerDirect
+    (handler : Instr → VM Unit → VM Unit)
+    (instr : Instr)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext handler instr (pure ()) stack
+
+def expectOkStack
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expected : Array Value) : IO Unit := do
+  match res with
+  | .ok st =>
+      if st == expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+
+def expectErr
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expected : Excno) : IO Unit := do
+  match res with
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
+  | .error e =>
+      if e = expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
 
 end Tests.Harness.Gen.Arith

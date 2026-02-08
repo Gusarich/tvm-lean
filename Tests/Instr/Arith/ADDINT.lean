@@ -40,9 +40,6 @@ Key divergence risk areas:
 
 private def addIntId : InstrId := { name := "ADDINT" }
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -65,44 +62,10 @@ private def mkAddIntCase
   mkCase name stack #[.addInt imm] gasLimits fuel
 
 private def runAddIntDirect (imm : Int) (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithAddInt (.addInt imm) (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
+  runHandlerDirect execInstrArithAddInt (.addInt imm) stack
 
 private def runAddIntDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithAddInt .add (VM.push (intV 777))).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack
-    (label : String)
-    (res : Except Excno (Array Value))
-    (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr
-    (label : String)
-    (res : Except Excno (Array Value))
-    (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
+  runHandlerDirectWithNext execInstrArithAddInt .add (VM.push (intV 777)) stack
 
 private def expectAssembleErr
     (label : String)
@@ -133,30 +96,13 @@ private def expectDecodeStep
       else
         pure s'
 
-private def addIntGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
 private def addIntGasProbeImm : Int := 7
 
-private def addIntSetGasNeed (n : Int) : Int :=
-  addIntGasForInstr (.pushInt (.num n))
-    + addIntGasForInstr (.tonEnvOp .setGasLimit)
-    + addIntGasForInstr (.addInt addIntGasProbeImm)
-    + implicitRetGasPrice
-
-private def addIntSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := addIntSetGasNeed n
-      if n' = n then n else addIntSetGasFixedPoint n' k
-
 private def addIntSetGasExact : Int :=
-  addIntSetGasFixedPoint 64 16
+  computeExactGasBudget (.addInt addIntGasProbeImm)
 
 private def addIntSetGasExactMinusOne : Int :=
-  if addIntSetGasExact > 0 then addIntSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne (.addInt addIntGasProbeImm)
 
 private def tinyInt8BoundaryPool : Array Int :=
   #[-128, -127, -1, 0, 1, 126, 127]

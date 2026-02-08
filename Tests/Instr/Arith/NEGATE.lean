@@ -35,9 +35,6 @@ Key divergence risk areas:
 
 private def negateId : InstrId := { name := "NEGATE" }
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -52,54 +49,13 @@ private def mkCase
     fuel := fuel }
 
 private def runNegateDirect (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithNegate .negate (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack (label : String) (res : Except Excno (Array Value)) (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr (label : String) (res : Except Excno (Array Value)) (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
-
-private def negateGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
-private def negateSetGasNeed (n : Int) : Int :=
-  negateGasForInstr (.pushInt (.num n))
-    + negateGasForInstr (.tonEnvOp .setGasLimit)
-    + negateGasForInstr .negate
-    + implicitRetGasPrice
-
-private def negateSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := negateSetGasNeed n
-      if n' = n then n else negateSetGasFixedPoint n' k
+  runHandlerDirect execInstrArithNegate .negate stack
 
 private def negateSetGasExact : Int :=
-  negateSetGasFixedPoint 64 16
+  computeExactGasBudget .negate
 
 private def negateSetGasExactMinusOne : Int :=
-  if negateSetGasExact > 0 then negateSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne .negate
 
 private def genNegateFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 3

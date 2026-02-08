@@ -33,9 +33,6 @@ Key risk areas:
 
 private def subrId : InstrId := { name := "SUBR" }
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -50,54 +47,13 @@ private def mkCase
     fuel := fuel }
 
 private def runSubrDirect (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithSubr .subr (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack (label : String) (res : Except Excno (Array Value)) (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr (label : String) (res : Except Excno (Array Value)) (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
-
-private def subrGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
-private def subrSetGasNeed (n : Int) : Int :=
-  subrGasForInstr (.pushInt (.num n))
-    + subrGasForInstr (.tonEnvOp .setGasLimit)
-    + subrGasForInstr .subr
-    + implicitRetGasPrice
-
-private def subrSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := subrSetGasNeed n
-      if n' = n then n else subrSetGasFixedPoint n' k
+  runHandlerDirect execInstrArithSubr .subr stack
 
 private def subrSetGasExact : Int :=
-  subrSetGasFixedPoint 64 16
+  computeExactGasBudget .subr
 
 private def subrSetGasExactMinusOne : Int :=
-  if subrSetGasExact > 0 then subrSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne .subr
 
 private def genSubrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 5

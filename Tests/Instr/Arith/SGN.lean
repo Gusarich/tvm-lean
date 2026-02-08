@@ -33,9 +33,6 @@ Key divergence risk areas:
 
 private def sgnId : InstrId := { name := "SGN" }
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -50,54 +47,13 @@ private def mkCase
     fuel := fuel }
 
 private def runSgnDirect (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithSgn .sgn (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack (label : String) (res : Except Excno (Array Value)) (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr (label : String) (res : Except Excno (Array Value)) (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
-
-private def sgnGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
-private def sgnSetGasNeed (n : Int) : Int :=
-  sgnGasForInstr (.pushInt (.num n))
-    + sgnGasForInstr (.tonEnvOp .setGasLimit)
-    + sgnGasForInstr .sgn
-    + implicitRetGasPrice
-
-private def sgnSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := sgnSetGasNeed n
-      if n' = n then n else sgnSetGasFixedPoint n' k
+  runHandlerDirect execInstrArithSgn .sgn stack
 
 private def sgnSetGasExact : Int :=
-  sgnSetGasFixedPoint 64 16
+  computeExactGasBudget .sgn
 
 private def sgnSetGasExactMinusOne : Int :=
-  if sgnSetGasExact > 0 then sgnSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne .sgn
 
 private def genSgnFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 4

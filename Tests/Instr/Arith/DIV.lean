@@ -42,33 +42,18 @@ private def divInstr : Instr := .divMod 1 (-1) false false
 
 private def divProgram : Array Instr := #[divInstr]
 
-private def divGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
 private def divGasToHalt : Int :=
-  divGasForInstr divInstr + implicitRetGasPrice
-
-private def divSetGasNeed (n : Int) : Int :=
-  divGasForInstr (.pushInt (.num n))
-    + divGasForInstr (.tonEnvOp .setGasLimit)
-    + divGasForInstr divInstr
-    + implicitRetGasPrice
-
-private def divSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := divSetGasNeed n
-      if n' = n then n else divSetGasFixedPoint n' k
+  let opBudget :=
+    match singleInstrCp0GasBudget divInstr with
+    | .ok budget => budget
+    | .error _ => instrGas divInstr 16
+  opBudget + implicitRetGasPrice
 
 private def divSetGasExact : Int :=
-  divSetGasFixedPoint 64 16
+  computeExactGasBudget divInstr
 
 private def divSetGasExactMinusOne : Int :=
-  if divSetGasExact > 0 then divSetGasExact - 1 else 0
-
-private def vi (n : Int) : Value := .int (.num n)
+  computeExactGasBudgetMinusOne divInstr
 
 private def mkDivOracle (name : String) (initStack : Array Value)
     (program : Array Instr := divProgram)
@@ -118,85 +103,82 @@ private def expectTopIntNum (label : String) (expected : Int) (st : VmState) : I
   | none =>
       failUnit s!"{label}: expected non-empty stack"
 
-private def pickIntWeighted (g : StdGen) : Int × StdGen :=
-  pickSigned257ish g
-
 private def pickNonZeroInt (g : StdGen) : Int × StdGen :=
-  let (v, g') := pickIntWeighted g
+  let (v, g') := pickSigned257ish g
   (if v = 0 then 1 else v, g')
 
 private def divFuzzGen (g0 : StdGen) : OracleCase × StdGen :=
   let (bucket, g1) := randNat g0 0 99
-  let (x, g2) := pickIntWeighted g1
+  let (x, g2) := pickSigned257ish g1
   let (ynz, g3) := pickNonZeroInt g2
   let (tag, g4) := randNat g3 0 999_999
   let y := if bucket < 90 then ynz else (0 : Int)
   let kind := if y = 0 then "zero" else "nonzero"
-  (mkDivOracle s!"fuzz/{kind}-{tag}" #[vi x, vi y], g4)
+  (mkDivOracle s!"fuzz/{kind}-{tag}" #[intV x, intV y], g4)
 
 def suite : InstrSuite where
   id := { name := "DIV" }
   unit := #[
     { name := "unit/floor-sign-mix"
       run := do
-        let res ← runDivLean #[vi (-7), vi 3]
+        let res ← runDivLean #[intV (-7), intV 3]
         let st ← expectExit "unit/floor-sign-mix" (~~~ 0) res
         expectTopIntNum "unit/floor-sign-mix" (-3) st },
     { name := "unit/nan-operand-intov"
       run := do
-        let res ← runDivLean #[vi 5, .int .nan]
+        let res ← runDivLean #[intV 5, .int .nan]
         let _ ← expectExit "unit/nan-operand-intov" (~~~ Excno.intOv.toInt) res
         pure () },
     { name := "unit/overflow-min-div-neg1"
       run := do
-        let res ← runDivLean #[vi minInt257, vi (-1)]
+        let res ← runDivLean #[intV minInt257, intV (-1)]
         let _ ← expectExit "unit/overflow-min-div-neg1" (~~~ Excno.intOv.toInt) res
         pure () },
     { name := "unit/gas-exact-halts"
       run := do
-        let res ← runDivLean #[vi 7, vi 3] divGasToHalt divGasToHalt
+        let res ← runDivLean #[intV 7, intV 3] divGasToHalt divGasToHalt
         let st ← expectExit "unit/gas-exact-halts" (~~~ 0) res
         expectTopIntNum "unit/gas-exact-halts" 2 st },
     { name := "unit/gas-one-less-out-of-gas"
       run := do
-        let res ← runDivLean #[vi 7, vi 3] (divGasToHalt - 1) (divGasToHalt - 1) 50
+        let res ← runDivLean #[intV 7, intV 3] (divGasToHalt - 1) (divGasToHalt - 1) 50
         let _ ← expectExit "unit/gas-one-less-out-of-gas" Excno.outOfGas.toInt res
         pure () },
     { name := "unit/gas-zero-out-of-gas"
       run := do
-        let res ← runDivLean #[vi 7, vi 3] 0 0 50
+        let res ← runDivLean #[intV 7, intV 3] 0 0 50
         let _ ← expectExit "unit/gas-zero-out-of-gas" Excno.outOfGas.toInt res
         pure () }
   ]
   oracle := #[
-    mkDivOracle "floor/pos-pos-inexact" #[vi 7, vi 3],
-    mkDivOracle "floor/neg-pos-inexact" #[vi (-7), vi 3],
-    mkDivOracle "floor/pos-neg-inexact" #[vi 7, vi (-3)],
-    mkDivOracle "floor/neg-neg-inexact" #[vi (-7), vi (-3)],
-    mkDivOracle "floor/neg-pos-small" #[vi (-1), vi 2],
-    mkDivOracle "floor/pos-neg-small" #[vi 1, vi (-2)],
-    mkDivOracle "floor/neg-pos-half" #[vi (-5), vi 2],
-    mkDivOracle "floor/pos-neg-half" #[vi 5, vi (-2)],
-    mkDivOracle "exact/pos-pos" #[vi 42, vi 7],
-    mkDivOracle "exact/neg-pos" #[vi (-42), vi 7],
-    mkDivOracle "exact/pos-neg" #[vi 42, vi (-7)],
-    mkDivOracle "exact/neg-neg" #[vi (-42), vi (-7)],
-    mkDivOracle "exact/zero-numerator" #[vi 0, vi 5],
-    mkDivOracle "divzero/nonzero-over-zero" #[vi 5, vi 0],
-    mkDivOracle "nan/x-via-program" #[vi 3] (program := #[.pushInt .nan, .xchg0 1, divInstr]),
-    mkDivOracle "nan/y-via-program" #[vi 5] (program := #[.pushInt .nan, divInstr]),
+    mkDivOracle "floor/pos-pos-inexact" #[intV 7, intV 3],
+    mkDivOracle "floor/neg-pos-inexact" #[intV (-7), intV 3],
+    mkDivOracle "floor/pos-neg-inexact" #[intV 7, intV (-3)],
+    mkDivOracle "floor/neg-neg-inexact" #[intV (-7), intV (-3)],
+    mkDivOracle "floor/neg-pos-small" #[intV (-1), intV 2],
+    mkDivOracle "floor/pos-neg-small" #[intV 1, intV (-2)],
+    mkDivOracle "floor/neg-pos-half" #[intV (-5), intV 2],
+    mkDivOracle "floor/pos-neg-half" #[intV 5, intV (-2)],
+    mkDivOracle "exact/pos-pos" #[intV 42, intV 7],
+    mkDivOracle "exact/neg-pos" #[intV (-42), intV 7],
+    mkDivOracle "exact/pos-neg" #[intV 42, intV (-7)],
+    mkDivOracle "exact/neg-neg" #[intV (-42), intV (-7)],
+    mkDivOracle "exact/zero-numerator" #[intV 0, intV 5],
+    mkDivOracle "divzero/nonzero-over-zero" #[intV 5, intV 0],
+    mkDivOracle "nan/x-via-program" #[intV 3] (program := #[.pushInt .nan, .xchg0 1, divInstr]),
+    mkDivOracle "nan/y-via-program" #[intV 5] (program := #[.pushInt .nan, divInstr]),
     mkDivOracle "underflow/empty-stack" #[],
-    mkDivOracle "underflow/missing-x-after-y-pop" #[vi 1],
-    mkDivOracle "type/y-non-int-top" #[vi 1, .null],
-    mkDivOracle "type/x-non-int-second" #[.null, vi 1],
+    mkDivOracle "underflow/missing-x-after-y-pop" #[intV 1],
+    mkDivOracle "type/y-non-int-top" #[intV 1, .null],
+    mkDivOracle "type/x-non-int-second" #[.null, intV 1],
     mkDivOracle "type/error-order-both-non-int" #[.cell Cell.empty, .null],
-    mkDivOracle "boundary/max-div-one" #[vi maxInt257, vi 1],
-    mkDivOracle "boundary/max-div-neg1" #[vi maxInt257, vi (-1)],
-    mkDivOracle "boundary/min-div-one" #[vi minInt257, vi 1],
-    mkDivOracle "overflow/min-div-neg1" #[vi minInt257, vi (-1)],
-    mkDivOracle "gas/program-exact-succeeds" #[vi 7, vi 3]
+    mkDivOracle "boundary/max-div-one" #[intV maxInt257, intV 1],
+    mkDivOracle "boundary/max-div-neg1" #[intV maxInt257, intV (-1)],
+    mkDivOracle "boundary/min-div-one" #[intV minInt257, intV 1],
+    mkDivOracle "overflow/min-div-neg1" #[intV minInt257, intV (-1)],
+    mkDivOracle "gas/program-exact-succeeds" #[intV 7, intV 3]
       #[.pushInt (.num divSetGasExact), .tonEnvOp .setGasLimit, divInstr],
-    mkDivOracle "gas/program-exact-minus-one-out-of-gas" #[vi 7, vi 3]
+    mkDivOracle "gas/program-exact-minus-one-out-of-gas" #[intV 7, intV 3]
       #[.pushInt (.num divSetGasExactMinusOne), .tonEnvOp .setGasLimit, divInstr]
   ]
   fuzz := #[

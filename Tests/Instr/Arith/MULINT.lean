@@ -33,9 +33,6 @@ Key divergence risk areas:
 
 private def mulIntId : InstrId := { name := "MULINT" }
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def gasProbeImm : Int := 3
 
 private def mkCase
@@ -52,37 +49,7 @@ private def mkCase
     fuel := fuel }
 
 private def runMulIntDirect (n : Int) (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithMulInt (.mulInt n) (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack
-    (label : String)
-    (res : Except Excno (Array Value))
-    (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr
-    (label : String)
-    (res : Except Excno (Array Value))
-    (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
+  runHandlerDirect execInstrArithMulInt (.mulInt n) stack
 
 private def failUnit (msg : String) : IO α :=
   throw (IO.userError msg)
@@ -131,28 +98,11 @@ private def expectDecodedMulIntImmByte
   | .ok (instr, _, _) =>
       failUnit s!"{label}: expected MULINT decode, got {instr}"
 
-private def mulIntGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
-private def mulIntSetGasNeed (n : Int) : Int :=
-  mulIntGasForInstr (.pushInt (.num n))
-    + mulIntGasForInstr (.tonEnvOp .setGasLimit)
-    + mulIntGasForInstr (.mulInt gasProbeImm)
-    + implicitRetGasPrice
-
-private def mulIntSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := mulIntSetGasNeed n
-      if n' = n then n else mulIntSetGasFixedPoint n' k
-
 private def mulIntSetGasExact : Int :=
-  mulIntSetGasFixedPoint 64 16
+  computeExactGasBudget (.mulInt gasProbeImm)
 
 private def mulIntSetGasExactMinusOne : Int :=
-  if mulIntSetGasExact > 0 then mulIntSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne (.mulInt gasProbeImm)
 
 private def tinyInt8BoundaryPool : Array Int :=
   #[-128, -127, -64, -2, -1, 0, 1, 2, 64, 126, 127]

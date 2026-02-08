@@ -39,9 +39,6 @@ private def decId : InstrId := { name := "DEC" }
 
 private def decInstr : Instr := .dec
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -56,54 +53,13 @@ private def mkCase
     fuel := fuel }
 
 private def runDecDirect (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithDec .dec (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack (label : String) (res : Except Excno (Array Value)) (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr (label : String) (res : Except Excno (Array Value)) (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
-
-private def decGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
-private def decSetGasNeed (n : Int) : Int :=
-  decGasForInstr (.pushInt (.num n))
-    + decGasForInstr (.tonEnvOp .setGasLimit)
-    + decGasForInstr decInstr
-    + implicitRetGasPrice
-
-private def decSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := decSetGasNeed n
-      if n' = n then n else decSetGasFixedPoint n' k
+  runHandlerDirect execInstrArithDec .dec stack
 
 private def decSetGasExact : Int :=
-  decSetGasFixedPoint 64 16
+  computeExactGasBudget decInstr
 
 private def decSetGasExactMinusOne : Int :=
-  if decSetGasExact > 0 then decSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne decInstr
 
 private def genDecFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 4

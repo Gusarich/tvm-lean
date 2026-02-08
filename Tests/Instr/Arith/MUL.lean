@@ -34,9 +34,6 @@ Key risk areas:
 
 private def mulId : InstrId := { name := "MUL" }
 
-private def intV (n : Int) : Value :=
-  .int (.num n)
-
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -51,54 +48,13 @@ private def mkCase
     fuel := fuel }
 
 private def runMulDirect (stack : Array Value) : Except Excno (Array Value) :=
-  let st0 : VmState := { (VmState.initial Cell.empty) with stack := stack }
-  let (res, st1) := (execInstrArithMul .mul (pure ())).run st0
-  match res with
-  | .ok _ => .ok st1.stack
-  | .error e => .error e
-
-private def expectOkStack (label : String) (res : Except Excno (Array Value)) (expected : Array Value) : IO Unit := do
-  match res with
-  | .ok st =>
-      if st == expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected stack {reprStr expected}, got {reprStr st}")
-  | .error e =>
-      throw (IO.userError s!"{label}: expected success, got error {e}")
-
-private def expectErr (label : String) (res : Except Excno (Array Value)) (expected : Excno) : IO Unit := do
-  match res with
-  | .ok st =>
-      throw (IO.userError s!"{label}: expected error {expected}, got stack {reprStr st}")
-  | .error e =>
-      if e = expected then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected error {expected}, got {e}")
-
-private def mulGasForInstr (instr : Instr) : Int :=
-  match singleInstrCp0GasBudget instr with
-  | .ok budget => budget
-  | .error _ => instrGas instr 16
-
-private def mulSetGasNeed (n : Int) : Int :=
-  mulGasForInstr (.pushInt (.num n))
-    + mulGasForInstr (.tonEnvOp .setGasLimit)
-    + mulGasForInstr .mul
-    + implicitRetGasPrice
-
-private def mulSetGasFixedPoint (n : Int) : Nat → Int
-  | 0 => n
-  | k + 1 =>
-      let n' := mulSetGasNeed n
-      if n' = n then n else mulSetGasFixedPoint n' k
+  runHandlerDirect execInstrArithMul .mul stack
 
 private def mulSetGasExact : Int :=
-  mulSetGasFixedPoint 64 16
+  computeExactGasBudget .mul
 
 private def mulSetGasExactMinusOne : Int :=
-  if mulSetGasExact > 0 then mulSetGasExact - 1 else 0
+  computeExactGasBudgetMinusOne .mul
 
 private def genMulFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 7
