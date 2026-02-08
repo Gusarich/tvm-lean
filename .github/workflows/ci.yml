@@ -73,7 +73,8 @@ jobs:
       - name: Build TON fift (cache miss)
         if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
         run: |
-          git clone --depth 1 https://github.com/ton-blockchain/ton.git /tmp/ton
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/ton-blockchain/ton.git /tmp/ton
+          git -C /tmp/ton submodule update --init --recursive --depth 1
           cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
           mkdir -p ~/.cache/tvmlean/ton-fift/bin ~/.cache/tvmlean/ton-fift/lib
