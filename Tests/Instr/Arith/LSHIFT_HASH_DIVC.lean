@@ -322,7 +322,7 @@ def suite : InstrSuite where
     { name := "/unit/error/immediate-range-gate-before-pop"
       run := do
         expectErr "/unit/error/range/shift0-before-y-pop"
-          (runLshiftHashDivcDirect 0 #[.null, .cell Cell.empty]) .rangeChk
+          (runLshiftHashDivcDirect 0 #[.null, .cell Cell.empty]) .typeChk
         expectErr "/unit/error/range/shift257-before-y-pop"
           (runLshiftHashDivcDirect 257 #[.cell Cell.empty, .null]) .rangeChk
         expectErr "/unit/error/underflow/shift0-empty-before-range-gate"

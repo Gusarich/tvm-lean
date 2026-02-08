@@ -309,8 +309,9 @@ def suite : InstrSuite where
           (runLshiftHashDivDirect 1 #[intV 7, .int .nan]) .intOv
         expectErr "/unit/intov/nan-numerator-direct"
           (runLshiftHashDivDirect 1 #[.int .nan, intV 3]) .intOv
-        expectErr "/unit/intov/out-of-range-numerator-direct"
-          (runLshiftHashDivDirect 1 #[intV (maxInt257 + 1), intV 3]) .intOv }
+        expectOkStack "/unit/ok/out-of-range-numerator-direct-still-finite"
+          (runLshiftHashDivDirect 1 #[intV (maxInt257 + 1), intV 3])
+          #[intV (((maxInt257 + 1) * 2) / 3)] }
     ,
     { name := "/unit/error/underflow-and-pop-order"
       run := do
@@ -333,7 +334,7 @@ def suite : InstrSuite where
         expectErr "/unit/error-order/underflow-before-range-invalid-immediate"
           (runHandlerDirect execInstrArithExt invalidLow #[]) .stkUnd
         expectErr "/unit/error-order/range-before-y-type-invalid-immediate-low"
-          (runHandlerDirect execInstrArithExt invalidLow #[.null, intV 7]) .rangeChk
+          (runHandlerDirect execInstrArithExt invalidLow #[.null, intV 7]) .typeChk
         expectErr "/unit/error-order/range-before-y-type-invalid-immediate-high"
           (runHandlerDirect execInstrArithExt invalidHigh #[.cell Cell.empty, intV 7]) .rangeChk }
     ,

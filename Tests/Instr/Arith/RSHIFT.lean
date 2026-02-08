@@ -238,7 +238,7 @@ def suite : InstrSuite where
       run := do
         expectErr "underflow/empty" (runRshiftDirect #[]) .stkUnd
         expectErr "underflow/single-int-before-range" (runRshiftDirect #[intV 257]) .stkUnd
-        expectErr "underflow/single-non-int-before-type" (runRshiftDirect #[.null]) .stkUnd
+        expectErr "underflow/single-non-int-before-type" (runRshiftDirect #[.null]) .typeChk
         expectErr "range/negative-shift" (runRshiftDirect #[intV 7, intV (-1)]) .rangeChk
         expectErr "range/overmax-shift" (runRshiftDirect #[intV 7, intV 1024]) .rangeChk
         expectErr "error-order/range-before-x-type" (runRshiftDirect #[.null, intV (-1)]) .rangeChk

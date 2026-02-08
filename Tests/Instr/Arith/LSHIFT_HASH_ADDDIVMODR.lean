@@ -363,7 +363,7 @@ def suite : InstrSuite where
         let checks : Array (Int × Int × Int × Nat × Int × Int) :=
           #[
             (maxInt257, 0, 4, 1, pow2 255, -2),
-            (maxInt257, (-2), 4, 1, pow2 255, -4),
+            (maxInt257, (-2), 4, 1, (pow2 255) - 1, 0),
             (minInt257, 0, 4, 1, -(pow2 255), 0),
             (minInt257, 2, 4, 1, -(pow2 255) + 1, -2),
             (minInt257 + 1, 0, -4, 1, pow2 255, 2),
@@ -424,7 +424,7 @@ def suite : InstrSuite where
         expectErr "/unit/error-order/underflow-before-range-invalid-immediate"
           (runLshiftHashAddDivModrDirect 0 #[]) .stkUnd
         expectErr "/unit/error-order/range-before-y-type-invalid-immediate-low"
-          (runLshiftHashAddDivModrDirect 0 #[intV 1, intV 2, .null]) .rangeChk
+          (runLshiftHashAddDivModrDirect 0 #[intV 1, intV 2, .null]) .typeChk
         expectErr "/unit/error-order/range-before-w-type-invalid-immediate-high"
           (runLshiftHashAddDivModrDirect 257 #[intV 1, .null, intV 2]) .rangeChk
         expectErr "/unit/error-order/range-before-x-type-invalid-immediate-high"

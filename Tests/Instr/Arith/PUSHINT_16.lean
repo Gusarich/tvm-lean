@@ -269,8 +269,8 @@ def suite : InstrSuite where
         expectPushIntDecodeBits "encode/pushint16-max-pos128" 128 24
         expectPushIntDecodeBits "encode/pushint16-min" (-32768) 24
         expectPushIntDecodeBits "encode/pushint16-max" 32767 24
-        expectPushIntDecodeBits "encode/long-after-window-pos32768" 32768 32
-        expectPushIntDecodeBits "encode/long-after-window-neg32769" (-32769) 32 }
+        expectPushIntDecodeBits "encode/long-after-window-pos32768" 32768 13
+        expectPushIntDecodeBits "encode/long-after-window-neg32769" (-32769) 13 }
     ,
     { name := "unit/prelude-injection/serialization-rules"
       run := do

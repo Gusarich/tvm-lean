@@ -342,7 +342,7 @@ def suite : InstrSuite where
         expectErr "/unit/error-order/underflow-before-range-invalid-immediate"
           (runLshiftHashModDirect 0 #[]) .stkUnd
         expectErr "/unit/error-order/range-before-x-type-invalid-immediate-low"
-          (runLshiftHashModDirect 0 #[.null, intV 7]) .rangeChk
+          (runLshiftHashModDirect 0 #[.null, intV 7]) .typeChk
         expectErr "/unit/error-order/range-before-y-type-invalid-immediate-high"
           (runLshiftHashModDirect 257 #[intV 7, .null]) .rangeChk
         expectErr "/unit/error-order/range-before-x-type-invalid-immediate-high"

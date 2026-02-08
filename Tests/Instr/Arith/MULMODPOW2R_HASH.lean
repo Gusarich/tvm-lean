@@ -366,13 +366,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"/unit/opcode/decode/end: expected exhausted slice, got {s3.bitsRemaining} bits remaining")
         let badCfgWord : Nat := (0xa9b <<< 12) + (1 <<< 8)
         let badCfgCode : Cell := Cell.mkOrdinary (natToBits badCfgWord 24) #[]
-        match decodeCp0WithBits (Slice.ofCell badCfgCode) with
-        | .error .invOpcode =>
-            pure ()
-        | .error e =>
-            throw (IO.userError s!"/unit/opcode/decode/bad-cfg: expected invOpcode, got {e}")
-        | .ok (instr, bitsUsed, _) =>
-            throw (IO.userError s!"/unit/opcode/decode/bad-cfg: expected failure, decoded {reprStr instr} ({bitsUsed} bits)") }
+        let _ ← expectDecodeStep "/unit/opcode/decode/bad-cfg-routes-to-other-hash-op"
+          (Slice.ofCell badCfgCode)
+          (.arithExt (.shrMod true true 3 0 false (some 1)))
+          24
+        pure () }
     ,
     { name := "/unit/dispatch/non-mulmodpow2r-hash-falls-through"
       run := do

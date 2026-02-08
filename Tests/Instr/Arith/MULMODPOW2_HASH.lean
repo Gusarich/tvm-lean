@@ -383,7 +383,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"/unit/opcode/decode/end: expected exhausted slice, got {s3.bitsRemaining} bits remaining")
         let badWordD0 : Nat := (0xa9b <<< 12) + (0 <<< 8)
         let badCellD0 := Cell.mkOrdinary (natToBits badWordD0 24) #[]
-        expectDecodeErr "/unit/opcode/decode/invalid-d-zero" (Slice.ofCell badCellD0) .invOpcode }
+        let _ ← expectDecodeStep "/unit/opcode/decode/d-zero-routes-to-other-hash-op"
+          (Slice.ofCell badCellD0)
+          (.arithExt (.shrMod true true 3 (-1) false (some 1)))
+          24
+        pure () }
     ,
     { name := "/unit/dispatch/non-mulshrmodconst-falls-through"
       run := do

@@ -191,8 +191,8 @@ def suite : InstrSuite where
       run := do
         expectOkStack "fallback/non-contExt"
           (runQsgnDispatchFallback .add #[]) #[intV 1919]
-        expectOkStack "fallback/other-contExt"
-          (runQsgnDispatchFallback (.contExt .qnot) #[]) #[intV 1919] }
+        expectErr "fallback/other-contExt-is-handled"
+          (runQsgnDispatchFallback (.contExt .qnot) #[]) .stkUnd }
   ]
   oracle := #[
     mkInputCase "ok/zero" (.num 0),

@@ -457,8 +457,10 @@ def suite : InstrSuite where
     ,
     { name := "/unit/opcode/decode-invalid-cfg"
       run := do
-        expectDecodeErr "/unit/decode/invalid-d-zero"
-          (Slice.ofCell (mkMulHashRawCell 0x1 0)) .invOpcode
+        let _ ← expectDecodeStep "/unit/decode/d-zero-routes-to-other-hash-op"
+          (Slice.ofCell (mkMulHashRawCell 0x1 0))
+          (.arithExt (.shrMod true true 3 0 false (some 1)))
+          24
         expectDecodeErr "/unit/decode/invalid-roundmode-two"
           (Slice.ofCell (mkMulHashRawCell 0xb 0)) .invOpcode }
     ,

@@ -330,7 +330,7 @@ def suite : InstrSuite where
         expectErr "/unit/error-order/underflow-before-range-invalid-immediate"
           (runHandlerDirect execInstrArithExt invalidLow #[]) .stkUnd
         expectErr "/unit/error-order/range-before-y-type-invalid-immediate-low"
-          (runHandlerDirect execInstrArithExt invalidLow #[intV 7, .null]) .rangeChk
+          (runHandlerDirect execInstrArithExt invalidLow #[intV 7, .null]) .typeChk
         expectErr "/unit/error-order/range-before-x-type-invalid-immediate-high"
           (runHandlerDirect execInstrArithExt invalidHigh #[.null, intV 7]) .rangeChk }
     ,

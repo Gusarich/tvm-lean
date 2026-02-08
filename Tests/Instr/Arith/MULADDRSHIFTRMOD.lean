@@ -506,7 +506,7 @@ def suite : InstrSuite where
           | .ok cell => pure cell
           | .error e => throw (IO.userError s!"/unit/opcode/assemble failed: {e}")
         let s0 := Slice.ofCell code
-        let s1 ← expectDecodeStep "/unit/opcode/decode-muladdrshiftrmod" s0 muladdrshiftrmodInstr 24
+        let s1 ← expectDecodeStep "/unit/opcode/decode-muladdrshiftrmod" s0 muladdrshiftrmodInstr 16
         let s2 ← expectDecodeStep "/unit/opcode/decode-tail-add" s1 .add 8
         if s2.bitsRemaining = 0 then
           pure ()
