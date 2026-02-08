@@ -121,7 +121,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           VM.pushSmallInt (if x.isValid then 0 else -1)
       | .chknan =>
           let x ← VM.popInt
-          VM.push (.int x)
+          VM.pushIntQuiet x false
       | .qsgn =>
           let x ← VM.popInt
           match x with
