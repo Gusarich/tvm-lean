@@ -28,11 +28,4 @@ def VmState.run (host : Host) (fuel : Nat) (st : VmState) : StepResult :=
           else
             .halt exitCode st'
 
-theorem run_preserves_wf {host : Host} {fuel : Nat} {st : VmState} :
-    WF_State st →
-      match VmState.run host fuel st with
-      | .continue st' => WF_State st'
-      | .halt _ st' => WF_State st' := by
-  sorry
-
 end TvmLean

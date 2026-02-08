@@ -33,6 +33,6 @@ def execInstr (host : Host) (i : Instr) : VM Unit :=
                       execInstrDebug host i <|
                       execInstrException host i <|
                         execInstrDict host i <|
-                          throw .invOpcode
+                          VM.unimplementedInstr { name := Instr.pretty i } "no exec handler"
 
 end TvmLean

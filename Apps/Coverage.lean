@@ -1,3 +1,4 @@
+import Tests.All
 import Tests.Harness.Coverage
 
 namespace TvmLeanCoverageApp

@@ -6,6 +6,7 @@ inductive InstrImplStatus where
   | ok
   | stub
   | missing
+  | broken
   deriving Repr, BEq
 
 structure InstrCoverageRow where

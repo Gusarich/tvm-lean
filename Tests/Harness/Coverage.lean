@@ -40,8 +40,10 @@ private def probeImplStatus (row : InstrSpecRow) : InstrImplStatus :=
         let st0 := VmState.initial cell
         let (res, _st1) := (execInstr nativeHost instr).run st0
         match res with
-        | .error .invOpcode => .missing
         | .error .unimplemented => .stub
+        | .error .fatal => .broken
+        | .error .unknown => .broken
+        | .error .outOfGas => .broken
         | .error _ => .ok
         | .ok _ => .ok
 
@@ -74,6 +76,7 @@ private def implStatusString : InstrImplStatus → String
   | .ok => "ok"
   | .stub => "stub"
   | .missing => "missing"
+  | .broken => "broken"
 
 def coverageAsTsv (report : CoverageReport) : String :=
   let header := "instr\timpl\tunit\toracle\tfuzz"

@@ -40,6 +40,8 @@ lean_lib TvmLeanTests where
   srcDir := "."
   roots := #[
     `Tests.Tests,
+    `Tests.All,
+    `Tests.Instr,
     `Tests.Harness.Registry,
     `Tests.Harness.OracleHarness,
     `Tests.Harness.FuzzHarness,
