@@ -99,6 +99,11 @@ def execInstrArithExt (i : Instr) (next : VM Unit) : VM Unit := do
           match x with
           | .nan => VM.pushIntQuiet .nan true
           | .num a => VM.pushSmallInt (if a = n then -1 else 0)
+      | .qgtInt n =>
+          let x ← VM.popInt
+          match x with
+          | .nan => VM.pushIntQuiet .nan true
+          | .num a => VM.pushSmallInt (if a > n then -1 else 0)
       | .fitsConst unsigned quiet bits =>
           let x ← VM.popInt
           match x with

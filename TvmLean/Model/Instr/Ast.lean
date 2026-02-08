@@ -301,6 +301,7 @@ inductive ArithExtInstr : Type
   | qaddInt (n : Int) -- QADDINT <tinyint8>
   | qmulInt (n : Int) -- QMULINT <tinyint8>
   | qeqInt (n : Int) -- QEQINT <tinyint8>
+  | qgtInt (n : Int) -- QGTINT <tinyint8>
   | fitsConst (unsigned : Bool) (quiet : Bool) (bits : Nat) -- {Q}{U}FITS <tinyint8+1>
   | lshiftVar (quiet : Bool) -- QLSHIFT_VAR
   | rshiftVar (quiet : Bool) -- QRSHIFT_VAR
@@ -829,6 +830,7 @@ def ArithExtInstr.pretty : ArithExtInstr → String
   | .qaddInt n => s!"QADDINT {n}"
   | .qmulInt n => s!"QMULINT {n}"
   | .qeqInt n => s!"QEQINT {n}"
+  | .qgtInt n => s!"QGTINT {n}"
   | .fitsConst unsigned quiet bits =>
       let u := if unsigned then "U" else ""
       let q := if quiet then "Q" else ""
