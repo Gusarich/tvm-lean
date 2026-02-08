@@ -258,7 +258,16 @@ def execInstrArithExt (i : Instr) (next : VM Unit) : VM Unit := do
                 else
                   VM.pushIntQuiet .nan quiet
       | .shlDivMod d roundMode addMode quiet zOpt =>
-          -- TVM `exec_shldivmod` pops runtime shift first (when present), then divisor.
+          -- TVM `exec_shldivmod` checks arity first, then pops runtime shift
+          -- (when present), then divisor.
+          let st ← get
+          let need : Nat :=
+            if zOpt.isSome then
+              if addMode then 3 else 2
+            else
+              if addMode then 4 else 3
+          if st.stack.size < need then
+            throw .stkUnd
           let shiftRaw ←
             match zOpt with
             | some z => pure (Int.ofNat z)
