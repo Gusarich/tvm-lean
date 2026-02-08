@@ -368,8 +368,9 @@ def suite : InstrSuite where
     mkShiftCase "/ok/boundary/min-plus-one-shift1-div2" (minInt257 + 1) 2 1,
     mkShiftCase "/ok/boundary/one-shift256-div-max" 1 maxInt257 256,
     mkShiftCase "/ok/boundary/negone-shift256-div-max" (-1) maxInt257 256,
-    mkShiftCase "/ok/pop-order/hash-immediate-does-not-pop-third-item" 7 3 1
-      {} 1_000_000 |>.modifyInitStack (fun _ => #[intV 99, intV 7, intV 3]),
+    mkCase "/ok/pop-order/hash-immediate-does-not-pop-third-item"
+      #[intV 99, intV 7, intV 3]
+      #[lshiftHashDivmodInstr 1],
     mkShiftCase "/intov/divzero/nonzero-over-zero" 7 0 1,
     mkShiftCase "/intov/divzero/zero-over-zero" 0 0 256,
     mkShiftCase "/intov/overflow/max-shift1-div1" maxInt257 1 1,

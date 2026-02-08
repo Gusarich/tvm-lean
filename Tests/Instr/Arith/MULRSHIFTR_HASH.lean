@@ -105,12 +105,12 @@ private def expectSameStackResult
     (lhs rhs : Except Excno (Array Value)) : IO Unit := do
   match lhs, rhs with
   | .ok xs, .ok ys =>
-      if xs = ys then
+      if xs == ys then
         pure ()
       else
         throw (IO.userError s!"{label}: expected equal stacks, got {reprStr xs} vs {reprStr ys}")
   | .error e1, .error e2 =>
-      if e1 = e2 then
+      if e1 == e2 then
         pure ()
       else
         throw (IO.userError s!"{label}: expected equal errors, got {e1} vs {e2}")

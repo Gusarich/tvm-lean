@@ -226,7 +226,11 @@ private def genPushpow2decFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         #[intV below]
         pushpow2decSetGasExact, r3)
     else
-      let (below, r3) := pickFromPool nonSerializableBelowPool rng2
+      let (idx, r3) := randNat rng2 0 (nonSerializableBelowPool.size - 1)
+      let below :=
+        match nonSerializableBelowPool.get? idx with
+        | some v => v
+        | none => .nan
       (mkCaseFromBelowIntVals s!"/fuzz/shape-{shape}/prelude/mixed-nonserializable/exp-{exp}" exp #[below], r3)
   let (tag, rng4) := randNat rng3 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)

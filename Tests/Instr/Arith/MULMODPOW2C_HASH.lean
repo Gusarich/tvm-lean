@@ -428,10 +428,19 @@ def suite : InstrSuite where
           | (x, y, shift) =>
               let direct := runMulmodpow2cHashDirect shift #[intV x, intV y]
               let model := runMulmodpow2cHashOracleModel shift #[intV x, intV y]
-              if direct = model then
-                pure ()
-              else
-                throw (IO.userError s!"/unit/equiv/x={x}/y={y}/z={shift}: direct={reprStr direct}, model={reprStr model}") }
+              match direct, model with
+              | .ok ds, .ok ms =>
+                  if ds == ms then
+                    pure ()
+                  else
+                    throw (IO.userError s!"/unit/equiv/x={x}/y={y}/z={shift}: direct={reprStr ds}, model={reprStr ms}")
+              | .error de, .error me =>
+                  if de == me then
+                    pure ()
+                  else
+                    throw (IO.userError s!"/unit/equiv/x={x}/y={y}/z={shift}: directErr={de}, modelErr={me}")
+              | _, _ =>
+                  throw (IO.userError s!"/unit/equiv/x={x}/y={y}/z={shift}: direct={reprStr direct}, model={reprStr model}") }
     ,
     { name := "/unit/opcode/raw-decode-hash-immediate-sequence"
       run := do

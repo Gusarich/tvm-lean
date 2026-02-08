@@ -110,12 +110,12 @@ private def expectSameResult
     (lhs rhs : Except Excno (Array Value)) : IO Unit := do
   match lhs, rhs with
   | .ok a, .ok b =>
-      if a = b then
+      if a == b then
         pure ()
       else
         throw (IO.userError s!"{label}: result mismatch; lhs={reprStr a}, rhs={reprStr b}")
   | .error e1, .error e2 =>
-      if e1 = e2 then
+      if e1 == e2 then
         pure ()
       else
         throw (IO.userError s!"{label}: error mismatch; lhs={e1}, rhs={e2}")

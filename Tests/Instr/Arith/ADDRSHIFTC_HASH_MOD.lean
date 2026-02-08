@@ -141,7 +141,7 @@ private def pickNonInt (rng : StdGen) : Value × StdGen :=
   (if pickCell then .cell Cell.empty else .null, rng')
 
 private def classifyAddrshiftcHashMod (x w : Int) (shift : Nat) : String :=
-  let q := rshiftPow2RoundAddCompat x w shift 1
+  let q := rshiftPow2Round (x + w) shift 1
   let r := modPow2Round (x + w) shift 1
   if !intFitsSigned257 q || !intFitsSigned257 r then
     "intov-overflow"

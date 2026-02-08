@@ -119,10 +119,19 @@ private def runMulrshiftcHashDispatchFallback
 private def expectSameResult
     (label : String)
     (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  if lhs = rhs then
-    pure ()
-  else
-    throw (IO.userError s!"{label}: mismatch lhs={reprStr lhs} rhs={reprStr rhs}")
+  match lhs, rhs with
+  | .ok a, .ok b =>
+      if a == b then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: mismatch lhs={reprStr a} rhs={reprStr b}")
+  | .error e1, .error e2 =>
+      if e1 == e2 then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: mismatch lhsErr={e1} rhsErr={e2}")
+  | _, _ =>
+      throw (IO.userError s!"{label}: mismatch lhs={reprStr lhs} rhs={reprStr rhs}")
 
 private def expectAssembleErr
     (label : String)
