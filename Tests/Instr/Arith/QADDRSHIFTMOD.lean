@@ -46,13 +46,16 @@ private def qaddrshiftmodId : InstrId := { name := "QADDRSHIFTMOD" }
 private def qaddrshiftmodInstr : Instr :=
   .arithExt (.shrMod false true 3 (-1) true none)
 
+private def slashCaseName (name : String) : String :=
+  if name.startsWith "/" then name else s!"/{name}"
+
 private def mkCase
     (name : String)
     (stack : Array Value)
     (program : Array Instr := #[qaddrshiftmodInstr])
     (gasLimits : OracleGasLimits := {})
     (fuel : Nat := 1_000_000) : OracleCase :=
-  { name := name
+  { name := slashCaseName name
     instr := qaddrshiftmodId
     program := program
     initStack := stack
@@ -232,7 +235,7 @@ private def genQAddrShiftModFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 def suite : InstrSuite where
   id := qaddrshiftmodId
   unit := #[
-    { name := "unit/ok/floor-sign-and-remainder-invariants"
+    { name := "/unit/ok/floor-sign-and-remainder-invariants"
       run := do
         let checks : Array (Int × Int × Int × Int × Int) :=
           #[
@@ -258,7 +261,7 @@ def suite : InstrSuite where
           (runQAddrShiftModDirect #[.cell Cell.empty, intV (-7), intV 1, intV 2])
           #[.cell Cell.empty, intV (-2), intV 2] }
     ,
-    { name := "unit/ok/boundary-shifts-and-extremes"
+    { name := "/unit/ok/boundary-shifts-and-extremes"
       run := do
         let checks : Array (Int × Int × Int × Int × Int) :=
           #[
@@ -277,7 +280,7 @@ def suite : InstrSuite where
           expectOkStack s!"unit/ok/boundary/x={x}/w={w}/shift={shift}"
             (runQAddrShiftModDirect #[intV x, intV w, intV shift]) #[intV q, intV r] }
     ,
-    { name := "unit/quiet/nan-and-shift-zero-overflow-funnel"
+    { name := "/unit/quiet/nan-and-shift-zero-overflow-funnel"
       run := do
         expectOkStack "unit/quiet/overflow-max-plus-one-shift-zero"
           (runQAddrShiftModDirect #[intV maxInt257, intV 1, intV 0])
@@ -292,7 +295,7 @@ def suite : InstrSuite where
           (runQAddrShiftModDirect #[.int .nan, intV 5, intV 4])
           #[.int .nan, .int .nan] }
     ,
-    { name := "unit/error-order/underflow-type-and-range-precedence"
+    { name := "/unit/error-order/underflow-type-and-range-precedence"
       run := do
         expectErr "unit/error/underflow-empty" (runQAddrShiftModDirect #[]) .stkUnd
         expectErr "unit/error/underflow-one-arg" (runQAddrShiftModDirect #[intV 1]) .stkUnd
@@ -318,7 +321,7 @@ def suite : InstrSuite where
         expectErr "unit/error/order-range-before-x-type"
           (runQAddrShiftModDirect #[.null, intV 1, intV 257]) .rangeChk }
     ,
-    { name := "unit/dispatch/non-arithext-falls-through"
+    { name := "/unit/dispatch/non-arithext-falls-through"
       run := do
         expectOkStack "unit/dispatch/fallback"
           (runQAddrShiftModDispatchFallback #[]) #[intV 7341] }
