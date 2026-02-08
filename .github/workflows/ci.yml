@@ -47,9 +47,10 @@ jobs:
             ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-
             ubuntu-lake-
 
-      - name: Build core + validation + tests
+      - name: Build Lean targets and executables
         run: |
           lake build TvmLeanModel TvmLeanSemantics TvmLeanNative TvmLeanValidation TvmLeanTests
+          lake build tvm-lean-tests tvm-lean-diff-test tvm-lean-coverage
 
       - name: Resolve TON commit
         id: ton-ref
@@ -93,8 +94,11 @@ jobs:
           test -f "oracle/fif/ton_oracle_runvm.fif"
           test -f "oracle/fif/ton_oracle_runvm_lib.fif"
 
-      - name: Unit tests
-        run: lake exe tvm-lean-tests
+      - name: Unit tests (no fuzz)
+        run: lake exe tvm-lean-tests -- --unit-only
+
+      - name: Oracle tests (no fuzz)
+        run: lake exe tvm-lean-tests -- --oracle-only
 
       - name: Diff tests (offline CI fixtures)
         run: lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
