@@ -74,6 +74,42 @@ def pickSigned257ish (rng0 : StdGen) : Int × StdGen :=
   else
     pickLogUniformSigned257ish rng1
 
+def tinyInt8BoundaryPool : Array Int :=
+  #[-128, -127, -1, 0, 1, 126, 127]
+
+def pickTinyInt8Boundary (rng : StdGen) : Int × StdGen :=
+  let (idx, rng') := randNat rng 0 (tinyInt8BoundaryPool.size - 1)
+  (tinyInt8BoundaryPool[idx]!, rng')
+
+def pickTinyInt8Uniform (rng : StdGen) : Int × StdGen :=
+  let (u, rng') := randNat rng 0 255
+  let n : Int := if u < 128 then Int.ofNat u else Int.ofNat u - 256
+  (n, rng')
+
+/--
+  10% boundary sampling, 90% uniform tinyint8 values.
+-/
+def pickTinyInt8Mixed (rng0 : StdGen) : Int × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    pickTinyInt8Boundary rng1
+  else
+    pickTinyInt8Uniform rng1
+
+def int257OutOfRangePool : Array Int :=
+  #[
+    maxInt257 + 1,
+    maxInt257 + 2,
+    minInt257 - 1,
+    minInt257 - 2,
+    pow2 257,
+    -(pow2 257)
+  ]
+
+def pickInt257OutOfRange (rng : StdGen) : Int × StdGen :=
+  let (idx, rng') := randNat rng 0 (int257OutOfRangePool.size - 1)
+  (int257OutOfRangePool[idx]!, rng')
+
 def singleInstrCp0GasBudget (instr : Instr) : Except Excno Int := do
   let code ← assembleCp0 [instr]
   let (decoded, totBits, _) ← decodeCp0WithBits (Slice.ofCell code)
