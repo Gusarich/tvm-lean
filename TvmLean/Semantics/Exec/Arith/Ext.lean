@@ -69,6 +69,16 @@ private def rshiftPow2RoundAddCompat (x w : Int) (shift : Nat) (roundMode : Int)
   else
     rshiftPow2Round tmp shift roundMode
 
+private def rshiftPow2RoundInvalidCompat (shift : Nat) (roundMode : Int) : IntVal :=
+  if shift == 0 then
+    .nan
+  else
+    let fastLimit : Nat := bigintWordBits - bigintWordShift
+    if decide (roundMode < 0) && shift > fastLimit then
+      .num (-1)
+    else
+      .num 0
+
 set_option maxHeartbeats 1000000 in
 def execInstrArithExt (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
@@ -181,21 +191,29 @@ def execInstrArithExt (i : Instr) (next : VM Unit) : VM Unit := do
                     VM.pushIntQuiet .nan quiet
           else
             -- RSHIFT/MODPOW2 family: runtime shift is strict `pop_smallint_range(256)` even in quiet mode.
+            let st ← get
+            let need : Nat :=
+              if zOpt.isSome then
+                if addMode then 2 else 1
+              else
+                if addMode then 3 else 2
+            if st.stack.size < need then
+              throw .stkUnd
             let shift : Nat ←
               match zOpt with
               | some z => pure z
               | none => VM.popNatUpTo 256
             let w ← if addMode then VM.popInt else pure (.num 0)
             let x ← VM.popInt
+            let roundMode' : Int :=
+              if zOpt.isNone && shift == 0 then
+                -1
+              else
+                roundMode
+            if roundMode' != -1 && roundMode' != 0 && roundMode' != 1 then
+              throw .invOpcode
             match x, w with
             | .num xn, .num wn =>
-                let roundMode' : Int :=
-                  if zOpt.isNone && shift == 0 then
-                    -1
-                  else
-                    roundMode
-                if roundMode' != -1 && roundMode' != 0 && roundMode' != 1 then
-                  throw .invOpcode
                 let tmp : Int := if addMode then xn + wn else xn
                 let qCompat : Int :=
                   if addMode then
@@ -214,6 +232,14 @@ def execInstrArithExt (i : Instr) (next : VM Unit) : VM Unit := do
                     VM.pushIntQuiet (.num r) quiet
                 | _ =>
                     throw .invOpcode
+            | .nan, .num _ =>
+                if !addMode && d == 1 then
+                  VM.pushIntQuiet (rshiftPow2RoundInvalidCompat shift roundMode') quiet
+                else if d == 3 then
+                  VM.pushIntQuiet .nan quiet
+                  VM.pushIntQuiet .nan quiet
+                else
+                  VM.pushIntQuiet .nan quiet
             | _, _ =>
                 if d == 3 then
                   VM.pushIntQuiet .nan quiet
