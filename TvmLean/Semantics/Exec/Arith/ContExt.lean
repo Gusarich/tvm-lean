@@ -83,10 +83,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           let x ← VM.popInt
           match x with
           | .nan => VM.pushIntQuiet .nan true
-          | .num n =>
-              let bs ← popBitsTwos257 n
-              let inv : BitString := bs.map (fun b => !b)
-              VM.pushIntQuiet (.num (bitsToIntSignedTwos inv)) true
+          | .num n => VM.pushIntQuiet (.num (-n - 1)) true
       | .qfitsx =>
           VM.checkUnderflow 2
           let bits ← VM.popNatUpTo 1023
