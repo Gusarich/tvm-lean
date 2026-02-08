@@ -6,10 +6,16 @@ namespace Tests
 
 open Lean
 
+structure FuzzFailure where
+  iteration : Nat
+  result : OracleRunResult
+  artifact? : Option System.FilePath := none
+  deriving Repr
+
 structure FuzzRunResult where
   seed : UInt64
   total : Nat
-  failures : Array OracleRunResult
+  failures : Array FuzzFailure
   artifacts : Array System.FilePath
   deriving Repr
 
@@ -70,15 +76,16 @@ private def dumpFailureArtifact
 def runFuzzSpec (spec : FuzzSpec) : IO FuzzRunResult := do
   let mut gen := mkStdGen spec.seed.toNat
   let mut i : Nat := 0
-  let mut failures : Array OracleRunResult := #[]
+  let mut failures : Array FuzzFailure := #[]
   let mut artifacts : Array System.FilePath := #[]
   while i < spec.count do
     let (oracleCase, gen') := spec.gen gen
     gen := gen'
     let out ← runOracleCase oracleCase
     if !out.ok then
-      failures := failures.push out
-      match (← dumpFailureArtifact spec.seed i oracleCase out) with
+      let artifact? ← dumpFailureArtifact spec.seed i oracleCase out
+      failures := failures.push { iteration := i, result := out, artifact? := artifact? }
+      match artifact? with
       | some p => artifacts := artifacts.push p
       | none => pure ()
     i := i + 1
