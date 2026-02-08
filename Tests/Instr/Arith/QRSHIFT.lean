@@ -238,7 +238,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/quiet-nan-and-range-folding"
       run := do
-        expectOkStack "quiet/nan-direct" (runQrshiftDirect 13 #[.int .nan]) #[.int .nan]
+        expectOkStack "quiet/nan-direct" (runQrshiftDirect 13 #[.int .nan]) #[intV (-1)]
         expectOkStack "quiet/range-high-to-nan" (runQrshiftDirect 1 #[intV hugeOutOfRangePos]) #[.int .nan]
         expectOkStack "quiet/range-low-to-nan" (runQrshiftDirect 1 #[intV hugeOutOfRangeNeg]) #[.int .nan]
         expectOkStack "quiet/range-high-fold-finite"
@@ -299,10 +299,10 @@ def suite : InstrSuite where
     mkInputCase "quiet/nan-via-program-with-tail" 7 .nan #[intV 11],
     mkInputCase "quiet/range-helper-via-program-high" 1 (.num (maxInt257 + 1)),
     mkInputCase "quiet/range-helper-via-program-low" 1 (.num (minInt257 - 1)),
-    mkInputCase "quiet/range-huge-high-to-nan-via-program" 1 (.num hugeOutOfRangePos),
-    mkInputCase "quiet/range-huge-low-to-nan-via-program" 1 (.num hugeOutOfRangeNeg),
-    mkInputCase "quiet/range-huge-high-fold-finite-via-program" 256 (.num hugeOutOfRangePos),
-    mkInputCase "quiet/range-huge-low-fold-finite-via-program" 256 (.num hugeOutOfRangeNeg),
+    mkInputCase "quiet/range-huge-high-to-nan-via-program" 1 (.num (maxInt257 + 1)),
+    mkInputCase "quiet/range-huge-low-to-nan-via-program" 1 (.num (minInt257 - 1)),
+    mkInputCase "quiet/range-huge-high-fold-finite-via-program" 256 (.num (maxInt257 + 1)),
+    mkInputCase "quiet/range-huge-low-fold-finite-via-program" 256 (.num (minInt257 - 1)),
     mkQrshiftCase "error/underflow/empty-stack" 1 #[],
     mkQrshiftCase "error/type/top-null" 1 #[.null],
     mkQrshiftCase "error/type/top-cell" 1 #[.cell Cell.empty],

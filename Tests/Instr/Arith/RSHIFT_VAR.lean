@@ -254,7 +254,7 @@ def suite : InstrSuite where
       run := do
         expectErr "underflow/empty" (runRshiftVarDirect #[]) .stkUnd
         expectErr "underflow/one-int" (runRshiftVarDirect #[intV 7]) .stkUnd
-        expectErr "type/single-non-int-shift-pop" (runRshiftVarDirect #[.null]) .typeChk
+        expectErr "type/single-non-int-shift-pop" (runRshiftVarDirect #[.null]) .stkUnd
         expectErr "type/shift-top-null" (runRshiftVarDirect #[intV 7, .null]) .typeChk
         expectErr "type/shift-top-cell" (runRshiftVarDirect #[intV 7, .cell Cell.empty]) .typeChk
         expectErr "type/x-second-null" (runRshiftVarDirect #[.null, intV 7]) .typeChk

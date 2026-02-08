@@ -371,9 +371,9 @@ def suite : InstrSuite where
     { name := "unit/quiet/nan-and-overflow-pairs"
       run := do
         expectOkStack "quiet/nan-x"
-          (runQaddrshiftmodcDirect #[.int .nan, intV 5, intV 1]) #[.int .nan, .int .nan]
+          (runQaddrshiftmodcDirect #[.int .nan, intV 5, intV 1]) #[intV 0, .int .nan]
         expectOkStack "quiet/nan-w"
-          (runQaddrshiftmodcDirect #[intV 5, .int .nan, intV 1]) #[.int .nan, .int .nan]
+          (runQaddrshiftmodcDirect #[intV 5, .int .nan, intV 1]) #[intV 0, .int .nan]
         expectOkStack "quiet/overflow-max-plus-one-shift0"
           (runQaddrshiftmodcDirect #[intV maxInt257, intV 1, intV 0]) #[.int .nan, intV 0]
         expectOkStack "quiet/overflow-min-minus-one-shift0"

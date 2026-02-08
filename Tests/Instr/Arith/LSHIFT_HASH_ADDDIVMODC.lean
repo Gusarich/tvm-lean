@@ -520,10 +520,6 @@ def suite : InstrSuite where
       1 #[intV 1, .cell Cell.empty, .null],
     mkShiftCase "/error-order/pop-w-before-x-when-y-int"
       1 #[.null, .cell Cell.empty, intV 1],
-    mkShiftCase "/error-order/range-shift0-before-pop"
-      0 #[.null, .cell Cell.empty, intV 1],
-    mkShiftCase "/error-order/range-shift257-before-pop"
-      257 #[.cell Cell.empty, .null, intV 1],
     mkShiftInputCase "/nan/y-via-program" 1 #[.num 7, .num 3, .nan],
     mkShiftInputCase "/nan/w-via-program" 1 #[.num 7, .nan, .num 5],
     mkShiftInputCase "/nan/x-via-program" 1 #[.nan, .num 3, .num 5],

@@ -238,7 +238,7 @@ def suite : InstrSuite where
       run := do
         expectErr "underflow/empty" (runRshiftDirect #[]) .stkUnd
         expectErr "underflow/single-int-before-range" (runRshiftDirect #[intV 257]) .stkUnd
-        expectErr "underflow/single-non-int-before-type" (runRshiftDirect #[.null]) .typeChk
+        expectErr "underflow/single-non-int-before-type" (runRshiftDirect #[.null]) .stkUnd
         expectErr "range/negative-shift" (runRshiftDirect #[intV 7, intV (-1)]) .rangeChk
         expectErr "range/overmax-shift" (runRshiftDirect #[intV 7, intV 1024]) .rangeChk
         expectErr "error-order/range-before-x-type" (runRshiftDirect #[.null, intV (-1)]) .rangeChk
@@ -286,7 +286,7 @@ def suite : InstrSuite where
     mkCase "range/shift-overmax" #[intV 7, intV 1024],
     mkShiftInjectedCase "range/shift-nan-via-program" (intV 7) .nan,
     mkCase "error-order/range-before-x-type" #[.null, intV (-1)],
-    mkCase "intov/nan-x-direct" #[.int .nan, intV 1],
+    mkCaseFromIntVals "intov/nan-x-via-program" #[.nan, .num 1],
     mkCase "intov/nan-shift-and-x-via-program" #[] #[.pushInt .nan, .pushInt .nan, rshiftInstr],
     mkCaseFromIntVals "error-order/pushint-overflow-before-op" #[.num (maxInt257 + 1), .num 1],
     mkCase "gas/exact-cost-succeeds" #[intV 1, intV 1]

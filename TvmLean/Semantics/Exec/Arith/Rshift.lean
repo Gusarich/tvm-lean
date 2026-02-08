@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithRshift (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .rshift =>
+      VM.checkUnderflow 2
       let shift ← VM.popNatUpTo 1023
       let x ← VM.popInt
       match x with

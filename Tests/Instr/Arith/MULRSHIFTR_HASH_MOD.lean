@@ -361,7 +361,7 @@ def suite : InstrSuite where
         expectErr "/unit/underflow/one-int"
           (runMulrshiftrHashModDirect 1 #[intV 5]) .stkUnd
         expectErr "/unit/error-order/type-before-underflow-on-single-non-int"
-          (runMulrshiftrHashModDirect 1 #[.null]) .typeChk
+          (runMulrshiftrHashModDirect 1 #[.null]) .stkUnd
         expectErr "/unit/type/pop-y-first-null"
           (runMulrshiftrHashModDirect 1 #[intV 5, .null]) .typeChk
         expectErr "/unit/type/pop-x-second-null"

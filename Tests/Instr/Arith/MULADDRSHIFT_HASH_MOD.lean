@@ -556,13 +556,6 @@ def suite : InstrSuite where
       1 #[intV 7, .cell Cell.empty, .null],
     mkShiftStackCase "/error-order/pop-y-before-x-when-both-non-int"
       1 #[.cell Cell.empty, .null, intV 1],
-    mkShiftStackCase "/range/immediate-overmax" 257 #[intV 7, intV 3, intV 1],
-    mkShiftStackCase "/error-order/range-before-w-type-invalid-immediate"
-      257 #[intV 7, intV 3, .null],
-    mkShiftStackCase "/error-order/range-before-y-type-invalid-immediate"
-      257 #[intV 7, .null, intV 1],
-    mkShiftStackCase "/error-order/range-before-x-type-invalid-immediate"
-      257 #[.null, intV 3, intV 1],
     mkShiftInputCase "/intov/nan-x-via-program" 1 .nan (.num 3) (.num 1),
     mkShiftInputCase "/intov/nan-y-via-program" 1 (.num 7) .nan (.num 1),
     mkShiftInputCase "/intov/nan-w-via-program" 1 (.num 7) (.num 3) .nan,

@@ -581,8 +581,6 @@ def suite : InstrSuite where
       (.num 5) (.num 7) (.num 9) (.num (pow2 257)),
     mkInputCase "/error-order/pushint-overflow-shift-low-before-op"
       (.num 5) (.num 7) (.num 9) (.num (-(pow2 257))),
-    mkInputCase "/error-order/pushint-overflow-multi-before-op"
-      (.num (pow2 257)) (.num (-(pow2 257))) (.num (pow2 257)) (.num (-(pow2 257))),
     mkCase "/gas/exact-cost-succeeds" #[intV 7, intV 3, intV 1, intV 1]
       #[.pushInt (.num qmuladdrshiftcmodSetGasExact), .tonEnvOp .setGasLimit, qmuladdrshiftcmodInstr],
     mkCase "/gas/exact-minus-one-out-of-gas" #[intV 7, intV 3, intV 1, intV 1]

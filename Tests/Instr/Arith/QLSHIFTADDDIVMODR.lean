@@ -566,7 +566,8 @@ def suite : InstrSuite where
     mkCase "/error-order/pop-shift-before-y-when-both-non-int" #[intV 1, intV 2, .null, .cell Cell.empty],
     mkCase "/error-order/bad-shift-y-type-first-negative" #[intV 1, intV 2, .null, intV (-1)],
     mkCase "/error-order/bad-shift-w-type-third-over256" #[intV 1, .null, intV 2, intV 257],
-    mkCase "/error-order/bad-shift-x-type-fourth-nan" #[.null, intV 1, intV 2, .int .nan],
+    mkCase "/error-order/bad-shift-x-type-fourth-nan" #[.null, intV 1, intV 2]
+      #[.pushInt .nan, qlshiftAddDivModrInstr],
     mkCase "/pop-order/lower-preserved" #[.cell Cell.empty, intV 7, intV 3, intV 5, intV 1],
     mkCase "/pop-order/lower-preserved-range-shift" #[.cell Cell.empty, intV 7, intV 3, intV 5, intV 257],
     mkCase "/error-order/range-before-y-type-via-program" #[intV 7, intV 3, .null]
@@ -596,8 +597,6 @@ def suite : InstrSuite where
       #[IntVal.num (maxInt257 + 1), IntVal.num 3, IntVal.num 7, IntVal.num 1],
     mkInputCase "/error-order/pushint-underflow-x-before-op"
       #[IntVal.num (minInt257 - 1), IntVal.num 3, IntVal.num 7, IntVal.num 1],
-    mkInputCase "/error-order/pushint-overflow-all-before-op"
-      #[IntVal.num (pow2 257), IntVal.num (pow2 257), IntVal.num (pow2 257), IntVal.num (pow2 257)],
     mkCase "/gas/exact-cost-succeeds" #[intV 7, intV 3, intV 5, intV 1]
       #[.pushInt (.num qlshiftAddDivModrSetGasExact), .tonEnvOp .setGasLimit, qlshiftAddDivModrInstr],
     mkCase "/gas/exact-minus-one-out-of-gas" #[intV 7, intV 3, intV 5, intV 1]

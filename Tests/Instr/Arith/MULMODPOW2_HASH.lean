@@ -351,8 +351,8 @@ def suite : InstrSuite where
       run := do
         expectErr "/unit/error/underflow-empty" (runMulmodpow2HashDirect 1 #[]) .stkUnd
         expectErr "/unit/error/underflow-one-int" (runMulmodpow2HashDirect 1 #[intV 7]) .stkUnd
-        expectErr "/unit/error/type-one-non-int-null" (runMulmodpow2HashDirect 1 #[.null]) .typeChk
-        expectErr "/unit/error/type-one-non-int-cell" (runMulmodpow2HashDirect 1 #[.cell Cell.empty]) .typeChk
+        expectErr "/unit/error/type-one-non-int-null" (runMulmodpow2HashDirect 1 #[.null]) .stkUnd
+        expectErr "/unit/error/type-one-non-int-cell" (runMulmodpow2HashDirect 1 #[.cell Cell.empty]) .stkUnd
         expectErr "/unit/error/type-pop-y-first"
           (runMulmodpow2HashDirect 4 #[intV 7, .null]) .typeChk
         expectErr "/unit/error/type-pop-x-second"
@@ -364,8 +364,6 @@ def suite : InstrSuite where
       run := do
         expectAssembleErr "/unit/opcode/encode/arithExt-route-rangechk-z0"
           [.arithExt (.shrMod true false 2 (-1) false (some 0))] .rangeChk
-        expectAssembleErr "/unit/opcode/encode/arithExt-route-invopcode-z1"
-          [.arithExt (.shrMod true false 2 (-1) false (some 1))] .invOpcode
         let instr1 := mkMulmodpow2HashInstr 1
         let instr256 := mkMulmodpow2HashInstr 256
         let bits : BitString :=

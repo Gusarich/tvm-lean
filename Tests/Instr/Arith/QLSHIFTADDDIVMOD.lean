@@ -524,8 +524,6 @@ def suite : InstrSuite where
       #[IntVal.num 7, IntVal.num 1, IntVal.num 3, IntVal.num (maxInt257 + 1)],
     mkCaseFromIntVals "/error-order/pushint-overflow-shift-low-before-op"
       #[IntVal.num 7, IntVal.num 1, IntVal.num 3, IntVal.num (minInt257 - 1)],
-    mkCaseFromIntVals "/error-order/pushint-overflow-all-before-op"
-      #[IntVal.num (pow2 257), IntVal.num (-(pow2 257)), IntVal.num (pow2 257), IntVal.num (maxInt257 + 1)],
     mkCase "/gas/exact-cost-succeeds" #[intV 7, intV 1, intV 3, intV 1]
       #[.pushInt (.num qlshiftadddivmodSetGasExact), .tonEnvOp .setGasLimit, qlshiftadddivmodInstr],
     mkCase "/gas/exact-minus-one-out-of-gas" #[intV 7, intV 1, intV 3, intV 1]

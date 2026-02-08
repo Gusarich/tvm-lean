@@ -435,12 +435,14 @@ def suite : InstrSuite where
               let surrogate := runMulrshiftcmodRuntimeDirect runtimeStack
               expectSameResult s!"/unit/surrogate/shift={shift}/stack={reprStr stack}" direct surrogate }
     ,
-    { name := "/unit/opcode/assembler-currently-rejects-hash-form"
+    { name := "/unit/opcode/hash-form-encoding-range-gates"
       run := do
-        expectAssembleErr "/unit/opcode/encode/hash-form-z1"
-          [mkMulrshiftcHashModInstr 1] .invOpcode
-        expectAssembleErr "/unit/opcode/encode/hash-form-z256"
-          [mkMulrshiftcHashModInstr 256] .invOpcode }
+        match assembleCp0 [mkMulrshiftcHashModInstr 1] with
+        | .ok _ => pure ()
+        | .error e => throw (IO.userError s!"/unit/opcode/encode/hash-form-z1: expected success, got {e}")
+        match assembleCp0 [mkMulrshiftcHashModInstr 256] with
+        | .ok _ => pure ()
+        | .error e => throw (IO.userError s!"/unit/opcode/encode/hash-form-z256: expected success, got {e}") }
     ,
     { name := "/unit/dispatch/non-mulrshiftc-hash-mod-falls-through"
       run := do

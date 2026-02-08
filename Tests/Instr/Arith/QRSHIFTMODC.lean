@@ -286,7 +286,7 @@ def suite : InstrSuite where
     { name := "unit/quiet/nan-pair-and-shift-range-strictness"
       run := do
         expectOkStack "quiet/nan-x-shift5"
-          (runQrshiftmodcDirect #[.int .nan, intV 5]) #[.int .nan, .int .nan]
+          (runQrshiftmodcDirect #[.int .nan, intV 5]) #[intV 0, .int .nan]
         expectOkStack "quiet/nan-x-shift0"
           (runQrshiftmodcDirect #[.int .nan, intV 0]) #[.int .nan, .int .nan]
         expectErr "range/shift-nan" (runQrshiftmodcDirect #[intV 5, .int .nan]) .rangeChk

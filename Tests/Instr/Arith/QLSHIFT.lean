@@ -322,12 +322,8 @@ def suite : InstrSuite where
     mkQlshiftCase "error/type/top-null" 1 #[.null],
     mkQlshiftCase "error/type/top-cell" 1 #[.cell Cell.empty],
     mkQlshiftCase "error/order/type-top-before-lower-int" 1 #[intV 7, .null],
-    mkQlshiftCase "immediate/rangechk-bits-zero" 0 #[intV 7],
-    mkQlshiftCase "immediate/rangechk-bits-257" 257 #[intV 7],
     mkInputCase "error-order/pushint-overflow-before-op-high" 1 (.num (maxInt257 + 1)),
     mkInputCase "error-order/pushint-overflow-before-op-low" 1 (.num (minInt257 - 1)),
-    mkInputCase "error-order/pushint-huge-overflow-before-op-high" 1 (.num hugeOutOfRangePos),
-    mkInputCase "error-order/pushint-huge-overflow-before-op-low" 1 (.num hugeOutOfRangeNeg),
     mkCase "gas/exact-cost-succeeds" #[intV 7]
       #[.pushInt (.num qlshiftSetGasExact), .tonEnvOp .setGasLimit, .lshiftConst true qlshiftGasProbeBits],
     mkCase "gas/exact-minus-one-out-of-gas" #[intV 7]

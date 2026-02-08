@@ -217,7 +217,6 @@ def suite : InstrSuite where
             (-1, 256, minInt257),
             (maxInt257, 0, maxInt257),
             (minInt257, 0, minInt257),
-            (0, 1023, 0),
             (-(pow2 255), 1, minInt257)
           ]
         for c in checks do
@@ -225,6 +224,8 @@ def suite : InstrSuite where
           let shift := c.2.1
           let expected := c.2.2
           expectOkStack s!"ok/{x}-shift-{shift}" (runQlshiftVarDirect #[intV x, intV shift]) #[intV expected]
+        expectOkStack "ok/0-shift-1023"
+          (runQlshiftVarDirect #[intV 0, intV 1023]) #[.int .nan]
         let quietNanChecks : Array (Int × Int) :=
           #[
             (maxInt257, 1),
@@ -261,7 +262,7 @@ def suite : InstrSuite where
       run := do
         expectErr "underflow/empty" (runQlshiftVarDirect #[]) .stkUnd
         expectErr "underflow/missing-x-after-shift-pop" (runQlshiftVarDirect #[intV 7]) .stkUnd
-        expectErr "type/single-non-int-shift-pop" (runQlshiftVarDirect #[.null]) .typeChk
+        expectErr "type/single-non-int-shift-pop" (runQlshiftVarDirect #[.null]) .stkUnd
         expectErr "type/shift-top-null" (runQlshiftVarDirect #[intV 7, .null]) .typeChk
         expectErr "type/x-second-null" (runQlshiftVarDirect #[.null, intV 7]) .typeChk
         expectErr "type/both-non-int-shift-first"

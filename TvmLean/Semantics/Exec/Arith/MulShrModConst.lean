@@ -6,6 +6,9 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithMulShrModConst (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .mulShrModConst d roundMode z =>
+      if d == 0 || roundMode == 2 then
+        throw .invOpcode
+      VM.checkUnderflow 2
       let y ← VM.popInt
       let x ← VM.popInt
       match x, y with
@@ -26,12 +29,16 @@ def execInstrArithMulShrModConst (i : Instr) (next : VM Unit) : VM Unit := do
           | _ =>
               throw .invOpcode
       | _, _ =>
-          -- NaN propagation for MVP.
-          if d == 3 then
-            VM.pushIntQuiet .nan false
-            VM.pushIntQuiet .nan false
-          else
-            VM.pushIntQuiet .nan false
+          match d with
+          | 1 =>
+              VM.pushIntQuiet .nan false
+          | 2 =>
+              VM.pushIntQuiet .nan false
+          | 3 =>
+              VM.pushIntQuiet .nan false
+              VM.pushIntQuiet .nan false
+          | _ =>
+              throw .invOpcode
   | _ => next
 
 end TvmLean

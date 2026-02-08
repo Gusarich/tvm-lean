@@ -375,11 +375,11 @@ def suite : InstrSuite where
         expectOkStack "quiet/overflow-min-minus-one-shift0"
           (runQaddrshiftmodrDirect #[intV minInt257, intV (-1), intV 0]) #[.int .nan, intV 0]
         expectOkStack "quiet/nan-x"
-          (runQaddrshiftmodrDirect #[.int .nan, intV 5, intV 1]) #[.int .nan, .int .nan]
+          (runQaddrshiftmodrDirect #[.int .nan, intV 5, intV 1]) #[intV 0, .int .nan]
         expectOkStack "quiet/nan-w"
-          (runQaddrshiftmodrDirect #[intV 5, .int .nan, intV 1]) #[.int .nan, .int .nan]
+          (runQaddrshiftmodrDirect #[intV 5, .int .nan, intV 1]) #[intV 0, .int .nan]
         expectOkStack "quiet/nan-both"
-          (runQaddrshiftmodrDirect #[.int .nan, .int .nan, intV 1]) #[.int .nan, .int .nan] }
+          (runQaddrshiftmodrDirect #[.int .nan, .int .nan, intV 1]) #[intV 0, .int .nan] }
     ,
     { name := "unit/error-order/underflow-shift-range-and-pop-precedence"
       run := do

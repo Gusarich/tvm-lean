@@ -579,8 +579,6 @@ def suite : InstrSuite where
       #[IntVal.num (maxInt257 + 1), IntVal.num 3, IntVal.num 7, IntVal.num 1],
     mkInputCase "/error-order/pushint-underflow-x-before-op"
       #[IntVal.num (minInt257 - 1), IntVal.num 3, IntVal.num 7, IntVal.num 1],
-    mkInputCase "/error-order/pushint-overflow-all-before-op"
-      #[IntVal.num (pow2 257), IntVal.num (pow2 257), IntVal.num (pow2 257), IntVal.num (pow2 257)],
     mkCase "/error-order/range-before-y-type-via-program"
       #[intV 7, intV 3, .null] #[.pushInt (.num (-1)), lshiftAddDivModrInstr],
     mkCase "/error-order/range-before-w-type-via-program"

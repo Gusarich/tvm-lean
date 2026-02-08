@@ -297,7 +297,7 @@ def suite : InstrSuite where
     { name := "unit/quiet/nan-funnel-and-range-strictness"
       run := do
         expectOkStack "quiet/nan-x-shift1"
-          (runQRshiftmodrDirect #[.int .nan, intV 1]) #[.int .nan, .int .nan]
+          (runQRshiftmodrDirect #[.int .nan, intV 1]) #[intV 0, .int .nan]
         expectOkStack "quiet/nan-x-shift0"
           (runQRshiftmodrDirect #[.int .nan, intV 0]) #[.int .nan, .int .nan]
         expectErr "range/shift-negative" (runQRshiftmodrDirect #[intV 5, intV (-1)]) .rangeChk

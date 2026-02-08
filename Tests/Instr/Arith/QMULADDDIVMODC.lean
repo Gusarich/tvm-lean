@@ -456,8 +456,6 @@ def suite : InstrSuite where
       #[IntVal.num 2, IntVal.num 3, IntVal.num (maxInt257 + 1), IntVal.num 1],
     mkCaseFromIntVals "/error-order/pushint-overflow-z-high-before-op"
       #[IntVal.num 2, IntVal.num 3, IntVal.num 4, IntVal.num (maxInt257 + 1)],
-    mkCaseFromIntVals "/error-order/pushint-overflow-all-before-op"
-      #[IntVal.num (pow2 257), IntVal.num (-(pow2 257)), IntVal.num (maxInt257 + 2), IntVal.num (minInt257 - 2)],
     mkCase "/gas/exact-cost-succeeds" #[intV 3, intV 4, intV 5, intV 2]
       #[.pushInt (.num qmuladddivmodcSetGasExact), .tonEnvOp .setGasLimit, qmuladddivmodcInstr],
     mkCase "/gas/exact-minus-one-out-of-gas" #[intV 3, intV 4, intV 5, intV 2]

@@ -290,10 +290,10 @@ def suite : InstrSuite where
           #[.int .nan, intV 0]
         expectOkStack "unit/quiet/nan-w"
           (runQAddrShiftModDirect #[intV 5, .int .nan, intV 4])
-          #[.int .nan, .int .nan]
+          #[intV 0, .int .nan]
         expectOkStack "unit/quiet/nan-x"
           (runQAddrShiftModDirect #[.int .nan, intV 5, intV 4])
-          #[.int .nan, .int .nan] }
+          #[intV 0, .int .nan] }
     ,
     { name := "/unit/error-order/underflow-type-and-range-precedence"
       run := do

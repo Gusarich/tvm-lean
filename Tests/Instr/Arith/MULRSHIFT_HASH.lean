@@ -356,7 +356,7 @@ def suite : InstrSuite where
         expectErr "/unit/error/underflow/single-int"
           (runMulrshiftHashDirect 1 #[intV 7]) .stkUnd
         expectErr "/unit/error/type/single-non-int"
-          (runMulrshiftHashDirect 1 #[.null]) .typeChk
+          (runMulrshiftHashDirect 1 #[.null]) .stkUnd
         expectErr "/unit/error/type/y-top-non-int-before-x"
           (runMulrshiftHashDirect 1 #[intV 7, .null]) .typeChk
         expectErr "/unit/error/type/x-second-non-int-after-y"

@@ -335,6 +335,9 @@ def encodeArithExtInstr (op : ArithExtInstr) : Except Excno BitString := do
             | false, false, 2 => some 0xa938
             | false, false, 3 => some 0xa93c
             | true, true, 3 => some 0xa9b0
+            | true, false, 1 => some 0xa9b4
+            | true, false, 2 => some 0xa9b8
+            | true, false, 3 => some 0xa9bc
             | _, _, _ => none
           let p16Hash ←
             match baseHash? with

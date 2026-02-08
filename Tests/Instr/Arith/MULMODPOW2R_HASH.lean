@@ -337,7 +337,7 @@ def suite : InstrSuite where
         expectErr "/unit/error/underflow-one-int"
           (runMulModPow2RHashDirect 1 #[intV 7]) .stkUnd
         expectErr "/unit/error/one-non-int-is-type-before-x-underflow"
-          (runMulModPow2RHashDirect 1 #[.null]) .typeChk
+          (runMulModPow2RHashDirect 1 #[.null]) .stkUnd
         expectErr "/unit/error/type-pop-y-first-null"
           (runMulModPow2RHashDirect 1 #[intV 7, .null]) .typeChk
         expectErr "/unit/error/type-pop-y-first-cell"

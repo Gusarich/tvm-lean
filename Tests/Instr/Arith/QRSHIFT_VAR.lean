@@ -242,7 +242,7 @@ def suite : InstrSuite where
       run := do
         expectErr "underflow/empty" (runQrshiftVarDirect #[]) .stkUnd
         expectErr "underflow/one-int" (runQrshiftVarDirect #[intV 7]) .stkUnd
-        expectErr "type/single-non-int-shift-pop" (runQrshiftVarDirect #[.null]) .typeChk
+        expectErr "type/single-non-int-shift-pop" (runQrshiftVarDirect #[.null]) .stkUnd
         expectErr "type/shift-top-null" (runQrshiftVarDirect #[intV 7, .null]) .typeChk
         expectErr "type/x-second-null" (runQrshiftVarDirect #[.null, intV 7]) .typeChk
         expectErr "type/both-non-int-shift-first"

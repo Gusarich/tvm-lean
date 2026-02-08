@@ -425,8 +425,10 @@ def suite : InstrSuite where
     ,
     { name := "/unit/opcode/encode-gap-and-range-gates"
       run := do
-        expectAssembleErr "/unit/opcode/encode/mulrshiftc-hash-z1-current-gap"
-          [mkMulrshiftcHashInstr 1] .invOpcode
+        match assembleCp0 [mkMulrshiftcHashInstr 1] with
+        | .ok _ => pure ()
+        | .error e =>
+            throw (IO.userError s!"/unit/opcode/encode/mulrshiftc-hash-z1-current-gap: expected success, got {e}")
         expectAssembleErr "/unit/opcode/encode/mulrshiftc-hash-z0-range"
           [mkMulrshiftcHashInstr 0] .rangeChk
         expectAssembleErr "/unit/opcode/encode/mulrshiftc-hash-z257-range"
