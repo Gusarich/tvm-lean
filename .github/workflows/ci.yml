@@ -42,22 +42,48 @@ jobs:
           path: |
             .lake/packages
             .lake/build
-          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-${{ github.sha }}
           restore-keys: |
-            ubuntu-lake-${{ hashFiles('lean-toolchain') }}-
+            ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-
             ubuntu-lake-
 
       - name: Build core + validation + tests
         run: |
           lake build TvmLeanModel TvmLeanSemantics TvmLeanNative TvmLeanValidation TvmLeanTests
 
-      - name: Build TON fift
+      - name: Resolve TON commit
+        id: ton-ref
+        run: |
+          COMMIT="$(git ls-remote https://github.com/ton-blockchain/ton.git refs/heads/master | awk '{print $1}')"
+          if [ -z "$COMMIT" ]; then
+            echo "Failed to resolve TON master commit" >&2
+            exit 1
+          fi
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Restore TON fift cache
+        uses: actions/cache/restore@v4
+        id: ton-fift-cache
+        with:
+          path: |
+            ~/.cache/tvmlean/ton-fift/bin/fift
+            ~/.cache/tvmlean/ton-fift/lib
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}
+
+      - name: Build TON fift (cache miss)
+        if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
         run: |
           git clone --depth 1 https://github.com/ton-blockchain/ton.git /tmp/ton
           cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
-          echo "TON_FIFT_BIN=/tmp/ton/build/crypto/fift" >> "$GITHUB_ENV"
-          echo "TON_FIFT_LIB=/tmp/ton/crypto/fift/lib" >> "$GITHUB_ENV"
+          mkdir -p ~/.cache/tvmlean/ton-fift/bin ~/.cache/tvmlean/ton-fift/lib
+          cp /tmp/ton/build/crypto/fift ~/.cache/tvmlean/ton-fift/bin/fift
+          cp -R /tmp/ton/crypto/fift/lib/. ~/.cache/tvmlean/ton-fift/lib/
+
+      - name: Configure TON fift env
+        run: |
+          echo "TON_FIFT_BIN=$HOME/.cache/tvmlean/ton-fift/bin/fift" >> "$GITHUB_ENV"
+          echo "TON_FIFT_LIB=$HOME/.cache/tvmlean/ton-fift/lib" >> "$GITHUB_ENV"
 
       - name: Verify oracle runtime
         run: |
@@ -98,7 +124,16 @@ jobs:
           path: |
             .lake/packages
             .lake/build
-          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-${{ github.sha }}
+
+      - name: Save TON fift cache
+        if: ${{ always() && steps.ton-fift-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/tvmlean/ton-fift/bin/fift
+            ~/.cache/tvmlean/ton-fift/lib
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}
 
   collector:
     name: Collector (TypeScript)
