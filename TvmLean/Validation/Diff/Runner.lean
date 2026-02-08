@@ -589,11 +589,11 @@ def runTestCase (cfg : RunConfig) (tc : TestCase) : IO TestResult := do
                           regs := { base.regs with c4 := dataCell, c7 := initC7 } }
 
                       let precompiledGasUsage? : Option Int :=
-                        match initC7.get? 0 with
-                        | some (.tuple params) =>
-                            match params.get? 16 with
-                            | some (.int (.num n)) => some n
-                            | _ => none
+                        match initC7[0]? with
+                        | some (Value.tuple params) =>
+                          match params[16]? with
+                          | some (Value.int (.num n)) => some n
+                          | _ => none
                         | _ => none
 
                       match precompiledGasUsage? with

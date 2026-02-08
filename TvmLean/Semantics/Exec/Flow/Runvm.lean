@@ -141,7 +141,7 @@ def cp0InvOpcodeGasBitsRunvm (code : Slice) : Nat :=
       if code.bitsRemaining < 4 then 16 else 8
 
 set_option maxHeartbeats 1000000 in
-def execInstrFlowChildNoRunvm (host : Host) (i : Instr) (next : VM Unit) : VM Unit :=
+def execInstrFlowChildNoRunvm (_host : Host) (i : Instr) (next : VM Unit) : VM Unit :=
   execInstrFlowSetcp i <|
   execInstrFlowIfret i <|
   execInstrFlowIfnotret i <|

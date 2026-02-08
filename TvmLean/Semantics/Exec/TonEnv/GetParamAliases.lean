@@ -4,7 +4,7 @@ namespace TvmLean
 
 def VM.pushC7Param (idx : Nat) : VM Unit := do
   let st ← get
-  if h : 0 < st.regs.c7.size then
+  if 0 < st.regs.c7.size then
     match st.regs.c7[0]! with
     | .tuple params =>
         if idx < params.size then
@@ -33,4 +33,3 @@ def execInstrTonEnvGetParamAliases (i : Instr) (next : VM Unit) : VM Unit := do
   | _ => next
 
 end TvmLean
-

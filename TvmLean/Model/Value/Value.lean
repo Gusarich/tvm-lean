@@ -33,7 +33,7 @@ def arrayBeqBy {α : Type} (a b : Array α) (beq : α → α → Bool) : Bool :=
     Id.run do
       let mut ok := true
       for i in [0:a.size] do
-        match a.get? i, b.get? i with
+        match a[i]?, b[i]? with
         | some x, some y =>
             if !(beq x y) then
               ok := false

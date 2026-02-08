@@ -240,7 +240,7 @@ def sha256Digest (msg : Array UInt8) : Array UInt8 :=
     let blocks := padded.size / 64
     for bi in [0:blocks] do
       let base := bi * 64
-      let mut w : Array UInt32 := Array.mkArray 64 0
+      let mut w : Array UInt32 := Array.replicate 64 0
       for i in [0:16] do
         let j := base + i * 4
         let b0 := padded[j]!

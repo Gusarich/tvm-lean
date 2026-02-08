@@ -8,7 +8,7 @@ def execInstrTonEnvBalance (i : Instr) (next : VM Unit) : VM Unit := do
   | .tonEnvOp .balance =>
       -- BALANCE is `GETPARAM 7` in the TON opcode table; it reads `c7[0]` as the "params" tuple.
       let st ← get
-      if h : 0 < st.regs.c7.size then
+      if 0 < st.regs.c7.size then
         match st.regs.c7[0]! with
         | .tuple params =>
             if 7 < params.size then

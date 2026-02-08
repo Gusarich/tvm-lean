@@ -543,7 +543,7 @@ def dictReplaceBuilderWithCells (root : Option Cell) (key : BitString) (newVal :
       return (some c', ok, created, loaded)
 
 def bitsAllSame? (bs : BitString) : Option Bool :=
-  if h : 0 < bs.size then
+  if 0 < bs.size then
     let b0 := bs[0]!
     Id.run do
       let mut ok := true

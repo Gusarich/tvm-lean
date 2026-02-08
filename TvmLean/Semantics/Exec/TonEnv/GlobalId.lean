@@ -8,9 +8,9 @@ def execInstrTonEnvGlobalId (i : Instr) (next : VM Unit) : VM Unit := do
   | .tonEnvOp .globalId =>
       -- Matches C++ `exec_get_global_id` (tonops.cpp) for global_version >= 6.
       let unpacked ← VM.getUnpackedConfigTuple
-      match unpacked.get? 1 with
+      match unpacked[1]? with
       | none => throw .rangeChk
-      | some (.slice cs) =>
+      | some (Value.slice cs) =>
           if !cs.haveBits 32 then
             throw .cellUnd
           let gid : Int := bitsToIntSignedTwos (cs.readBits 32)

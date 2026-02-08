@@ -16,10 +16,10 @@ def execInstrTonEnvGetStorageFee (i : Instr) (next : VM Unit) : VM Unit := do
       let bits ← VM.popNatUpTo max63
       let cells ← VM.popNatUpTo max63
       let unpacked ← VM.getUnpackedConfigTuple
-      match unpacked.get? 0 with
-      | some .null =>
+      match unpacked[0]? with
+      | some Value.null =>
           VM.pushSmallInt 0
-      | some (.slice pricesCs) =>
+      | some (Value.slice pricesCs) =>
           -- StoragePrices#cc utime_since:uint32 bit_price:uint64 cell_price:uint64 mc_bit_price:uint64 mc_cell_price:uint64
           let (tag, s1) ← pricesCs.takeBitsAsNatCellUnd 8
           if tag != 0xcc then

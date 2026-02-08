@@ -67,7 +67,7 @@ target tvmlean_hash.o pkg : FilePath := do
   let weakArgs :=
     #["-I", (← getLeanIncludeDir).toString, "-I", (pkg.dir / "c").toString, "-I", "/opt/homebrew/include", "-I",
       "/usr/local/include"]
-  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
+  buildO oFile srcJob weakArgs #["-fPIC", "-std=c++11"] "cc" getLeanTrace
 
 target tvmlean_crypto_ext.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_crypto_ext.o"
@@ -100,7 +100,7 @@ target tvmlean_keccak.o pkg : FilePath := do
   let oFile := pkg.buildDir / "c" / "tvmlean_keccak.o"
   let srcJob ← inputTextFile <| pkg.dir / "c" / "keccak.cpp"
   let weakArgs := #["-I", (pkg.dir / "c").toString]
-  buildO oFile srcJob weakArgs #["-fPIC"] "cc" getLeanTrace
+  buildO oFile srcJob weakArgs #["-fPIC", "-std=c++11"] "cc" getLeanTrace
 
 extern_lib libtvmlean_crypto pkg := do
   let o ← tvmlean_crypto.o.fetch

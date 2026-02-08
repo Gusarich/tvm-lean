@@ -54,7 +54,7 @@ def VM.getMsgPrices (isMasterchain : Bool) : VM (Int × Int × Int × Nat × Nat
   -- Returns (lump_price, bit_price, cell_price, ihr_factor, first_frac).
   let unpacked ← VM.getUnpackedConfigTuple
   let idx : Nat := if isMasterchain then 4 else 5
-  match unpacked.get? idx with
+  match unpacked[idx]? with
   | some (.slice pricesCs) =>
       let (tag, s1) ← pricesCs.takeBitsAsNatCellUnd 8
       if tag != 0xea then
@@ -109,7 +109,7 @@ def VM.getGasPrices (isMasterchain : Bool) : VM (Nat × Nat × Nat) := do
       let gasPrice ← parseTail tag0 s1
       return (gasPrice, 0, 0)
 
-  match unpacked.get? idx with
+  match unpacked[idx]? with
   | some (.slice pricesCs) =>
       match (parseGasLimitsPrices pricesCs : Except Excno (Nat × Nat × Nat)) with
       | .ok (gasPrice, flatGasLimit, flatGasPrice) => return (gasPrice, flatGasLimit, flatGasPrice)

@@ -12,7 +12,7 @@ def execInstrTonEnvInMsgParam (i : Instr) (next : VM Unit) : VM Unit := do
       if 0 < st.regs.c7.size then
         match st.regs.c7[0]! with
         | .tuple params =>
-            if h17 : 17 < params.size then
+            if 17 < params.size then
               match params[17]! with
               | .tuple inMsgParams =>
                   if idx < inMsgParams.size then

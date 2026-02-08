@@ -8,7 +8,7 @@ def execInstrTonEnvNow (i : Instr) (next : VM Unit) : VM Unit := do
   | .tonEnvOp .now =>
       -- NOW is `GETPARAM 3` in the TON opcode table; it reads `c7[0]` as the "params" tuple.
       let st ← get
-      if h : 0 < st.regs.c7.size then
+      if 0 < st.regs.c7.size then
         match st.regs.c7[0]! with
         | .tuple params =>
           if 3 < params.size then

@@ -250,9 +250,9 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
       -- storage stat: count reachable cells/bits excluding the root cell (and root bits)
       let unpacked ← VM.getUnpackedConfigTuple
       let maxCells : Nat ←
-        match unpacked.get? 6 with
-        | some .null => pure (1 <<< 13)
-        | some (.slice cs) =>
+        match unpacked[6]? with
+        | some Value.null => pure (1 <<< 13)
+        | some (Value.slice cs) =>
             match (show Except Excno Nat from do
               let (tag, s1) ← cs.takeBitsAsNatCellUnd 8
               if tag = 0x01 ∨ tag = 0x02 then
@@ -282,7 +282,7 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
           modify fun st => st.registerCellLoad c
           todo := todo ++ c.refs
 
-      let (lumpPrice, bitPrice, cellPrice, ihrFactor, firstFrac) ← VM.getMsgPrices isMasterchain
+      let (lumpPrice, bitPrice, cellPrice, _ihrFactor, firstFrac) ← VM.getMsgPrices isMasterchain
 
       let valueAdjusted : Int ←
         if parsedMsg.extMsg then
