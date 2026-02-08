@@ -274,6 +274,55 @@ def encodeArithExtInstr (op : ArithExtInstr) : Except Excno BitString := do
         return natToBits 0xb7ad 16
       else
         throw .invOpcode
+  | .shrMod mul add d roundMode quiet zOpt =>
+      let roundOfs : Nat ←
+        if roundMode = -1 then
+          pure 0
+        else if roundMode = 0 then
+          pure 1
+        else if roundMode = 1 then
+          pure 2
+        else
+          throw .invOpcode
+      let baseNoHash? : Option Nat :=
+        match mul, add, d with
+        | false, true, 3 => some 0xa920
+        | false, false, 1 => some 0xa924
+        | false, false, 2 => some 0xa928
+        | false, false, 3 => some 0xa92c
+        | true, true, 3 => some 0xa9a0
+        | true, false, 1 => some 0xa9a4
+        | true, false, 2 => some 0xa9a8
+        | true, false, 3 => some 0xa9ac
+        | _, _, _ => none
+      let p16NoHash ←
+        match baseNoHash? with
+        | some p16 => pure (p16 + roundOfs)
+        | none => throw .invOpcode
+      match zOpt with
+      | none =>
+          if quiet then
+            return natToBits 0xb7 8 ++ natToBits p16NoHash 16
+          else
+            return natToBits p16NoHash 16
+      | some z =>
+          if quiet then
+            throw .invOpcode
+          if z = 0 ∨ z > 256 then
+            throw .rangeChk
+          let baseHash? : Option Nat :=
+            match mul, add, d with
+            | false, true, 3 => some 0xa930
+            | false, false, 1 => some 0xa934
+            | false, false, 2 => some 0xa938
+            | false, false, 3 => some 0xa93c
+            | true, true, 3 => some 0xa9b0
+            | _, _, _ => none
+          let p16Hash ←
+            match baseHash? with
+            | some p16 => pure (p16 + roundOfs)
+            | none => throw .invOpcode
+          return natToBits p16Hash 16 ++ natToBits (z - 1) 8
   | _ =>
       throw .invOpcode
 
