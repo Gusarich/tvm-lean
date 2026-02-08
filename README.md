@@ -2,13 +2,13 @@
 
 > ⚠️ **Experimental** — This project is in active development and has not been thoroughly tested. Do not rely on its semantics.
 
-`tvm-lean` is an executable Lean 4 model of the TON Virtual Machine (TVM). It aims to be both a proof-grade semantics package and a high-confidence reference implementation validated against the [reference C++ implementation](https://github.com/ton-blockchain/ton).
+A Lean 4 executable model of the TON Virtual Machine (TVM), designed to match the behavior of the [reference C++ implementation](https://github.com/ton-blockchain/ton). It aims to be both a proof-grade semantics package and a high-confidence reference implementation validated against TON's C++ behavior.
 
 ## Motivation
 
 The existing C++ code in the [TON monorepo](https://github.com/ton-blockchain/ton) is a tangled mess of legacy code and obscure C++ patterns. TVM is the heart of TON smart contracts, and billions of dollars potentially depend on it, so ensuring its security is essential. Meanwhile, the [existing TVM specification](https://github.com/ton-blockchain/tvm-specification) is often inconsistent and doesn't always describe the actual semantics accurately.
 
-The original idea was to rewrite the specification for all instructions using AI agents. Early experiments with a few instructions showed promising results, but further thinking and experimentation led me to pivot toward this formal verification project instead.
+The original idea was to rewrite the specification for all instructions using AI agents. Early experiments with a few instructions showed promising results, but further thinking and experimentation led to pivoting toward this formal verification project instead.
 
 ## Goals
 
@@ -58,31 +58,6 @@ Generate coverage report:
 ```sh
 lake exe tvm-lean-coverage -- --format json --out build/coverage.json
 ```
-
-## Testing
-
-The test runner includes an oracle parity pass (`oracle/parity_all_instructions`) that executes every instruction in both the Lean VM and the TON C++ reference VM (via `~/Coding/ton/build/crypto/fift`), comparing `exit code`, `gas used`, `c4`, `c5`, and full stack results.
-
-Defaults are deterministic and non-random:
-- `20` cases per instruction
-- `8` code-layout variants per instruction
-- `20` stack/input variants per instruction
-- enforced minimum `10` cases per instruction
-
-Useful env overrides:
-```sh
-TVMLEAN_ORACLE_ONLY=ADD TVMLEAN_ORACLE_CASES=20 lake exe tvm-lean-tests
-TVMLEAN_ORACLE_LIMIT=50 lake exe tvm-lean-tests
-TVMLEAN_ORACLE_RANDOM_CASES=4096 TVMLEAN_ORACLE_SEED=1337 lake exe tvm-lean-tests
-TVMLEAN_ORACLE_ENABLED=0 lake exe tvm-lean-tests  # skip oracle parity pass
-```
-
-For high-coverage all-instruction parity sweeps (Lean vs Fift `runvmx`), use:
-```sh
-tools/run_oracle_validate_extensive.sh
-```
-
-This runs a multi-seed bounded-exhaustive+randomized matrix and writes logs/results under `oracle/_runs/`.
 
 ## Documentation
 
