@@ -140,6 +140,17 @@ def execInstrArithExt (i : Instr) (next : VM Unit) : VM Unit := do
           if mulMode then
             -- MULRSHIFT/MULMODPOW2 family: runtime shift range checks are relaxed in quiet mode
             -- (global version >= 13), producing NaN instead of throwing.
+            -- Like C++ `exec_mulshrmod`, enforce stack depth before popping shift:
+            -- runtime-shift variants need 3 args (`x y z`) or 4 with add-mode.
+            -- const-shift variants need 2 args (`x y`) or 3 with add-mode.
+            let st ← get
+            let need : Nat :=
+              if zOpt.isSome then
+                if addMode then 3 else 2
+              else
+                if addMode then 4 else 3
+            if st.stack.size < need then
+              throw .stkUnd
             let shiftRaw ←
               match zOpt with
               | some z => pure (Int.ofNat z)
