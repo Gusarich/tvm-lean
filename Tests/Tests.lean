@@ -4,6 +4,7 @@ import Tests.Harness.FuzzHarness
 import Tests.Harness.Runner
 import Tests.Harness.Cli
 import Tests.Harness.Coverage
+import Tests.Harness.Gen.Arith
 
 namespace Tests
 
