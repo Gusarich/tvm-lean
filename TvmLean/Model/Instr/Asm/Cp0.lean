@@ -1142,8 +1142,17 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
         return natToBits 0xb7b603 24
       else
         return natToBits 0xb603 16
-  | .mulShrModConst _ _ _ =>
-      throw .invOpcode
+  | .mulShrModConst d roundMode z =>
+      let roundEnc : Int := roundMode + 1
+      if roundEnc < 0 ∨ roundEnc > 2 then
+        throw .rangeChk
+      if d = 0 ∨ d > 3 then
+        throw .rangeChk
+      if z = 0 ∨ z > 256 then
+        throw .rangeChk
+      let cfg4 : Nat := (d <<< 2) + roundEnc.toNat
+      let args12 : Nat := (cfg4 <<< 8) + (z - 1)
+      return natToBits ((0xa9b <<< 12) + args12) 24
   | .divMod d roundMode addMode quiet =>
       let roundEnc : Int := roundMode + 1
       if roundEnc < 0 ∨ roundEnc > 2 then
