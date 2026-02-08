@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithMinmax (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .minmax | .qminmax =>
+      VM.checkUnderflow 2
       let x ← VM.popInt
       let y ← VM.popInt
       let quiet := i == .qminmax

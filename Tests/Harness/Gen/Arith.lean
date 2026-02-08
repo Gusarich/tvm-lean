@@ -17,6 +17,23 @@ def maxInt257 : Int :=
 def intV (n : Int) : Value :=
   .int (.num n)
 
+def intFitsSigned257 (n : Int) : Bool :=
+  minInt257 ≤ n && n ≤ maxInt257
+
+def intValOracleSerializable : IntVal → Bool
+  | .nan => false
+  | .num n => intFitsSigned257 n
+
+def oracleIntInputsToStackOrProgram (vals : Array IntVal) : Array Value × Array Instr :=
+  if vals.all intValOracleSerializable then
+    let stack : Array Value := vals.map (fun v =>
+      match v with
+      | .num n => intV n
+      | .nan => .int .nan)
+    (stack, #[])
+  else
+    (#[], vals.map Instr.pushInt)
+
 def int257BoundaryPool : Array Int :=
   #[
     0, 1, -1, 2, -2, 3, -3,
