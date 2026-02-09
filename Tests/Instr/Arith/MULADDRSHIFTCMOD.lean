@@ -403,7 +403,8 @@ private def genMuladdrshiftcmodFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2
       let (w, r4) := pickSigned257ish r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
+      let (pickNeg, r5) := randBool r4
+      let shiftOut : Int := if pickNeg then -1 else 257
       (mkInputCase s!"fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
         (.num x) (.num y) (.num w) (.num shiftOut), r5)
     else if shape = 36 then

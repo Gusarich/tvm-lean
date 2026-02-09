@@ -69,14 +69,14 @@ jobs:
           path: |
             ~/.cache/tvmlean/ton-fift/bin/fift
             ~/.cache/tvmlean/ton-fift/lib
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64
 
       - name: Build TON fift (cache miss)
         if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/ton-blockchain/ton.git /tmp/ton
           git -C /tmp/ton submodule update --init --recursive --depth 1
-          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTON_ARCH=x86-64
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
           mkdir -p ~/.cache/tvmlean/ton-fift/bin ~/.cache/tvmlean/ton-fift/lib
           cp /tmp/ton/build/crypto/fift ~/.cache/tvmlean/ton-fift/bin/fift
@@ -138,7 +138,7 @@ jobs:
           path: |
             ~/.cache/tvmlean/ton-fift/bin/fift
             ~/.cache/tvmlean/ton-fift/lib
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64
 
   collector:
     name: Collector (TypeScript)

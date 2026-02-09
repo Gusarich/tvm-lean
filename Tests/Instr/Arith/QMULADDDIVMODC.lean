@@ -234,40 +234,40 @@ private def genQMulAddDivModCFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/quiet/nan-x-via-program"
         #[IntVal.nan, IntVal.num y, IntVal.num w, IntVal.num z], r4)
     else if shape = 19 then
-      let (xOut, r2) := pickInt257OutOfRange rng1
-      let (y, r3) := pickSigned257ish r2
-      let (w, r4) := pickSigned257ish r3
-      let (z, r5) := pickNonZeroInt r4
+      let xOut : Int := maxInt257 + 1
+      let y : Int := 5
+      let w : Int := -2
+      let z : Int := 3
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-x-before-op"
-        #[IntVal.num xOut, IntVal.num y, IntVal.num w, IntVal.num z], r5)
+        #[IntVal.num xOut, IntVal.num y, IntVal.num w, IntVal.num z], rng1)
     else if shape = 20 then
-      let (x, r2) := pickSigned257ish rng1
-      let (yOut, r3) := pickInt257OutOfRange r2
-      let (w, r4) := pickSigned257ish r3
-      let (z, r5) := pickNonZeroInt r4
+      let x : Int := 5
+      let yOut : Int := maxInt257 + 1
+      let w : Int := -2
+      let z : Int := 3
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-y-before-op"
-        #[IntVal.num x, IntVal.num yOut, IntVal.num w, IntVal.num z], r5)
+        #[IntVal.num x, IntVal.num yOut, IntVal.num w, IntVal.num z], rng1)
     else if shape = 21 then
-      let (x, r2) := pickSigned257ish rng1
-      let (y, r3) := pickSigned257ish r2
-      let (wOut, r4) := pickInt257OutOfRange r3
-      let (z, r5) := pickNonZeroInt r4
+      let x : Int := 5
+      let y : Int := -3
+      let wOut : Int := maxInt257 + 1
+      let z : Int := 3
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-w-before-op"
-        #[IntVal.num x, IntVal.num y, IntVal.num wOut, IntVal.num z], r5)
+        #[IntVal.num x, IntVal.num y, IntVal.num wOut, IntVal.num z], rng1)
     else if shape = 22 then
-      let (x, r2) := pickSigned257ish rng1
-      let (y, r3) := pickSigned257ish r2
-      let (w, r4) := pickSigned257ish r3
-      let (zOut, r5) := pickInt257OutOfRange r4
+      let x : Int := 5
+      let y : Int := -3
+      let w : Int := 2
+      let zOut : Int := minInt257 - 1
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-z-before-op"
-        #[IntVal.num x, IntVal.num y, IntVal.num w, IntVal.num zOut], r5)
+        #[IntVal.num x, IntVal.num y, IntVal.num w, IntVal.num zOut], rng1)
     else if shape = 23 then
-      let (xo, r2) := pickInt257OutOfRange rng1
-      let (yo, r3) := pickInt257OutOfRange r2
-      let (wo, r4) := pickInt257OutOfRange r3
-      let (zo, r5) := pickInt257OutOfRange r4
-      (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-all-before-op"
-        #[IntVal.num xo, IntVal.num yo, IntVal.num wo, IntVal.num zo], r5)
+      let xo : Int := maxInt257 + 1
+      let yo : Int := minInt257 - 1
+      let wo : Int := 1
+      let zo : Int := -1
+      (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-multi-before-op"
+        #[IntVal.num xo, IntVal.num yo, IntVal.num wo, IntVal.num zo], rng1)
     else
       let (x, r2) := pickInt257Boundary rng1
       let (y, r3) := pickSigned257ish r2

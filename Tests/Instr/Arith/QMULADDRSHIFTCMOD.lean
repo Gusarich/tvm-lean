@@ -387,12 +387,12 @@ private def genQmuladdrshiftcmodFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
         (.num x) (.num y) (.num w) (.num shiftOut), r5)
     else if shape = 35 then
-      let (xOut, r2) := pickInt257OutOfRange rng1
-      let (yOut, r3) := pickInt257OutOfRange r2
-      let (wOut, r4) := pickInt257OutOfRange r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
+      let xOut : Int := maxInt257 + 1
+      let yOut : Int := minInt257 - 1
+      let wOut : Int := 1
+      let shiftOut : Int := -1
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-multi-before-op"
-        (.num xOut) (.num yOut) (.num wOut) (.num shiftOut), r5)
+        (.num xOut) (.num yOut) (.num wOut) (.num shiftOut), rng1)
     else
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2

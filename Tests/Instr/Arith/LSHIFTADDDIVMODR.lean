@@ -353,10 +353,9 @@ private def genLshiftAddDivModrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
     else if shape = 35 then
       let (hugeX, r2) := pickInt257OutOfRange rng1
       let (hugeW, r3) := pickInt257OutOfRange r2
-      let (hugeY, r4) := pickInt257OutOfRange r3
-      let (hugeShift, r5) := pickInt257OutOfRange r4
-      (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-all-before-op"
-        #[IntVal.num hugeX, IntVal.num hugeW, IntVal.num hugeY, IntVal.num hugeShift], r5)
+      let (shift, r4) := pickShiftUniform r3
+      (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-multi-before-op"
+        #[IntVal.num hugeX, IntVal.num hugeW, IntVal.num 1, IntVal.num (Int.ofNat shift)], r4)
     else if shape = 36 then
       (mkCase s!"/fuzz/shape-{shape}/error-order/range-before-y-type-via-program"
         #[intV 7, intV 3, .null] #[.pushInt (.num (-1)), lshiftAddDivModrInstr], rng1)

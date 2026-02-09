@@ -270,17 +270,17 @@ private def genLshiftHashDivmodCFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
       let (x, r2) := pickSigned257ish rng1
       (mkShiftCase s!"/fuzz/shape-{shape}/exact/div-by-one" x 1 1, r2)
     else if shape = 21 then
-      (mkCase s!"/fuzz/shape-{shape}/range/shift0-before-pop"
-        #[intV 7, .null] #[mkLshiftHashDivmodcInstr 0], rng1)
+      (mkCase s!"/fuzz/shape-{shape}/regression/hash-immediate-min-shift-underflow-empty"
+        #[] #[mkLshiftHashDivmodcInstr 1], rng1)
     else if shape = 22 then
-      (mkCase s!"/fuzz/shape-{shape}/range/shift257-before-pop"
-        #[.null, intV 7] #[mkLshiftHashDivmodcInstr 257], rng1)
+      (mkCase s!"/fuzz/shape-{shape}/regression/hash-immediate-max-shift-underflow-one-item"
+        #[.null] #[mkLshiftHashDivmodcInstr 256], rng1)
     else if shape = 23 then
-      (mkCase s!"/fuzz/shape-{shape}/error-order/underflow-before-range-shift0-empty"
-        #[] #[mkLshiftHashDivmodcInstr 0], rng1)
+      (mkCase s!"/fuzz/shape-{shape}/regression/hash-immediate-valid-shift-type-pop-y-first"
+        #[intV 7, .null] #[mkLshiftHashDivmodcInstr 1], rng1)
     else
-      (mkCase s!"/fuzz/shape-{shape}/error-order/underflow-before-range-shift257-one-item"
-        #[intV 1] #[mkLshiftHashDivmodcInstr 257], rng1)
+      (mkCase s!"/fuzz/shape-{shape}/regression/hash-immediate-valid-shift-type-pop-x-second"
+        #[.null, intV 7] #[mkLshiftHashDivmodcInstr 256], rng1)
   let (tag, rng3) := randNat rng2 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
 

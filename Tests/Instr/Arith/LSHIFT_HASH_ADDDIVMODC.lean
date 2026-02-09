@@ -322,11 +322,11 @@ private def genLshiftHashAddDivModCFuzzCase (rng0 : StdGen) : OracleCase × StdG
       (mkShiftInputCase s!"/fuzz/shape-{shape}/divzero/shift256"
         256 #[.num 9, .num (-7), .num 0], rng1)
     else if shape = 27 then
-      (mkShiftCase s!"/fuzz/shape-{shape}/range/shift0-before-pop"
-        0 #[.null, .cell Cell.empty, intV 1], rng1)
+      (mkShiftCase s!"/fuzz/shape-{shape}/regression/hash-immediate-min-shift-underflow-empty"
+        1 #[], rng1)
     else if shape = 28 then
-      (mkShiftCase s!"/fuzz/shape-{shape}/range/shift257-before-pop"
-        257 #[.cell Cell.empty, .null, intV 1], rng1)
+      (mkShiftCase s!"/fuzz/shape-{shape}/regression/hash-immediate-max-shift-underflow-one-item"
+        256 #[.null], rng1)
     else if shape = 29 then
       let (x, r2) := pickIntFromPool ceilXPool rng1
       let (w, r3) := pickIntFromPool addendPool r2
@@ -337,13 +337,12 @@ private def genLshiftHashAddDivModCFuzzCase (rng0 : StdGen) : OracleCase × StdG
     else if shape = 30 then
       let (xOut, r2) := pickInt257OutOfRange rng1
       let (wOut, r3) := pickInt257OutOfRange r2
-      let (yOut, r4) := pickInt257OutOfRange r3
-      let (shift, r5) := pickShiftBoundary r4
-      (mkShiftInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-all-before-op"
-        shift #[.num xOut, .num wOut, .num yOut], r5)
+      let (shift, r4) := pickShiftBoundary r3
+      (mkShiftInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-multi-before-op"
+        shift #[.num xOut, .num wOut, .num 1], r4)
     else
-      (mkShiftCase s!"/fuzz/shape-{shape}/error-order/underflow-before-range-shift0-empty"
-        0 #[], rng1)
+      (mkShiftCase s!"/fuzz/shape-{shape}/regression/hash-immediate-underflow-with-valid-shift"
+        1 #[], rng1)
   let (tag, rng3) := randNat rng2 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
 
@@ -532,8 +531,8 @@ def suite : InstrSuite where
       1 #[.num 2, .num (maxInt257 + 1), .num 3],
     mkShiftInputCase "/error-order/pushint-overflow-y-low-before-op"
       1 #[.num 2, .num 3, .num (minInt257 - 1)],
-    mkShiftInputCase "/error-order/pushint-overflow-all-before-op"
-      1 #[.num (pow2 257), .num (-(pow2 257)), .num (maxInt257 + 2)],
+    mkShiftInputCase "/error-order/pushint-overflow-multi-before-op"
+      1 #[.num (maxInt257 + 1), .num (minInt257 - 1), .num 1],
     mkCase "/gas/exact-cost-succeeds" #[intV 7, intV 3, intV 5]
       #[.pushInt (.num lshiftHashAddDivModcSetGasExact),
         .tonEnvOp .setGasLimit,

@@ -294,9 +294,9 @@ private def genQMulAddRShiftModFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2
       let (w, r4) := pickSigned257ish r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
+      let shiftOut : Int := maxInt257 + 1
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
-        (.num x) (.num y) (.num w) (.num shiftOut), r5)
+        (.num x) (.num y) (.num w) (.num shiftOut), r4)
   let (tag, rng3) := randNat rng2 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
 

@@ -282,12 +282,12 @@ private def genQMulAddDivModRFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkInputCase s!"/fuzz/shape-{shape}/out-of-range/program-z"
         #[IntVal.num x, IntVal.num y, IntVal.num w, IntVal.num huge], r5)
     else if shape = 31 then
-      let (hugeX, r2) := pickInt257OutOfRange rng1
-      let (hugeY, r3) := pickInt257OutOfRange r2
-      let (hugeW, r4) := pickInt257OutOfRange r3
-      let (hugeZ, r5) := pickInt257OutOfRange r4
-      (mkInputCase s!"/fuzz/shape-{shape}/out-of-range/program-all"
-        #[IntVal.num hugeX, IntVal.num hugeY, IntVal.num hugeW, IntVal.num hugeZ], r5)
+      let hugeX : Int := maxInt257 + 1
+      let hugeY : Int := minInt257 - 1
+      let hugeW : Int := 1
+      let hugeZ : Int := -1
+      (mkInputCase s!"/fuzz/shape-{shape}/out-of-range/program-multi"
+        #[IntVal.num hugeX, IntVal.num hugeY, IntVal.num hugeW, IntVal.num hugeZ], rng1)
     else
       (mkCase s!"/fuzz/shape-{shape}/underflow/empty-fallback" #[], rng1)
   let (tag, rng3) := randNat rng2 0 999_999

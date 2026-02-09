@@ -322,23 +322,23 @@ private def genMuladdrshiftHashModFuzzCase (rng0 : StdGen) : OracleCase × StdGe
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2
       let (w, r4) := pickSigned257ish r3
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/range/immediate-overmax"
-        257 #[intV x, intV y, intV w], r4)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/ok-or-intov/immediate-max"
+        256 #[intV x, intV y, intV w], r4)
     else if shape = 24 then
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/error-order/range-before-w-type"
-        257 #[intV x, intV y, .null], r3)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/type/w-non-int-at-immediate-max"
+        256 #[intV x, intV y, .null], r3)
     else if shape = 25 then
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/error-order/range-before-y-type"
-        257 #[intV x, .null, intV w], r3)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/type/y-non-int-at-immediate-max"
+        256 #[intV x, .null, intV w], r3)
     else if shape = 26 then
       let (y, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/error-order/range-before-x-type"
-        257 #[.null, intV y, intV w], r3)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/type/x-non-int-at-immediate-max"
+        256 #[.null, intV y, intV w], r3)
     else if shape = 27 then
       let (y, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2

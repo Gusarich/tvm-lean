@@ -142,9 +142,9 @@ private def pickNanCompatShift (rng : StdGen) : Nat × StdGen :=
   let (idx, rng') := randNat rng 0 (nanCompatShiftPool.size - 1)
   (nanCompatShiftPool[idx]!, rng')
 
-private def hugeOutOfRangePos : Int := pow2 300
+private def hugeOutOfRangePos : Int := (maxInt257 + 1) * 2
 
-private def hugeOutOfRangeNeg : Int := -(pow2 300)
+private def hugeOutOfRangeNeg : Int := -((maxInt257 + 1) * 2) - 1
 
 private def genQrshiftFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 15
@@ -242,9 +242,9 @@ def suite : InstrSuite where
         expectOkStack "quiet/range-high-to-nan" (runQrshiftDirect 1 #[intV hugeOutOfRangePos]) #[.int .nan]
         expectOkStack "quiet/range-low-to-nan" (runQrshiftDirect 1 #[intV hugeOutOfRangeNeg]) #[.int .nan]
         expectOkStack "quiet/range-high-fold-finite"
-          (runQrshiftDirect 256 #[intV hugeOutOfRangePos]) #[intV (pow2 44)]
+          (runQrshiftDirect 256 #[intV hugeOutOfRangePos]) #[intV 2]
         expectOkStack "quiet/range-low-fold-finite"
-          (runQrshiftDirect 256 #[intV hugeOutOfRangeNeg]) #[intV (-(pow2 44))] }
+          (runQrshiftDirect 256 #[intV hugeOutOfRangeNeg]) #[intV (-3)] }
     ,
     { name := "unit/immediate/decode-boundary-sequence-24bit"
       run := do

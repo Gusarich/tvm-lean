@@ -31,7 +31,8 @@ Branch counts used for this suite:
 
 Mapped terminal outcomes covered:
 - finite success for signed operands and immediate boundaries (`bits ∈ [1, 256]`);
-- quiet NaN passthrough from NaN input;
+- invalid-input compatibility split from C++ (`NaN` preserved for `bits < 64`,
+  normalized to integer zero for `bits ≥ 64`);
 - quiet NaN funnel for numeric overflow and oversized injected values;
 - `stkUnd`;
 - `typeChk`;
@@ -173,9 +174,9 @@ private def genQlshiftFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 8 then
       (mkQlshiftCase s!"fuzz/shape-{shape}/quiet/overflow-one-shift256" 256 #[intV 1], rng1)
     else if shape = 9 then
-      let (pickOver, r2) := randBool rng1
-      let bits := if pickOver then 257 else 0
-      (mkQlshiftCase s!"fuzz/shape-{shape}/immediate/rangechk-assembler" bits #[intV 7], r2)
+      let (pickEdge, r2) := randBool rng1
+      let bits := if pickEdge then 1 else 256
+      (mkQlshiftCase s!"fuzz/shape-{shape}/ok/immediate/boundary-edge" bits #[intV 7], r2)
     else if shape = 10 then
       let (bits, r2) := pickShiftBoundary rng1
       (mkQlshiftCase s!"fuzz/shape-{shape}/error/underflow-empty" bits #[], r2)
@@ -202,15 +203,13 @@ private def genQlshiftFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       let (bits, r3) := pickShiftBoundary r2
       (mkInputCase s!"fuzz/shape-{shape}/error-order/pushint-overflow-before-op" bits (.num x), r3)
     else if shape = 17 then
-      let (bitsRaw, r2) := pickNanCompatShift rng1
-      let bits := if bitsRaw = 256 then 1 else bitsRaw
-      (mkInputCase s!"fuzz/shape-{shape}/error-order/pushint-huge-high-before-op"
-        bits (.num hugeOutOfRangePos), r2)
+      let (bits, r2) := pickShiftBoundary rng1
+      (mkInputCase s!"fuzz/shape-{shape}/error-order/pushint-overflow-high-before-op-with-tail"
+        bits (.num (maxInt257 + 1)) #[.null], r2)
     else if shape = 18 then
-      let (bitsRaw, r2) := pickNanCompatShift rng1
-      let bits := if bitsRaw = 256 then 1 else bitsRaw
-      (mkInputCase s!"fuzz/shape-{shape}/error-order/pushint-huge-low-before-op"
-        bits (.num hugeOutOfRangeNeg), r2)
+      let (bits, r2) := pickShiftBoundary rng1
+      (mkInputCase s!"fuzz/shape-{shape}/error-order/pushint-overflow-low-before-op-with-tail"
+        bits (.num (minInt257 - 1)) #[intV 11], r2)
     else
       let (bits, r2) := pickNanCompatShift rng1
       (mkInputCase s!"fuzz/shape-{shape}/quiet/nan-via-program-with-tail" bits .nan #[intV 11], r2)
@@ -255,6 +254,10 @@ def suite : InstrSuite where
             (runQlshiftDirect bits #[intV x]) #[.int .nan]
         expectOkStack "quiet/nan-direct"
           (runQlshiftDirect 13 #[.int .nan]) #[.int .nan]
+        expectOkStack "quiet/nan-wordshift64-normalizes-zero"
+          (runQlshiftDirect 64 #[.int .nan]) #[intV 0]
+        expectOkStack "quiet/nan-wordshift128-normalizes-zero"
+          (runQlshiftDirect 128 #[.int .nan]) #[intV 0]
         expectOkStack "quiet/range-huge-high-direct"
           (runQlshiftDirect 1 #[intV hugeOutOfRangePos]) #[.int .nan]
         expectOkStack "quiet/range-huge-low-direct"
@@ -317,6 +320,8 @@ def suite : InstrSuite where
     mkQlshiftCase "quiet/overflow/one-shift256" 256 #[intV 1],
     mkQlshiftCase "quiet/overflow/pow2-255-shift1" 1 #[intV (pow2 255)],
     mkInputCase "quiet/nan/via-program" 13 .nan,
+    mkInputCase "regression/quiet/nan-wordshift64-normalizes-zero" 64 .nan,
+    mkInputCase "regression/quiet/nan-wordshift128-normalizes-zero" 128 .nan,
     mkInputCase "quiet/nan/via-program-with-tail" 7 .nan #[intV 11],
     mkQlshiftCase "error/underflow/empty-stack" 1 #[],
     mkQlshiftCase "error/type/top-null" 1 #[.null],

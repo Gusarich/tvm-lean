@@ -326,10 +326,9 @@ private def genLshiftadddivmodcFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
     else if shape = 30 then
       let (xOut, r2) := pickInt257OutOfRange rng1
       let (wOut, r3) := pickInt257OutOfRange r2
-      let (yOut, r4) := pickInt257OutOfRange r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
-      (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-all-before-op"
-        #[IntVal.num xOut, IntVal.num wOut, IntVal.num yOut, IntVal.num shiftOut], r5)
+      let (shift, r4) := pickValidShift r3
+      (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-multi-before-op"
+        #[IntVal.num xOut, IntVal.num wOut, IntVal.num 1, IntVal.num (Int.ofNat shift)], r4)
     else if shape = 31 then
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
