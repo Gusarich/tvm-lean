@@ -240,16 +240,16 @@ private def genMulrshiftHashModFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
     else if shape = 18 then
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/range/immediate-overmax"
-        257 #[intV x, intV y], r3)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/ok-or-intov/immediate-max"
+        256 #[intV x, intV y], r3)
     else if shape = 19 then
       let (x, r2) := pickSigned257ish rng1
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/error-order/range-before-y-type"
-        257 #[intV x, .null], r2)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/type/y-non-int-at-immediate-max"
+        256 #[intV x, .null], r2)
     else if shape = 20 then
       let (y, r2) := pickSigned257ish rng1
-      (mkShiftStackCase s!"/fuzz/shape-{shape}/error-order/range-before-x-type"
-        257 #[.null, intV y], r2)
+      (mkShiftStackCase s!"/fuzz/shape-{shape}/type/x-non-int-at-immediate-max"
+        256 #[.null, intV y], r2)
     else if shape = 21 then
       let (y, r2) := pickSigned257ish rng1
       let (shift, r3) := pickShiftBoundary r2
