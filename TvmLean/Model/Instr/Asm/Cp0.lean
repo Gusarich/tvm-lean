@@ -220,6 +220,22 @@ def encodeCellExtInstr (op : CellExtInstr) : Except Excno BitString := do
   match op with
   | .btos =>
       return natToBits 0xcf50 16
+  | .ldVarInt signed lenBits =>
+      if signed ∧ lenBits = 16 then
+        return natToBits 0xfa01 16
+      if !signed ∧ lenBits = 32 then
+        return natToBits 0xfa04 16
+      if signed ∧ lenBits = 32 then
+        return natToBits 0xfa05 16
+      throw .invOpcode
+  | .stVarInt signed lenBits =>
+      if signed ∧ lenBits = 16 then
+        return natToBits 0xfa03 16
+      if !signed ∧ lenBits = 32 then
+        return natToBits 0xfa06 16
+      if signed ∧ lenBits = 32 then
+        return natToBits 0xfa07 16
+      throw .invOpcode
   | .stLeInt unsigned bytes =>
       let lenBit : Nat ←
         if bytes = 4 then
