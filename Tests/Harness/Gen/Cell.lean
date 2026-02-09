@@ -47,4 +47,15 @@ def build1023WithVar
     .pushInt x, .xchg0 1, .pushInt (.num 255), instr
   ]
 
+def build1023WithVarRev
+    (instr : Instr)
+    (x : IntVal := .num 0) : Array Instr :=
+  #[
+    .newc,
+    .pushInt x, .pushInt (.num 256), instr,
+    .pushInt x, .pushInt (.num 256), instr,
+    .pushInt x, .pushInt (.num 256), instr,
+    .pushInt x, .pushInt (.num 255), instr
+  ]
+
 end Tests.Harness.Gen.Cell
