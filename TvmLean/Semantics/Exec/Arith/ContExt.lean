@@ -25,6 +25,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           let exp ← VM.popNatUpTo 1023
           VM.pushIntQuiet (.num (intPow2 exp)) false
       | .fitsx =>
+          VM.checkUnderflow 2
           let bits ← VM.popNatUpTo 1023
           let x ← VM.popInt
           match x with
@@ -35,6 +36,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
               else
                 throw .intOv
       | .ufitsx =>
+          VM.checkUnderflow 2
           let bits ← VM.popNatUpTo 1023
           let x ← VM.popInt
           match x with
@@ -45,6 +47,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
               else
                 throw .intOv
       | .qand =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -56,6 +59,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
               let bc := bitsAnd ba bb
               VM.pushIntQuiet (.num (bitsToIntSignedTwos bc)) true
       | .qor =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -67,6 +71,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
               let bc := bitsOr ba bb
               VM.pushIntQuiet (.num (bitsToIntSignedTwos bc)) true
       | .qxor =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -81,11 +86,9 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           let x ← VM.popInt
           match x with
           | .nan => VM.pushIntQuiet .nan true
-          | .num n =>
-              let bs ← popBitsTwos257 n
-              let inv : BitString := bs.map (fun b => !b)
-              VM.pushIntQuiet (.num (bitsToIntSignedTwos inv)) true
+          | .num n => VM.pushIntQuiet (.num (-n - 1)) true
       | .qfitsx =>
+          VM.checkUnderflow 2
           let bits ← VM.popNatUpTo 1023
           let x ← VM.popInt
           match x with
@@ -94,6 +97,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
               let out : IntVal := if intSignedFitsBits n bits then x else .nan
               VM.pushIntQuiet out true
       | .qufitsx =>
+          VM.checkUnderflow 2
           let bits ← VM.popNatUpTo 1023
           let x ← VM.popInt
           match x with
@@ -104,11 +108,12 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
       | .qbitsize =>
           let x ← VM.popInt
           match x with
-          | .nan => VM.pushSmallInt 0
+          | .nan => VM.pushIntQuiet .nan true
           | .num n =>
               let width : Nat := signedBitsizeTvm n
               VM.pushSmallInt (Int.ofNat width)
       | .qmin =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           VM.pushIntQuiet (x.min y) true
@@ -117,7 +122,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           VM.pushSmallInt (if x.isValid then 0 else -1)
       | .chknan =>
           let x ← VM.popInt
-          VM.push (.int x)
+          VM.pushIntQuiet x false
       | .qsgn =>
           let x ← VM.popInt
           match x with
@@ -130,6 +135,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
               else
                 VM.pushSmallInt 1
       | .qless =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -137,6 +143,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           | _, .nan => VM.pushIntQuiet .nan true
           | .num a, .num b => VM.pushSmallInt (if a < b then -1 else 0)
       | .qequal =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -144,6 +151,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           | _, .nan => VM.pushIntQuiet .nan true
           | .num a, .num b => VM.pushSmallInt (if a = b then -1 else 0)
       | .qleq =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -151,6 +159,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           | _, .nan => VM.pushIntQuiet .nan true
           | .num a, .num b => VM.pushSmallInt (if a ≤ b then -1 else 0)
       | .qgreater =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -158,6 +167,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           | _, .nan => VM.pushIntQuiet .nan true
           | .num a, .num b => VM.pushSmallInt (if a > b then -1 else 0)
       | .qneq =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with
@@ -165,6 +175,7 @@ def execInstrArithContExt (i : Instr) (next : VM Unit) : VM Unit := do
           | _, .nan => VM.pushIntQuiet .nan true
           | .num a, .num b => VM.pushSmallInt (if a ≠ b then -1 else 0)
       | .qgeq =>
+          VM.checkUnderflow 2
           let y ← VM.popInt
           let x ← VM.popInt
           match x, y with

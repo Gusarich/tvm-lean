@@ -6,6 +6,7 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithLess (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .less =>
+      VM.checkUnderflow 2
       let y ← VM.popInt
       let x ← VM.popInt
       match x, y with

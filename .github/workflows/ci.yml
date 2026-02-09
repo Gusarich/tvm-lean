@@ -16,7 +16,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsodium-dev
+          sudo apt-get install -y libsodium-dev cmake ninja-build gperf ccache libsecp256k1-dev libmicrohttpd-dev
 
       - name: Restore elan toolchain cache
         uses: actions/cache/restore@v4
@@ -42,17 +42,63 @@ jobs:
           path: |
             .lake/packages
             .lake/build
-          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-${{ github.sha }}
           restore-keys: |
-            ubuntu-lake-${{ hashFiles('lean-toolchain') }}-
+            ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-
             ubuntu-lake-
 
-      - name: Build core + validation + tests
+      - name: Build Lean targets and executables
         run: |
           lake build TvmLeanModel TvmLeanSemantics TvmLeanNative TvmLeanValidation TvmLeanTests
+          lake build tvm-lean-tests tvm-lean-diff-test tvm-lean-coverage
 
-      - name: Unit tests
-        run: lake exe tvm-lean-tests
+      - name: Resolve TON commit
+        id: ton-ref
+        run: |
+          COMMIT="$(git ls-remote https://github.com/ton-blockchain/ton.git refs/heads/master | awk '{print $1}')"
+          if [ -z "$COMMIT" ]; then
+            echo "Failed to resolve TON master commit" >&2
+            exit 1
+          fi
+          echo "commit=$COMMIT" >> "$GITHUB_OUTPUT"
+
+      - name: Restore TON fift cache
+        uses: actions/cache/restore@v4
+        id: ton-fift-cache
+        with:
+          path: |
+            ~/.cache/tvmlean/ton-fift/bin/fift
+            ~/.cache/tvmlean/ton-fift/lib
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}
+
+      - name: Build TON fift (cache miss)
+        if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
+        run: |
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/ton-blockchain/ton.git /tmp/ton
+          git -C /tmp/ton submodule update --init --recursive --depth 1
+          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/ton/build --target fift -j"$(nproc)"
+          mkdir -p ~/.cache/tvmlean/ton-fift/bin ~/.cache/tvmlean/ton-fift/lib
+          cp /tmp/ton/build/crypto/fift ~/.cache/tvmlean/ton-fift/bin/fift
+          cp -R /tmp/ton/crypto/fift/lib/. ~/.cache/tvmlean/ton-fift/lib/
+
+      - name: Configure TON fift env
+        run: |
+          echo "TON_FIFT_BIN=$HOME/.cache/tvmlean/ton-fift/bin/fift" >> "$GITHUB_ENV"
+          echo "TON_FIFT_LIB=$HOME/.cache/tvmlean/ton-fift/lib" >> "$GITHUB_ENV"
+
+      - name: Verify oracle runtime
+        run: |
+          test -x "$TON_FIFT_BIN"
+          test -d "$TON_FIFT_LIB"
+          test -f "oracle/fif/ton_oracle_runvm.fif"
+          test -f "oracle/fif/ton_oracle_runvm_lib.fif"
+
+      - name: Unit tests (no fuzz)
+        run: lake exe tvm-lean-tests -- --unit-only
+
+      - name: Oracle tests (no fuzz)
+        run: lake exe tvm-lean-tests -- --oracle-only
 
       - name: Diff tests (offline CI fixtures)
         run: lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
@@ -83,7 +129,16 @@ jobs:
           path: |
             .lake/packages
             .lake/build
-          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}
+          key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-${{ github.sha }}
+
+      - name: Save TON fift cache
+        if: ${{ always() && steps.ton-fift-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.cache/tvmlean/ton-fift/bin/fift
+            ~/.cache/tvmlean/ton-fift/lib
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}
 
   collector:
     name: Collector (TypeScript)

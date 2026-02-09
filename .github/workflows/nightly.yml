@@ -66,7 +66,8 @@ jobs:
 
       - name: Build TON fift
         run: |
-          git clone --depth 1 https://github.com/ton-blockchain/ton.git /tmp/ton
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/ton-blockchain/ton.git /tmp/ton
+          git -C /tmp/ton submodule update --init --recursive --depth 1
           cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
           echo "TON_FIFT_BIN=/tmp/ton/build/crypto/fift" >> "$GITHUB_ENV"
@@ -81,9 +82,13 @@ jobs:
             --cases 20 \
             --out oracle/runs/nightly_oracle
 
-      - name: Run fuzz suites
+      - name: Run full Lean test harness (unit + oracle + fuzz)
         run: |
-          lake exe tvm-lean-tests -- --fuzz-only
+          lake exe tvm-lean-tests
+
+      - name: Run diff tests (offline CI fixtures)
+        run: |
+          lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
 
       - name: Collect + run Lean on mainnet (previous UTC day)
         run: |

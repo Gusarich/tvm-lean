@@ -6,6 +6,10 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithDivMod (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .divMod d roundMode addMode quiet =>
+      let st ← get
+      let need : Nat := if addMode then 3 else 2
+      if st.stack.size < need then
+        throw .stkUnd
       let y ← VM.popInt
       let w ←
         if addMode then

@@ -15,9 +15,12 @@ set_option maxHeartbeats 1000000 in
 def execInstrArithBitsize (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .bitsize =>
-      let n ← VM.popIntFinite
-      let width : Nat := signedBitsize n
-      VM.pushSmallInt (Int.ofNat width)
+      let x ← VM.popInt
+      match x with
+      | .nan => throw .rangeChk
+      | .num n =>
+          let width : Nat := signedBitsize n
+          VM.pushSmallInt (Int.ofNat width)
   | _ => next
 
 end TvmLean
