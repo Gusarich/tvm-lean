@@ -36,6 +36,17 @@ def build1023WithFixed
     .pushInt x, .xchg0 1, mkInstr 255
   ]
 
+def build1023WithFixedRev
+    (mkInstr : Nat → Instr)
+    (x : IntVal := .num 0) : Array Instr :=
+  #[
+    .newc,
+    .pushInt x, mkInstr 256,
+    .pushInt x, mkInstr 256,
+    .pushInt x, mkInstr 256,
+    .pushInt x, mkInstr 255
+  ]
+
 def build1023WithVar
     (instr : Instr)
     (x : IntVal := .num 0) : Array Instr :=
