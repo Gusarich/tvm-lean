@@ -70,6 +70,11 @@ jobs:
           git -C /tmp/ton submodule update --init --recursive --depth 1
           cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTON_ARCH=x86-64
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
+          test -d /tmp/ton/build/third-party/openssl/include
+          test -f /tmp/ton/build/third-party/openssl/lib/libssl.a
+          test -f /tmp/ton/build/third-party/openssl/lib/libcrypto.a
+          test -f /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a
+          test -f /tmp/ton/build/third-party/blst/libblst.a
           echo "TON_FIFT_BIN=/tmp/ton/build/crypto/fift" >> "$GITHUB_ENV"
           echo "TON_FIFT_LIB=/tmp/ton/crypto/fift/lib" >> "$GITHUB_ENV"
 

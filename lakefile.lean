@@ -59,8 +59,8 @@ package "tvm-lean" where
         "/usr/lib/x86_64-linux-gnu/libsodium.a",
         "-L", s!"{tonBuildDir}/third-party/secp256k1/lib",
         "-lsecp256k1",
-        "/usr/lib/x86_64-linux-gnu/libssl.so",
-        "/usr/lib/x86_64-linux-gnu/libcrypto.so",
+        s!"{tonBuildDir}/third-party/openssl/lib/libssl.a",
+        s!"{tonBuildDir}/third-party/openssl/lib/libcrypto.a",
         s!"{tonBuildDir}/third-party/blst/libblst.a",
         "-ldl",
         "-pthread",
@@ -145,6 +145,7 @@ target tvmlean_crypto_ext.o pkg : FilePath := do
         "-I", "/usr/local/include",
         "-I", s!"{tonSrcDir}/third-party/secp256k1/include",
         "-I", s!"{tonBuildDir}/third-party/secp256k1/include",
+        "-I", s!"{tonBuildDir}/third-party/openssl/include",
         "-I", s!"{tonSrcDir}/third-party/blst/bindings"
       ]
     else
