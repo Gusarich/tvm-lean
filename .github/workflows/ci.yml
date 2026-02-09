@@ -70,9 +70,9 @@ jobs:
             ~/.cache/tvmlean/ton-fift/bin/fift
             ~/.cache/tvmlean/ton-fift/lib
             ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
-            ~/.cache/tvmlean/ton-fift/ton-src/third-party/secp256k1/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
-            ~/.cache/tvmlean/ton-fift/ton-src/third-party/openssl/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
@@ -90,15 +90,48 @@ jobs:
           cp -R /tmp/ton/crypto/fift/lib/. ~/.cache/tvmlean/ton-fift/lib/
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
           cp /tmp/ton/third-party/blst/bindings/blst.h ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings/blst.h
-          mkdir -p ~/.cache/tvmlean/ton-fift/ton-src/third-party/secp256k1/include
-          cp -R /tmp/ton/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-src/third-party/secp256k1/include/
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
+          if [ -d /tmp/ton/build/third-party/secp256k1/include ]; then
+            cp -R /tmp/ton/build/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include/
+          elif [ -d /tmp/ton/third-party/secp256k1/include ]; then
+            cp -R /tmp/ton/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include/
+          else
+            echo "Missing secp256k1 include directory in TON tree" >&2
+            exit 1
+          fi
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib
-          cp /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
-          mkdir -p ~/.cache/tvmlean/ton-fift/ton-src/third-party/openssl/include
-          cp -R /tmp/ton/third-party/openssl/include/. ~/.cache/tvmlean/ton-fift/ton-src/third-party/openssl/include/
+          if [ -f /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ]; then
+            cp /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
+          else
+            echo "Missing libsecp256k1.a in TON build tree" >&2
+            exit 1
+          fi
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
+          if [ -d /tmp/ton/build/third-party/openssl/include ]; then
+            cp -R /tmp/ton/build/third-party/openssl/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include/
+          elif [ -d /tmp/ton/third-party/openssl/include ]; then
+            cp -R /tmp/ton/third-party/openssl/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include/
+          else
+            echo "Missing OpenSSL include directory in TON tree" >&2
+            exit 1
+          fi
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib
-          cp /tmp/ton/build/third-party/openssl/lib/libssl.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
-          cp /tmp/ton/build/third-party/openssl/lib/libcrypto.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
+          if [ -f /tmp/ton/build/third-party/openssl/lib/libssl.a ]; then
+            cp /tmp/ton/build/third-party/openssl/lib/libssl.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
+          elif [ -f /tmp/ton/third-party/openssl/libssl.a ]; then
+            cp /tmp/ton/third-party/openssl/libssl.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
+          else
+            echo "Missing libssl.a in TON build/source tree" >&2
+            exit 1
+          fi
+          if [ -f /tmp/ton/build/third-party/openssl/lib/libcrypto.a ]; then
+            cp /tmp/ton/build/third-party/openssl/lib/libcrypto.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
+          elif [ -f /tmp/ton/third-party/openssl/libcrypto.a ]; then
+            cp /tmp/ton/third-party/openssl/libcrypto.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
+          else
+            echo "Missing libcrypto.a in TON build/source tree" >&2
+            exit 1
+          fi
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst
           cp /tmp/ton/build/third-party/blst/libblst.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
 
@@ -172,9 +205,9 @@ jobs:
             ~/.cache/tvmlean/ton-fift/bin/fift
             ~/.cache/tvmlean/ton-fift/lib
             ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
-            ~/.cache/tvmlean/ton-fift/ton-src/third-party/secp256k1/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
-            ~/.cache/tvmlean/ton-fift/ton-src/third-party/openssl/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
