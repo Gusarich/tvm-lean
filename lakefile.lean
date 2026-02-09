@@ -140,6 +140,8 @@ target tvmlean_crypto_ext.o pkg : FilePath := do
         "-I", (pkg.dir / "c").toString,
         "-I", "/opt/homebrew/include",
         "-I", "/usr/local/include",
+        "-I", s!"{tonSrcDir}/third-party/secp256k1/include",
+        "-I", s!"{tonSrcDir}/third-party/openssl/include",
         "-I", s!"{tonBuildDir}/third-party/secp256k1/include",
         "-I", s!"{tonBuildDir}/third-party/openssl/include",
         "-I", s!"{tonSrcDir}/third-party/blst/bindings"
