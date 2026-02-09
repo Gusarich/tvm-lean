@@ -15,13 +15,29 @@ private def envEnabled (name : String) : Bool :=
   | _ => false
 
 private def tonSrcDir : String :=
-  envOr "TVMLEAN_TON_SRC" (if System.Platform.isOSX then "/Users/daniil/Coding/ton" else "/tmp/ton")
+  if System.Platform.isOSX then
+    envOr "TVMLEAN_TON_SRC" "/Users/daniil/Coding/ton"
+  else
+    (unsafe getEnv? "TVMLEAN_TON_SRC").getD ""
 
 private def tonBuildDir : String :=
-  envOr "TVMLEAN_TON_BUILD" s!"{tonSrcDir}/build"
+  match unsafe getEnv? "TVMLEAN_TON_BUILD" with
+  | some path => path
+  | none =>
+      if tonSrcDir = "" then
+        ""
+      else
+        s!"{tonSrcDir}/build"
+
+private def hasTonCryptoEnv : Bool :=
+  (unsafe getEnv? "TVMLEAN_TON_SRC").isSome &&
+  (unsafe getEnv? "TVMLEAN_TON_BUILD").isSome
 
 private def useRealCryptoExt : Bool :=
-  System.Platform.isOSX || envEnabled "TVMLEAN_USE_REAL_CRYPTO_EXT"
+  if System.Platform.isOSX then
+    true
+  else
+    envEnabled "TVMLEAN_USE_REAL_CRYPTO_EXT" && hasTonCryptoEnv
 
 package "tvm-lean" where
   version := v!"0.1.0"
