@@ -73,7 +73,7 @@ jobs:
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v5
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v6
 
       - name: Build TON fift (cache miss)
         if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
@@ -88,21 +88,11 @@ jobs:
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
           cp -R /tmp/ton/third-party/blst/bindings/. ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings/
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
-          if [ -d /tmp/ton/build/third-party/secp256k1/include ]; then
-            cp -R /tmp/ton/build/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include/
-          elif [ -d /tmp/ton/third-party/secp256k1/include ]; then
-            cp -R /tmp/ton/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include/
-          else
-            echo "Missing secp256k1 include directory in TON tree" >&2
-            exit 1
-          fi
+          test -d /tmp/ton/build/third-party/secp256k1/include
+          cp -R /tmp/ton/build/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include/
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib
-          if [ -f /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ]; then
-            cp /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
-          else
-            echo "Missing libsecp256k1.a in TON build tree" >&2
-            exit 1
-          fi
+          test -f /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a
+          cp /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst
           cp /tmp/ton/build/third-party/blst/libblst.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
 
@@ -179,7 +169,7 @@ jobs:
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v5
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v6
 
   collector:
     name: Collector (TypeScript)
