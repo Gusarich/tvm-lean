@@ -16,7 +16,7 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libsodium-dev cmake ninja-build gperf ccache libsecp256k1-dev libmicrohttpd-dev
+          sudo apt-get install -y libsodium-dev libssl-dev cmake ninja-build gperf ccache libsecp256k1-dev libmicrohttpd-dev
 
       - name: Restore elan toolchain cache
         uses: actions/cache/restore@v4
@@ -72,11 +72,8 @@ jobs:
             ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
-            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
-            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
-            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v3
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v4
 
       - name: Build TON fift (cache miss)
         if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
@@ -104,32 +101,6 @@ jobs:
             cp /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
           else
             echo "Missing libsecp256k1.a in TON build tree" >&2
-            exit 1
-          fi
-          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
-          if [ -d /tmp/ton/build/third-party/openssl/include ]; then
-            cp -R /tmp/ton/build/third-party/openssl/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include/
-          elif [ -d /tmp/ton/third-party/openssl/include ]; then
-            cp -R /tmp/ton/third-party/openssl/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include/
-          else
-            echo "Missing OpenSSL include directory in TON tree" >&2
-            exit 1
-          fi
-          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib
-          if [ -f /tmp/ton/build/third-party/openssl/lib/libssl.a ]; then
-            cp /tmp/ton/build/third-party/openssl/lib/libssl.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
-          elif [ -f /tmp/ton/third-party/openssl/libssl.a ]; then
-            cp /tmp/ton/third-party/openssl/libssl.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
-          else
-            echo "Missing libssl.a in TON build/source tree" >&2
-            exit 1
-          fi
-          if [ -f /tmp/ton/build/third-party/openssl/lib/libcrypto.a ]; then
-            cp /tmp/ton/build/third-party/openssl/lib/libcrypto.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
-          elif [ -f /tmp/ton/third-party/openssl/libcrypto.a ]; then
-            cp /tmp/ton/third-party/openssl/libcrypto.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
-          else
-            echo "Missing libcrypto.a in TON build/source tree" >&2
             exit 1
           fi
           mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst
@@ -207,11 +178,8 @@ jobs:
             ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
-            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
-            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
-            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v3
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v4
 
   collector:
     name: Collector (TypeScript)

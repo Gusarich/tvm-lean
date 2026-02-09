@@ -46,18 +46,22 @@ package "tvm-lean" where
       #[
         "-L/opt/homebrew/lib",
         "-L/usr/local/lib",
+        "-L", s!"{tonBuildDir}/third-party/secp256k1/lib",
+        "-L", s!"{tonBuildDir}/third-party/openssl/lib",
         "-lsodium",
-        s!"{tonBuildDir}/third-party/secp256k1/lib/libsecp256k1.a",
-        s!"{tonBuildDir}/third-party/openssl/lib/libssl.a",
-        s!"{tonBuildDir}/third-party/openssl/lib/libcrypto.a",
+        "-lsecp256k1",
+        "-lssl",
+        "-lcrypto",
         s!"{tonBuildDir}/third-party/blst/libblst.a"
       ]
     else if useRealCryptoExt then
       #[
         "/usr/lib/x86_64-linux-gnu/libsodium.a",
-        s!"{tonBuildDir}/third-party/secp256k1/lib/libsecp256k1.a",
-        s!"{tonBuildDir}/third-party/openssl/lib/libssl.a",
-        s!"{tonBuildDir}/third-party/openssl/lib/libcrypto.a",
+        "-L", s!"{tonBuildDir}/third-party/secp256k1/lib",
+        "-L", s!"{tonBuildDir}/third-party/openssl/lib",
+        "-lsecp256k1",
+        "-lssl",
+        "-lcrypto",
         s!"{tonBuildDir}/third-party/blst/libblst.a",
         "-ldl",
         "-pthread",
