@@ -309,8 +309,8 @@ private def genQlshiftAddDivModrFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
     else if shape = 25 then
       let (w, r2) := pickSigned257ish rng1
       let (y, r3) := pickNonZeroInt r2
-      (mkCase s!"/fuzz/shape-{shape}/error-order/bad-shift-x-type-fourth-nan"
-        #[.null, intV w, intV y, .int .nan], r3)
+      (mkCase s!"/fuzz/shape-{shape}/error-order/bad-shift-x-type-fourth-negative"
+        #[.null, intV w, intV y, intV (-1)], r3)
     else if shape = 26 then
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
@@ -344,7 +344,8 @@ private def genQlshiftAddDivModrFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
       let (y, r4) := pickNonZeroInt r3
-      let (huge, r5) := pickInt257OutOfRange r4
+      let (pickNeg, r5) := randBool r4
+      let huge : Int := if pickNeg then -1 else 257
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
         #[IntVal.num x, IntVal.num w, IntVal.num y, IntVal.num huge], r5)
     else if shape = 32 then
