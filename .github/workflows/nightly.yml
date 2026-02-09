@@ -70,6 +70,13 @@ jobs:
           git -C /tmp/ton submodule update --init --recursive --depth 1
           cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTON_ARCH=x86-64
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
+          mkdir -p /tmp/ton/build/third-party/openssl
+          (
+            cd /tmp/ton/third-party/openssl
+            ./Configure linux-x86_64 no-shared no-tests no-apps --prefix=/tmp/ton/build/third-party/openssl --openssldir=/tmp/ton/build/third-party/openssl
+            make -j"$(nproc)" build_libs
+            make install_sw
+          )
           test -d /tmp/ton/build/third-party/openssl/include
           test -f /tmp/ton/build/third-party/openssl/lib/libssl.a
           test -f /tmp/ton/build/third-party/openssl/lib/libcrypto.a
