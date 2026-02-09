@@ -69,7 +69,14 @@ jobs:
           path: |
             ~/.cache/tvmlean/ton-fift/bin/fift
             ~/.cache/tvmlean/ton-fift/lib
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64
+            ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v2
 
       - name: Build TON fift (cache miss)
         if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
@@ -81,6 +88,19 @@ jobs:
           mkdir -p ~/.cache/tvmlean/ton-fift/bin ~/.cache/tvmlean/ton-fift/lib
           cp /tmp/ton/build/crypto/fift ~/.cache/tvmlean/ton-fift/bin/fift
           cp -R /tmp/ton/crypto/fift/lib/. ~/.cache/tvmlean/ton-fift/lib/
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
+          cp /tmp/ton/third-party/blst/bindings/blst.h ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings/blst.h
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
+          cp -R /tmp/ton/build/third-party/secp256k1/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include/
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib
+          cp /tmp/ton/build/third-party/secp256k1/lib/libsecp256k1.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
+          cp -R /tmp/ton/build/third-party/openssl/include/. ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include/
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib
+          cp /tmp/ton/build/third-party/openssl/lib/libssl.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
+          cp /tmp/ton/build/third-party/openssl/lib/libcrypto.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
+          mkdir -p ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst
+          cp /tmp/ton/build/third-party/blst/libblst.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
 
       - name: Configure TON fift env
         run: |
@@ -100,17 +120,18 @@ jobs:
       - name: Build oracle test runner with real crypto extern
         env:
           TVMLEAN_USE_REAL_CRYPTO_EXT: "1"
-          TVMLEAN_TON_SRC: /tmp/ton
-          TVMLEAN_TON_BUILD: /tmp/ton/build
         run: |
+          export TVMLEAN_TON_SRC="$HOME/.cache/tvmlean/ton-fift/ton-src"
+          export TVMLEAN_TON_BUILD="$HOME/.cache/tvmlean/ton-fift/ton-build"
           lake build tvm-lean-tests
 
       - name: Oracle tests (no fuzz)
         env:
           TVMLEAN_USE_REAL_CRYPTO_EXT: "1"
-          TVMLEAN_TON_SRC: /tmp/ton
-          TVMLEAN_TON_BUILD: /tmp/ton/build
-        run: lake exe tvm-lean-tests -- --oracle-only
+        run: |
+          export TVMLEAN_TON_SRC="$HOME/.cache/tvmlean/ton-fift/ton-src"
+          export TVMLEAN_TON_BUILD="$HOME/.cache/tvmlean/ton-fift/ton-build"
+          lake exe tvm-lean-tests -- --oracle-only
 
       - name: Diff tests (offline CI fixtures)
         run: lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
@@ -150,7 +171,14 @@ jobs:
           path: |
             ~/.cache/tvmlean/ton-fift/bin/fift
             ~/.cache/tvmlean/ton-fift/lib
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64
+            ~/.cache/tvmlean/ton-fift/ton-src/third-party/blst/bindings
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/include
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
+            ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v2
 
   collector:
     name: Collector (TypeScript)
