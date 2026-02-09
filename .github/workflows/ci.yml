@@ -76,10 +76,22 @@ jobs:
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v7
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v8
+
+      - name: Validate restored TON fift cache
+        id: ton-fift-cache-valid
+        run: |
+          ok=1
+          test -x "$HOME/.cache/tvmlean/ton-fift/bin/fift" || ok=0
+          test -d "$HOME/.cache/tvmlean/ton-fift/lib" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a" || ok=0
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
 
       - name: Build TON fift (cache miss)
-        if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' }}
+        if: ${{ steps.ton-fift-cache.outputs.cache-hit != 'true' || steps.ton-fift-cache-valid.outputs.ok != '1' }}
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/ton-blockchain/ton.git /tmp/ton
           git -C /tmp/ton submodule update --init --recursive --depth 1
@@ -115,6 +127,19 @@ jobs:
           test -f /tmp/ton/build/third-party/blst/libblst.a
           cp /tmp/ton/build/third-party/blst/libblst.a ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
 
+      - name: Validate TON fift cache artifacts
+        id: ton-fift-cache-ready
+        if: ${{ always() }}
+        run: |
+          ok=1
+          test -x "$HOME/.cache/tvmlean/ton-fift/bin/fift" || ok=0
+          test -d "$HOME/.cache/tvmlean/ton-fift/lib" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a" || ok=0
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a" || ok=0
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
       - name: Configure TON fift env
         run: |
           echo "TON_FIFT_BIN=$HOME/.cache/tvmlean/ton-fift/bin/fift" >> "$GITHUB_ENV"
@@ -124,6 +149,10 @@ jobs:
         run: |
           test -x "$TON_FIFT_BIN"
           test -d "$TON_FIFT_LIB"
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/secp256k1/lib/libsecp256k1.a"
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a"
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a"
+          test -f "$HOME/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a"
           test -f "oracle/fif/ton_oracle_runvm.fif"
           test -f "oracle/fif/ton_oracle_runvm_lib.fif"
 
@@ -178,7 +207,7 @@ jobs:
           key: ubuntu-lake-${{ hashFiles('lean-toolchain', 'lakefile.lean', 'lake-manifest.json') }}-${{ github.sha }}
 
       - name: Save TON fift cache
-        if: ${{ always() && steps.ton-fift-cache.outputs.cache-hit != 'true' }}
+        if: ${{ always() && (steps.ton-fift-cache.outputs.cache-hit != 'true' || steps.ton-fift-cache-valid.outputs.ok != '1') && steps.ton-fift-cache-ready.outputs.ok == '1' }}
         uses: actions/cache/save@v4
         with:
           path: |
@@ -191,7 +220,7 @@ jobs:
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libssl.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/openssl/lib/libcrypto.a
             ~/.cache/tvmlean/ton-fift/ton-build/third-party/blst/libblst.a
-          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v7
+          key: ubuntu-ton-fift-${{ steps.ton-ref.outputs.commit }}-portable-x86-64-v8
 
   collector:
     name: Collector (TypeScript)
