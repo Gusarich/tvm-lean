@@ -58,10 +58,9 @@ package "tvm-lean" where
       #[
         "/usr/lib/x86_64-linux-gnu/libsodium.a",
         "-L", s!"{tonBuildDir}/third-party/secp256k1/lib",
-        "-L", "/usr/lib/x86_64-linux-gnu",
         "-lsecp256k1",
-        "-lssl",
-        "-lcrypto",
+        "/usr/lib/x86_64-linux-gnu/libssl.so",
+        "/usr/lib/x86_64-linux-gnu/libcrypto.so",
         s!"{tonBuildDir}/third-party/blst/libblst.a",
         "-ldl",
         "-pthread",
