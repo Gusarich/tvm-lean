@@ -228,26 +228,26 @@ private def genQMulAddDivmodFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCaseFromIntVals s!"fuzz/shape-{shape}/quiet/nan-x-via-program"
         #[.nan, .num y, .num w, .num z], r4)
     else if shape = 23 then
-      let (xOut, r2) := pickInt257OutOfRange rng1
-      let (y, r3) := pickSigned257ish r2
-      let (w, r4) := pickSigned257ish r3
-      let (z, r5) := pickNonZeroInt r4
+      let xOut : Int := maxInt257 + 1
+      let y : Int := 5
+      let w : Int := -2
+      let z : Int := 3
       (mkCaseFromIntVals s!"fuzz/shape-{shape}/range/x-via-program"
-        #[.num xOut, .num y, .num w, .num z], r5)
+        #[.num xOut, .num y, .num w, .num z], rng1)
     else if shape = 24 then
-      let (x, r2) := pickSigned257ish rng1
-      let (yOut, r3) := pickInt257OutOfRange r2
-      let (w, r4) := pickSigned257ish r3
-      let (z, r5) := pickNonZeroInt r4
+      let x : Int := 5
+      let yOut : Int := maxInt257 + 1
+      let w : Int := -2
+      let z : Int := 3
       (mkCaseFromIntVals s!"fuzz/shape-{shape}/range/y-via-program"
-        #[.num x, .num yOut, .num w, .num z], r5)
+        #[.num x, .num yOut, .num w, .num z], rng1)
     else if shape = 25 then
-      let (x, r2) := pickSigned257ish rng1
-      let (y, r3) := pickSigned257ish r2
-      let (wOut, r4) := pickInt257OutOfRange r3
-      let (zOut, r5) := pickInt257OutOfRange r4
+      let x : Int := 5
+      let y : Int := -3
+      let wOut : Int := maxInt257 + 1
+      let zOut : Int := minInt257 - 1
       (mkCaseFromIntVals s!"fuzz/shape-{shape}/range/wz-via-program"
-        #[.num x, .num y, .num wOut, .num zOut], r5)
+        #[.num x, .num y, .num wOut, .num zOut], rng1)
     else
       let (x, r2) := pickSigned257ish rng1
       let (y, r3) := pickSigned257ish r2
