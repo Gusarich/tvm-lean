@@ -324,16 +324,17 @@ private def genQlshiftadddivmodFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
       let (y, r4) := pickNonZeroSigned257ish r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
+      let (pickNeg, r5) := randBool r4
+      let shiftOut : Int := if pickNeg then -1 else 257
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
         #[IntVal.num x, IntVal.num w, IntVal.num y, IntVal.num shiftOut], r5)
     else
-      let (xo, r2) := pickInt257OutOfRange rng1
-      let (wo, r3) := pickInt257OutOfRange r2
-      let (yo, r4) := pickInt257OutOfRange r3
-      let (so, r5) := pickInt257OutOfRange r4
+      let xo : Int := maxInt257 + 1
+      let wo : Int := minInt257 - 1
+      let yo : Int := maxInt257 + 1
+      let so : Int := 257
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-all-before-op"
-        #[IntVal.num xo, IntVal.num wo, IntVal.num yo, IntVal.num so], r5)
+        #[IntVal.num xo, IntVal.num wo, IntVal.num yo, IntVal.num so], rng1)
   let (tag, rng3) := randNat rng2 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
 
