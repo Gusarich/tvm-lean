@@ -327,16 +327,17 @@ private def genQlshiftadddivmodcFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
       let (y, r4) := pickNonZeroInt r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
+      let (pickNeg, r5) := randBool r4
+      let shiftOut : Int := if pickNeg then -1 else 257
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
         #[IntVal.num x, IntVal.num w, IntVal.num y, IntVal.num shiftOut], r5)
     else if shape = 29 then
-      let (xOut, r2) := pickInt257OutOfRange rng1
-      let (wOut, r3) := pickInt257OutOfRange r2
-      let (yOut, r4) := pickInt257OutOfRange r3
-      let (shiftOut, r5) := pickInt257OutOfRange r4
+      let xOut : Int := maxInt257 + 1
+      let wOut : Int := minInt257 - 1
+      let yOut : Int := maxInt257 + 1
+      let shiftOut : Int := 257
       (mkCaseFromIntVals s!"/fuzz/shape-{shape}/error-order/pushint-overflow-all-before-op"
-        #[IntVal.num xOut, IntVal.num wOut, IntVal.num yOut, IntVal.num shiftOut], r5)
+        #[IntVal.num xOut, IntVal.num wOut, IntVal.num yOut, IntVal.num shiftOut], rng1)
     else if shape = 30 then
       let (x, r2) := pickSigned257ish rng1
       let (w, r3) := pickSigned257ish r2
