@@ -183,7 +183,7 @@ private def genAddrshiftcHashModFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
     else if shape = 5 then
       let (x, r2) := pickSigned257ish rng1
       let (shift, r3) := pickValidShift r2
-      (mkShiftCase s!"/fuzz/shape-{shape}/ok-exact/sum-zero" x (-x) shift, r3)
+      (mkInputCase s!"/fuzz/shape-{shape}/ok-exact/sum-zero" (.num x) (.num (-x)) shift, r3)
     else if shape = 6 then
       let (x, r2) := pickInt257Boundary rng1
       let (w, r3) := pickInt257Boundary r2
