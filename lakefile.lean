@@ -1,6 +1,28 @@
 import Lake
 open System Lake DSL
 
+private unsafe def getEnv? (name : String) : Option String :=
+  match unsafeIO (IO.getEnv name) with
+  | .ok v => v
+  | .error _ => none
+
+private def envOr (name fallback : String) : String :=
+  (unsafe getEnv? name).getD fallback
+
+private def envEnabled (name : String) : Bool :=
+  match unsafe getEnv? name with
+  | some "1" | some "true" | some "TRUE" | some "yes" | some "on" => true
+  | _ => false
+
+private def tonSrcDir : String :=
+  envOr "TVMLEAN_TON_SRC" (if System.Platform.isOSX then "/Users/daniil/Coding/ton" else "/tmp/ton")
+
+private def tonBuildDir : String :=
+  envOr "TVMLEAN_TON_BUILD" s!"{tonSrcDir}/build"
+
+private def useRealCryptoExt : Bool :=
+  System.Platform.isOSX || envEnabled "TVMLEAN_USE_REAL_CRYPTO_EXT"
+
 package "tvm-lean" where
   version := v!"0.1.0"
   moreLinkArgs :=
@@ -9,10 +31,22 @@ package "tvm-lean" where
         "-L/opt/homebrew/lib",
         "-L/usr/local/lib",
         "-lsodium",
-        "/Users/daniil/Coding/ton/build/third-party/secp256k1/lib/libsecp256k1.a",
-        "/Users/daniil/Coding/ton/build/third-party/openssl/lib/libssl.a",
-        "/Users/daniil/Coding/ton/build/third-party/openssl/lib/libcrypto.a",
-        "/Users/daniil/Coding/ton/build/third-party/blst/libblst.a"
+        s!"{tonBuildDir}/third-party/secp256k1/lib/libsecp256k1.a",
+        s!"{tonBuildDir}/third-party/openssl/lib/libssl.a",
+        s!"{tonBuildDir}/third-party/openssl/lib/libcrypto.a",
+        s!"{tonBuildDir}/third-party/blst/libblst.a"
+      ]
+    else if useRealCryptoExt then
+      #[
+        "/usr/lib/x86_64-linux-gnu/libsodium.a",
+        s!"{tonBuildDir}/third-party/secp256k1/lib/libsecp256k1.a",
+        s!"{tonBuildDir}/third-party/openssl/lib/libssl.a",
+        s!"{tonBuildDir}/third-party/openssl/lib/libcrypto.a",
+        s!"{tonBuildDir}/third-party/blst/libblst.a",
+        "-ldl",
+        "-pthread",
+        "-lm",
+        "-lz"
       ]
     else
       -- Link libsodium statically to avoid glibc version mismatches between the system `libsodium.so`
@@ -71,24 +105,28 @@ target tvmlean_hash.o pkg : FilePath := do
   buildO oFile srcJob weakArgs #["-fPIC", "-std=c++11"] "cc" getLeanTrace
 
 target tvmlean_crypto_ext.o pkg : FilePath := do
-  let oFile := pkg.buildDir / "c" / "tvmlean_crypto_ext.o"
+  let oFile :=
+    if useRealCryptoExt then
+      pkg.buildDir / "c" / "tvmlean_crypto_ext_real.o"
+    else
+      pkg.buildDir / "c" / "tvmlean_crypto_ext_stub.o"
   let leanIncludeDir := (← getLeanIncludeDir).toString
   let srcPath :=
-    if System.Platform.isOSX then
+    if useRealCryptoExt then
       pkg.dir / "c" / "tvmlean_crypto_ext.c"
     else
       pkg.dir / "c" / "tvmlean_crypto_ext_stub.c"
   let srcJob ← inputTextFile srcPath
   let weakArgs :=
-    if System.Platform.isOSX then
+    if useRealCryptoExt then
       #[
         "-I", leanIncludeDir,
         "-I", (pkg.dir / "c").toString,
         "-I", "/opt/homebrew/include",
         "-I", "/usr/local/include",
-        "-I", "/Users/daniil/Coding/ton/build/third-party/secp256k1/include",
-        "-I", "/Users/daniil/Coding/ton/build/third-party/openssl/include",
-        "-I", "/Users/daniil/Coding/ton/third-party/blst/bindings"
+        "-I", s!"{tonBuildDir}/third-party/secp256k1/include",
+        "-I", s!"{tonBuildDir}/third-party/openssl/include",
+        "-I", s!"{tonSrcDir}/third-party/blst/bindings"
       ]
     else
       #[

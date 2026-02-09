@@ -97,7 +97,19 @@ jobs:
       - name: Unit tests (no fuzz)
         run: lake exe tvm-lean-tests -- --unit-only
 
+      - name: Build oracle test runner with real crypto extern
+        env:
+          TVMLEAN_USE_REAL_CRYPTO_EXT: "1"
+          TVMLEAN_TON_SRC: /tmp/ton
+          TVMLEAN_TON_BUILD: /tmp/ton/build
+        run: |
+          lake build tvm-lean-tests
+
       - name: Oracle tests (no fuzz)
+        env:
+          TVMLEAN_USE_REAL_CRYPTO_EXT: "1"
+          TVMLEAN_TON_SRC: /tmp/ton
+          TVMLEAN_TON_BUILD: /tmp/ton/build
         run: lake exe tvm-lean-tests -- --oracle-only
 
       - name: Diff tests (offline CI fixtures)
