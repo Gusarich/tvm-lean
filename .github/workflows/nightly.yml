@@ -68,7 +68,7 @@ jobs:
         run: |
           git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/ton-blockchain/ton.git /tmp/ton
           git -C /tmp/ton submodule update --init --recursive --depth 1
-          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake -S /tmp/ton -B /tmp/ton/build -G Ninja -DCMAKE_BUILD_TYPE=Release -DTON_ARCH=x86-64
           cmake --build /tmp/ton/build --target fift -j"$(nproc)"
           echo "TON_FIFT_BIN=/tmp/ton/build/crypto/fift" >> "$GITHUB_ENV"
           echo "TON_FIFT_LIB=/tmp/ton/crypto/fift/lib" >> "$GITHUB_ENV"
