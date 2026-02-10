@@ -230,6 +230,17 @@ def suite : InstrSuite where
           (runLdzeroesDirect #[.slice refsOnlySlice])
           #[intV 0, .slice refsOnlySlice]
 
+        let shiftedInput := (mkLdzeroesSlice 8 #[true, false, true]).advanceBits 3
+        expectOkStack "ok/shifted-slice-view-prefix"
+          (runLdzeroesDirect #[.slice shiftedInput])
+          #[intV 5, .slice (shiftedInput.advanceBits 5)]
+
+        let shiftedRefsInput :=
+          (mkLdzeroesSliceWithRefs 6 #[true, false] #[refLeafA, refLeafB]).advanceBits 2
+        expectOkStack "ok/shifted-slice-view-with-refs"
+          (runLdzeroesDirect #[.slice shiftedRefsInput])
+          #[intV 4, .slice (shiftedRefsInput.advanceBits 4)]
+
         let deepInput := mkLdzeroesSlice 5 tailBits6
         expectOkStack "ok/deep-stack-order"
           (runLdzeroesDirect #[.null, intV 99, .slice deepInput])
@@ -240,6 +251,7 @@ def suite : InstrSuite where
         expectErr "underflow/empty" (runLdzeroesDirect #[]) .stkUnd
         expectErr "type/top-null" (runLdzeroesDirect #[.null]) .typeChk
         expectErr "type/top-int" (runLdzeroesDirect #[intV 1]) .typeChk
+        expectErr "type/top-nan" (runLdzeroesDirect #[.int .nan]) .typeChk
         expectErr "type/top-cell" (runLdzeroesDirect #[.cell Cell.empty]) .typeChk
         expectErr "type/top-builder" (runLdzeroesDirect #[.builder Builder.empty]) .typeChk
         expectErr "type/deep-top-not-slice"
@@ -271,31 +283,46 @@ def suite : InstrSuite where
           #[intV (-3), intV 434] }
   ]
   oracle := #[
+    -- Branch: `popSlice` success + `n = 0` (no cursor advance).
     mkLdzeroesCase "ok/empty-slice" #[.slice (mkLdzeroesSlice 0)],
-    mkLdzeroesCase "ok/single-zero" #[.slice (mkLdzeroesSlice 1)],
     mkLdzeroesCase "ok/single-one-no-advance" #[.slice (mkSliceFromBits #[true])],
+    mkLdzeroesCase "ok/no-leading-zero-alt-tail"
+      #[.slice (mkSliceFromBits (#[true] ++ tailBits13))],
+    mkLdzeroesCase "ok/no-leading-zero-then-many-zeros"
+      #[.slice (mkSliceFromBits (#[true] ++ Array.replicate 48 false))],
+    mkLdzeroesCase "ok/refs-only-no-bits" #[.slice refsOnlySlice],
+
+    -- Branch: `popSlice` success + `n > 0` (advance by counted zero prefix).
+    mkLdzeroesCase "ok/single-zero" #[.slice (mkLdzeroesSlice 1)],
     mkLdzeroesCase "ok/two-zeros-then-one" #[.slice (mkLdzeroesSlice 2 #[true])],
     mkLdzeroesCase "ok/three-zeros-tail6" #[.slice (mkLdzeroesSlice 3 tailBits6)],
     mkLdzeroesCase "ok/five-zeros-tail11" #[.slice (mkLdzeroesSlice 5 tailBits11)],
     mkLdzeroesCase "ok/all-zeros-15" #[.slice (mkLdzeroesSlice 15)],
+    mkLdzeroesCase "ok/all-zeros-31" #[.slice (mkLdzeroesSlice 31)],
     mkLdzeroesCase "ok/all-zeros-255" #[.slice (mkLdzeroesSlice 255)],
+    mkLdzeroesCase "ok/all-zeros-511" #[.slice (mkLdzeroesSlice 511)],
     mkLdzeroesCase "ok/all-zeros-1023" #[.slice (mkLdzeroesSlice 1023)],
-    mkLdzeroesCase "ok/no-leading-zero-alt-tail"
-      #[.slice (mkSliceFromBits (#[true] ++ tailBits13))],
+    mkLdzeroesCase "ok/max-prefix-1022-then-one" #[.slice (mkLdzeroesSlice 1022 #[true])],
+    mkLdzeroesCase "ok/prefix-8-then-one-tail"
+      #[.slice (mkLdzeroesSlice 8 #[true, false, true])],
     mkLdzeroesCase "ok/deep-stack-null-below" #[.null, .slice (mkLdzeroesSlice 4 #[true, false])],
     mkLdzeroesCase "ok/deep-stack-two-below"
       #[intV (-7), .null, .slice (mkLdzeroesSlice 6 tailBits6)],
-    mkLdzeroesCase "ok/refs-only-no-bits" #[.slice refsOnlySlice],
     mkLdzeroesCase "ok/refs-zero-prefix" #[.slice refsZeroPrefixSlice],
     mkLdzeroesCase "ok/refs-all-zeros-32" #[.slice refsAllZero32Slice],
+    mkLdzeroesCase "ok/refs-prefix-6-then-one"
+      #[.slice (mkLdzeroesSliceWithRefs 6 #[true, false] #[refLeafA, refLeafB])],
 
+    -- Branch: failure surface of `popSlice` (underflow + type checks only).
     mkLdzeroesCase "underflow/empty" #[],
     mkLdzeroesCase "type/top-null" #[.null],
     mkLdzeroesCase "type/top-int" #[intV 7],
+    mkLdzeroesProgramCase "type/program-nan-top" #[] #[.pushInt .nan, ldzeroesInstr],
     mkLdzeroesCase "type/top-cell" #[.cell Cell.empty],
     mkLdzeroesCase "type/top-builder" #[.builder Builder.empty],
     mkLdzeroesCase "type/deep-top-not-slice" #[.slice (mkLdzeroesSlice 1 #[true]), .null],
 
+    -- Branch: exact opcode-cost gas boundary.
     mkLdzeroesProgramCase "gas/exact-cost-succeeds"
       #[.slice (mkLdzeroesSlice 7 tailBits6)]
       #[.pushInt (.num ldzeroesSetGasExact), .tonEnvOp .setGasLimit, ldzeroesInstr],
