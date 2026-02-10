@@ -217,6 +217,7 @@ private def mkRawCase
 private def buildRawOracleCases : IO (Array RawOracleCase) := do
   let mut cases : Array RawOracleCase := #[]
 
+  -- Branch: success path (`checkUnderflow` + `popBuilder` + `canExtendBy 0 2` all pass).
   cases := cases.push (← mkRawCase "oracle/ok/direct/empty-builder"
     #[] constCell1 constCell2 #[.builder Builder.empty])
   cases := cases.push (← mkRawCase "oracle/ok/direct/deep-null"
@@ -230,6 +231,7 @@ private def buildRawOracleCases : IO (Array RawOracleCase) := do
   cases := cases.push (← mkRawCase "oracle/ok/direct/alt-pair"
     #[] constCell4 constCell3 #[.builder Builder.empty])
 
+  -- Branch: `checkUnderflow` / `popBuilder` failure outcomes.
   cases := cases.push (← mkRawCase "oracle/err/underflow-empty"
     #[] constCell1 constCell2 #[])
   cases := cases.push (← mkRawCase "oracle/err/type-null"
@@ -238,7 +240,10 @@ private def buildRawOracleCases : IO (Array RawOracleCase) := do
     #[] constCell1 constCell2 #[intV 11])
   cases := cases.push (← mkRawCase "oracle/err/type-cell"
     #[] constCell1 constCell2 #[.cell constCell0])
+  cases := cases.push (← mkRawCase "oracle/err/type-slice"
+    #[] constCell1 constCell2 #[.slice (Slice.ofCell constCell3)])
 
+  -- Branch: success path on program-built builders near bit/ref boundaries.
   cases := cases.push (← mkRawCase "oracle/ok/program/refs0"
     (mkBuilderWithRefsProgram 0) constCell1 constCell2)
   cases := cases.push (← mkRawCase "oracle/ok/program/refs1"
@@ -252,6 +257,7 @@ private def buildRawOracleCases : IO (Array RawOracleCase) := do
   cases := cases.push (← mkRawCase "oracle/ok/program/noise-null-refs2"
     (#[.pushNull] ++ mkBuilderWithRefsProgram 2) constCell1 constCell2)
 
+  -- Branch: `canExtendBy 0 2` failure (`cellOv`) under ref saturation.
   cases := cases.push (← mkRawCase "oracle/err/cellov-refs3"
     (mkBuilderWithRefsProgram 3) constCell1 constCell2)
   cases := cases.push (← mkRawCase "oracle/err/cellov-refs4"
@@ -265,17 +271,29 @@ private def buildRawOracleCases : IO (Array RawOracleCase) := do
   cases := cases.push (← mkRawCase "oracle/err/cellov-noise-int"
     (#[.pushInt (.num 42)] ++ mkBuilderWithRefsProgram 3) constCell1 constCell2)
 
+  -- Branch: decode guard (`haveRefs 2`) and >2-refs boundary on `0xcf21`.
   let oneRefCode ← liftExc "oracle/err/decode-one-ref" (mkRawCf21CodeWithRefs #[constCell1])
   cases := cases.push { name := "oracle/err/decode-one-ref", code := oneRefCode, initStack := #[.builder Builder.empty] }
   let zeroRefCode ← liftExc "oracle/err/decode-zero-ref" (mkRawCf21CodeWithRefs #[])
   cases := cases.push { name := "oracle/err/decode-zero-ref", code := zeroRefCode, initStack := #[.builder Builder.empty] }
+  let threeRefCode ←
+    liftExc "oracle/ok/decode-three-refs" (mkRawCf21CodeWithRefs #[constCell1, constCell2, constCell3])
+  cases := cases.push
+    { name := "oracle/ok/decode-three-refs", code := threeRefCode, initStack := #[.builder Builder.empty] }
 
+  -- Branch: gas edge around raw `STREF2CONST` path (`setGasLimit` exact vs exact-minus-one).
   cases := cases.push (← mkRawCase "oracle/gas/exact"
     #[.pushInt (.num stref2constSetGasExact), .tonEnvOp .setGasLimit]
     constCell1 constCell2 #[.builder Builder.empty])
   cases := cases.push (← mkRawCase "oracle/gas/exact-minus-one"
     #[.pushInt (.num stref2constSetGasExactMinusOne), .tonEnvOp .setGasLimit]
     constCell1 constCell2 #[.builder Builder.empty])
+  cases := cases.push (← mkRawCase "oracle/gas/exact/prefix-refs2"
+    (mkBuilderWithRefsProgram 2 ++ #[.pushInt (.num stref2constSetGasExact), .tonEnvOp .setGasLimit])
+    constCell1 constCell2)
+  cases := cases.push (← mkRawCase "oracle/gas/exact-minus-one/prefix-refs2"
+    (mkBuilderWithRefsProgram 2 ++ #[.pushInt (.num stref2constSetGasExactMinusOne), .tonEnvOp .setGasLimit])
+    constCell1 constCell2)
 
   pure cases
 
@@ -485,11 +503,11 @@ def suite : InstrSuite where
           (runStref2ConstDispatchFallback #[.null])
           #[.null, intV 437] }
     ,
-    { name := "unit/oracle/raw-crosscheck-handcrafted-26"
+    { name := "unit/oracle/raw-crosscheck-handcrafted-30"
       run := do
         let cases ← buildRawOracleCases
-        if !(20 ≤ cases.size ∧ cases.size ≤ 40) then
-          throw (IO.userError s!"oracle/cases: expected 20..40 cases, got {cases.size}")
+        if !(28 ≤ cases.size ∧ cases.size ≤ 34) then
+          throw (IO.userError s!"oracle/cases: expected 28..34 cases, got {cases.size}")
         for c in cases do
           runRawOracleCase c }
     ,
