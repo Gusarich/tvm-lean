@@ -36,6 +36,14 @@ def encodeUnsignedVarIntBits (lenBits : Nat) (n : Int) : BitString :=
   let payload := natToBits n.toNat (lenBytes * 8)
   natToBits lenBytes lenBits ++ payload
 
+def encodeSignedVarIntBits (lenBits : Nat) (n : Int) : Except Excno BitString := do
+  let lenBytes : Nat := (intSignedBitSizeTwos n + 7) / 8
+  let payload ← intToBitsTwos n (lenBytes * 8)
+  pure (natToBits lenBytes lenBits ++ payload)
+
+def mkSliceFromBits (bs : BitString) : Slice :=
+  Slice.ofCell (Builder.empty.storeBits bs).finalize
+
 def build1023WithFixed
     (mkInstr : Nat → Instr)
     (x : IntVal := .num 0) : Array Instr :=
