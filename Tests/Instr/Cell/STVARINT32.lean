@@ -195,6 +195,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/range-checks-and-order"
       run := do
+        -- Branch map: signed len overflow branch (`lenBytes >= 32`) -> `rangeChk`.
         expectErr "range/overflow-pos"
           (runStvarint32Direct #[.builder Builder.empty, intV overflowPosSigned31Bytes]) .rangeChk
         expectErr "range/overflow-neg"
@@ -202,6 +203,9 @@ def suite : InstrSuite where
         expectErr "range/nan"
           (runStvarint32Direct #[.builder Builder.empty, .int .nan]) .rangeChk
 
+        -- Branch map: `NaN` rejection happens before builder pop/type/capacity branches.
+        expectErr "error-order/range-nan-before-builder-type"
+          (runStvarint32Direct #[.null, .int .nan]) .rangeChk
         expectErr "error-order/range-before-cellov-overflow"
           (runStvarint32Direct #[.builder fullBuilder1023, intV overflowPosSigned31Bytes]) .rangeChk
         expectErr "error-order/range-before-cellov-nan"
@@ -212,8 +216,10 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/underflow-and-type-order"
       run := do
+        -- Branch map: `checkUnderflow 2` short-circuits before any type pops.
         expectErr "underflow/empty" (runStvarint32Direct #[]) .stkUnd
         expectErr "underflow/one-item" (runStvarint32Direct #[.builder Builder.empty]) .stkUnd
+        expectErr "underflow/one-int-only" (runStvarint32Direct #[intV 7]) .stkUnd
         expectErr "underflow/single-non-int" (runStvarint32Direct #[.null]) .stkUnd
 
         expectErr "type/x-pop-first-top-not-int"
@@ -225,10 +231,13 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/cellov-in-range-path"
       run := do
+        -- Branch map: in-range values reach capacity guard (`canExtendBy`) -> `cellOv` on full builder.
         expectErr "cellov/full-builder-x0"
           (runStvarint32Direct #[.builder fullBuilder1023, intV 0]) .cellOv
         expectErr "cellov/full-builder-xneg1"
           (runStvarint32Direct #[.builder fullBuilder1023, intV (-1)]) .cellOv
+        expectErr "cellov/full-builder-xmax31"
+          (runStvarint32Direct #[.builder fullBuilder1023, intV maxSigned31Bytes]) .cellOv
         expectErr "cellov/full-builder-xsample"
           (runStvarint32Direct #[.builder fullBuilder1023, intV samplePos]) .cellOv }
     ,
@@ -263,6 +272,7 @@ def suite : InstrSuite where
           #[.null, intV 425] }
   ]
   oracle := #[
+    -- Branch map: success path (len derivation + payload store) for representative signed values.
     mkStvarint32Case "ok/zero" #[.builder Builder.empty, intV 0],
     mkStvarint32Case "ok/one" #[.builder Builder.empty, intV 1],
     mkStvarint32Case "ok/neg-one" #[.builder Builder.empty, intV (-1)],
@@ -275,16 +285,20 @@ def suite : InstrSuite where
     mkStvarint32Case "ok/deep-stack-below-preserved" #[.null, .builder Builder.empty, intV 7],
     mkStvarint32ProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch map: range checks, including NaN-before-builder-type ordering.
     mkStvarint32Case "range/overflow-pos" #[.builder Builder.empty, intV overflowPosSigned31Bytes],
     mkStvarint32Case "range/overflow-neg" #[.builder Builder.empty, intV overflowNegSigned31Bytes],
     mkStvarint32ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
+    mkStvarint32Case "range/nan-before-builder-type" #[.null, .int .nan],
     mkStvarint32ProgramCase "range-before-cellov-overflow-full-builder" #[]
       (fullBuilderProgramWith (.num overflowPosSigned31Bytes)),
     mkStvarint32ProgramCase "range-before-cellov-nan-full-builder" #[]
       (fullBuilderProgramWith .nan),
 
+    -- Branch map: stack-underflow and pop/type ordering.
     mkStvarint32Case "underflow/empty" #[],
     mkStvarint32Case "underflow/one-item" #[.builder Builder.empty],
+    mkStvarint32Case "underflow/one-int-only" #[intV 7],
     mkStvarint32Case "type/x-pop-first-top-not-int" #[.builder Builder.empty, .null],
     mkStvarint32Case "type/x-pop-first-top-builder" #[.null, .builder Builder.empty],
     mkStvarint32Case "type/builder-pop-second" #[intV 2, intV 1],
@@ -297,6 +311,7 @@ def suite : InstrSuite where
     mkStvarint32ProgramCase "program/build-1023-success" #[] build1023Program,
     mkStvarint32ProgramCase "program/build-1023-overflow-cellov" #[] (fullBuilderProgramWith (.num 0)),
     mkStvarint32ProgramCase "program/cellov-in-range-neg1" #[] (fullBuilderProgramWith (.num (-1))),
+    mkStvarint32ProgramCase "program/cellov-in-range-max31" #[] (fullBuilderProgramWith (.num maxSigned31Bytes)),
     mkStvarint32ProgramCase "program/cellov-in-range-sample" #[] (fullBuilderProgramWith (.num samplePos))
   ]
   fuzz := #[
