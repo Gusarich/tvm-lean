@@ -31,6 +31,8 @@ Key risk areas:
 - stack order is `... builder x` (`x` on top);
 - unsigned negative fast-fail (`rangeChk`) before len/capacity;
 - len overflow (`lenBytes >= 32`) throws `rangeChk` before capacity checks;
+- len transition at `2^240` (`30 -> 31` payload bytes) must be encoded correctly;
+- capacity boundary exact-fit (`1023` bits total) must pass; `+1` bit must fail;
 - exact 31-byte unsigned boundary must pass; 32-byte requirement must fail.
 -/
 
@@ -78,7 +80,22 @@ private def maxUnsigned31Bytes : Int := intPow2 248 - 1
 
 private def overflowPosUnsigned31Bytes : Int := intPow2 248
 
+private def maxUnsigned30Bytes : Int := intPow2 240 - 1
+
+private def minUnsigned31Bytes : Int := intPow2 240
+
 private def samplePos : Int := intPow2 200 + 54321
+
+private def builderWithBits (n : Nat) : Builder :=
+  Builder.empty.storeBits (Array.replicate n false)
+
+private def nearFullLen1ExactFit : Builder := builderWithBits 1010
+
+private def nearFullLen1Overflow : Builder := builderWithBits 1011
+
+private def nearFullLen31ExactFit : Builder := builderWithBits 770
+
+private def nearFullLen31Overflow : Builder := builderWithBits 771
 
 private def build1023Program : Array Instr :=
   build1023WithFixed .stu
@@ -108,14 +125,16 @@ private def encodeUnsignedVarIntBits (lenBits : Nat) (n : Int) : BitString :=
   natToBits lenBytes lenBits ++ payload
 
 private def pickStvaruint32InRange (rng : StdGen) : Int × StdGen :=
-  let (pick, rng') := randNat rng 0 5
+  let (pick, rng') := randNat rng 0 7
   let x : Int :=
     if pick = 0 then 0
     else if pick = 1 then 1
-    else if pick = 2 then maxUnsigned31Bytes
-    else if pick = 3 then samplePos
-    else if pick = 4 then intPow2 120 + 17
-    else 42
+    else if pick = 2 then 255
+    else if pick = 3 then 256
+    else if pick = 4 then maxUnsigned30Bytes
+    else if pick = 5 then minUnsigned31Bytes
+    else if pick = 6 then maxUnsigned31Bytes
+    else samplePos
   (x, rng')
 
 private def genStvaruint32FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
@@ -155,7 +174,8 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/direct/success-boundaries-and-encoding"
       run := do
-        let checks : Array Int := #[0, 1, 255, samplePos, maxUnsigned31Bytes]
+        -- Branch: unsigned payload size transitions (0, 1, 2, 30, 31 bytes).
+        let checks : Array Int := #[0, 1, 255, 256, maxUnsigned30Bytes, minUnsigned31Bytes, samplePos, maxUnsigned31Bytes]
         for x in checks do
           let expected := Builder.empty.storeBits (encodeUnsignedVarIntBits 5 x)
           expectOkStack s!"ok/x-{x}"
@@ -171,7 +191,19 @@ def suite : InstrSuite where
         let expectedDeep := Builder.empty.storeBits (encodeUnsignedVarIntBits 5 7)
         expectOkStack "ok/deep-stack-preserve-below"
           (runStvaruint32Direct #[.null, .builder Builder.empty, intV 7])
-          #[.null, .builder expectedDeep] }
+          #[.null, .builder expectedDeep]
+
+        -- Branch: capacity guard exact-fit for len=1 payload (13 bits total).
+        let expectedLen1Exact := nearFullLen1ExactFit.storeBits (encodeUnsignedVarIntBits 5 1)
+        expectOkStack "ok/capacity-exact-fit-len1"
+          (runStvaruint32Direct #[.builder nearFullLen1ExactFit, intV 1])
+          #[.builder expectedLen1Exact]
+
+        -- Branch: capacity guard exact-fit for len=31 payload (253 bits total).
+        let expectedLen31Exact := nearFullLen31ExactFit.storeBits (encodeUnsignedVarIntBits 5 maxUnsigned31Bytes)
+        expectOkStack "ok/capacity-exact-fit-len31"
+          (runStvaruint32Direct #[.builder nearFullLen31ExactFit, intV maxUnsigned31Bytes])
+          #[.builder expectedLen31Exact] }
     ,
     { name := "unit/direct/range-checks-and-order"
       run := do
@@ -212,7 +244,11 @@ def suite : InstrSuite where
         expectErr "cellov/full-builder-x1"
           (runStvaruint32Direct #[.builder fullBuilder1023, intV 1]) .cellOv
         expectErr "cellov/full-builder-xsample"
-          (runStvaruint32Direct #[.builder fullBuilder1023, intV samplePos]) .cellOv }
+          (runStvaruint32Direct #[.builder fullBuilder1023, intV samplePos]) .cellOv
+        expectErr "cellov/capacity-plus-one-len1"
+          (runStvaruint32Direct #[.builder nearFullLen1Overflow, intV 1]) .cellOv
+        expectErr "cellov/capacity-plus-one-len31"
+          (runStvaruint32Direct #[.builder nearFullLen31Overflow, intV maxUnsigned31Bytes]) .cellOv }
     ,
     { name := "unit/opcode/decode-and-assembler-boundaries"
       run := do
@@ -236,7 +272,21 @@ def suite : InstrSuite where
         match assembleCp0 [.cellExt (.stVarInt false 16)] with
         | .error .invOpcode => pure ()
         | .error e => throw (IO.userError s!"stvaruint32/uint16-alias: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "stvaruint32/uint16-alias: expected assemble invOpcode, got success") }
+        | .ok _ => throw (IO.userError "stvaruint32/uint16-alias: expected assemble invOpcode, got success")
+
+        let signedNeighborCode ←
+          match assembleCp0 [.cellExt (.stVarInt true 32)] with
+          | .ok cell => pure cell
+          | .error e => throw (IO.userError s!"stvaruint32/signed32-neighbor: assemble failed with {e}")
+        let signedNeighborSlice := Slice.ofCell signedNeighborCode
+        let signedNeighborTail ←
+          expectDecodeStep "decode/stvaruint32-neighbor-signed32"
+            signedNeighborSlice (.cellExt (.stVarInt true 32)) 16
+        if signedNeighborTail.bitsRemaining = 0 then
+          pure ()
+        else
+          throw (IO.userError
+            s!"decode/stvaruint32-neighbor-signed32: expected exhausted slice, got {signedNeighborTail.bitsRemaining} bits remaining") }
     ,
     { name := "unit/dispatch/non-cellext-falls-through"
       run := do
@@ -245,14 +295,21 @@ def suite : InstrSuite where
           #[.null, intV 426] }
   ]
   oracle := #[
+    -- Branch: canonical success path, including lenBytes transition to 31 bytes.
     mkStvaruint32Case "ok/zero" #[.builder Builder.empty, intV 0],
     mkStvaruint32Case "ok/one" #[.builder Builder.empty, intV 1],
     mkStvaruint32Case "ok/255" #[.builder Builder.empty, intV 255],
+    mkStvaruint32Case "ok/256" #[.builder Builder.empty, intV 256],
+    mkStvaruint32Case "ok/max-unsigned-30-bytes" #[.builder Builder.empty, intV maxUnsigned30Bytes],
+    mkStvaruint32Case "ok/min-unsigned-31-bytes" #[.builder Builder.empty, intV minUnsigned31Bytes],
     mkStvaruint32Case "ok/sample-pos" #[.builder Builder.empty, intV samplePos],
     mkStvaruint32Case "ok/max-unsigned-31-bytes" #[.builder Builder.empty, intV maxUnsigned31Bytes],
+    mkStvaruint32Case "ok/capacity-exact-fit-len1" #[.builder nearFullLen1ExactFit, intV 1],
+    mkStvaruint32Case "ok/capacity-exact-fit-len31" #[.builder nearFullLen31ExactFit, intV maxUnsigned31Bytes],
     mkStvaruint32Case "ok/deep-stack-below-preserved" #[.null, .builder Builder.empty, intV 7],
     mkStvaruint32ProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch: range guard must fire before capacity checks for invalid x.
     mkStvaruint32Case "range/overflow-pos" #[.builder Builder.empty, intV overflowPosUnsigned31Bytes],
     mkStvaruint32Case "range/negative" #[.builder Builder.empty, intV (-1)],
     mkStvaruint32ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
@@ -274,10 +331,13 @@ def suite : InstrSuite where
     mkStvaruint32Case "gas/exact-minus-one-out-of-gas" #[.builder Builder.empty, intV 7]
       #[.pushInt (.num stvaruint32SetGasExactMinusOne), .tonEnvOp .setGasLimit, stvaruint32Instr],
 
+    -- Branch: capacity guard on pre-filled builders (exact over-capacity).
     mkStvaruint32ProgramCase "program/build-1023-success" #[] build1023Program,
     mkStvaruint32ProgramCase "program/build-1023-overflow-cellov" #[] (fullBuilderProgramWith (.num 0)),
     mkStvaruint32ProgramCase "program/cellov-in-range-x1" #[] (fullBuilderProgramWith (.num 1)),
-    mkStvaruint32ProgramCase "program/cellov-in-range-xsample" #[] (fullBuilderProgramWith (.num samplePos))
+    mkStvaruint32ProgramCase "program/cellov-in-range-xsample" #[] (fullBuilderProgramWith (.num samplePos)),
+    mkStvaruint32Case "cellov/capacity-plus-one-len1" #[.builder nearFullLen1Overflow, intV 1],
+    mkStvaruint32Case "cellov/capacity-plus-one-len31" #[.builder nearFullLen31Overflow, intV maxUnsigned31Bytes]
   ]
   fuzz := #[
     { seed := 2026020923
