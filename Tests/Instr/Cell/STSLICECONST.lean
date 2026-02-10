@@ -416,6 +416,7 @@ private def handcraftedOracleCases : IO (Array RawOracleCase) := do
   let payloadLarge : BitString := Array.replicate 57 true
   let mut cases : Array RawOracleCase := #[]
 
+  -- Branch: execute success (`checkUnderflow` + `popBuilder` + `canExtendBy` pass).
   cases := cases.push (← fromExceptIO "oracle/01"
     (mkRawCase "oracle/ok/empty-builder-empty-const" #[.builder Builder.empty] #[] #[] #[] 0))
   cases := cases.push (← fromExceptIO "oracle/02"
@@ -443,6 +444,7 @@ private def handcraftedOracleCases : IO (Array RawOracleCase) := do
   cases := cases.push (← fromExceptIO "oracle/13"
     (mkRawCase "oracle/ok/max-fit-bits-and-refs" #[] (mkBuilderPrelude (1023 - payloadLarge.size) 1) payloadLarge #[refA, refB, refC] 7))
 
+  -- Branch: execute errors (`stkUnd` / `typeChk` / `cellOv`).
   cases := cases.push (← fromExceptIO "oracle/14"
     (mkRawCase "oracle/underflow/empty-stack" #[] #[] #[true] #[] 0))
   cases := cases.push (← fromExceptIO "oracle/15"
@@ -466,6 +468,27 @@ private def handcraftedOracleCases : IO (Array RawOracleCase) := do
     (mkRawCase "oracle/ok/prelude-ref1-plus-const-ref3" #[] (mkBuilderPrelude 0 1) #[] #[refA, refB, refC] 0))
   cases := cases.push (← fromExceptIO "oracle/24"
     (mkRawCase "oracle/ok/boundary-bits1022-plus1-alt" #[] (mkBuilderPrelude 1022 0) #[false] #[] 0))
+
+  -- Branch: success variants around lenTag/dataBits marker handling and deep-stack preservation.
+  cases := cases.push (← fromExceptIO "oracle/25"
+    (mkRawCase "oracle/ok/empty-builder-empty-payload-len7" #[.builder Builder.empty] #[] #[] #[] 7))
+  cases := cases.push (← fromExceptIO "oracle/26"
+    (mkRawCase "oracle/ok/prelude-ref1-plus-const-ref3-len7"
+      #[] (mkBuilderPrelude 3 1) #[true] #[refA, refB, refC] 7))
+  cases := cases.push (← fromExceptIO "oracle/27"
+    (mkRawCase "oracle/ok/deep-stack-noise-empty-tuple"
+      #[.tuple #[], .builder Builder.empty] #[] (natToBits 5 3) #[refD] 1))
+
+  -- Branch: additional execute boundaries for lenTag=7 payload width and error variants.
+  cases := cases.push (← fromExceptIO "oracle/28"
+    (mkRawCase "oracle/ok/max-fit-len7-near-max-payload"
+      #[] (mkBuilderPrelude 967 1) (Array.replicate 56 false) #[refA, refB, refC] 7))
+  cases := cases.push (← fromExceptIO "oracle/29"
+    (mkRawCase "oracle/underflow/empty-stack-len7-ref3"
+      #[] #[] (natToBits 3 2) #[refA, refB, refC] 7))
+  cases := cases.push (← fromExceptIO "oracle/30"
+    (mkRawCase "oracle/type/top-slice"
+      #[.slice (Slice.ofCell refB)] #[] #[true] #[] 0))
 
   pure cases
 
@@ -610,11 +633,11 @@ def suite : InstrSuite where
         let _ ← expectExitCode "gas/exact-minus-one-out-of-gas" Excno.outOfGas.toInt minusRes
         pure () }
     ,
-    { name := "unit/oracle/handcrafted-24"
+    { name := "unit/oracle/handcrafted-30"
       run := do
         let cases ← handcraftedOracleCases
-        if cases.size < 20 ∨ cases.size > 40 then
-          failUnit s!"oracle/handcrafted: expected 20..40 cases, got {cases.size}"
+        if cases.size ≠ 30 then
+          failUnit s!"oracle/handcrafted: expected 30 cases, got {cases.size}"
         runRawOracleBatchCompare "oracle/handcrafted" cases }
     ,
     { name := "unit/oracle/fuzz-seeded-320"
