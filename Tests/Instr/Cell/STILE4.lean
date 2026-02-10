@@ -102,6 +102,30 @@ private def appendExistingProgram : Array Instr :=
     .pushInt (.num (-2)), .xchg0 1, stile4Instr
   ]
 
+private def build991Program : Array Instr :=
+  #[
+    .newc,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 223
+  ]
+
+private def build992Program : Array Instr :=
+  #[
+    .newc,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 224
+  ]
+
+private def fillTo1023Program : Array Instr :=
+  build991Program ++ #[.pushInt (.num 0), .xchg0 1, stile4Instr]
+
+private def overflowAfter992Program : Array Instr :=
+  build992Program ++ #[.pushInt (.num 0), .xchg0 1, stile4Instr]
+
 private def rangeNanProgram : Array Instr :=
   #[.pushInt .nan, .xchg0 1, stile4Instr]
 
@@ -216,6 +240,21 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/cellov-before-range"
       run := do
+        -- Branch: `canExtendBy` gate and its ordering relative to range checks.
+        let nearFull991 := Builder.empty.storeBits (Array.replicate 991 false)
+        let zeroLeBits ←
+          match expectedLEBitsSigned32 0 with
+          | .ok bs => pure bs
+          | .error e => throw (IO.userError s!"unexpected conversion error {e}")
+        let exact1023 := nearFull991.storeBits zeroLeBits
+        expectOkStack "cellov/boundary-991-plus-32-fits"
+          (runStile4Direct #[intV 0, .builder nearFull991])
+          #[.builder exact1023]
+
+        let nearFull992 := Builder.empty.storeBits (Array.replicate 992 false)
+        expectErr "cellov/boundary-992-plus-32-overflow"
+          (runStile4Direct #[intV 0, .builder nearFull992]) .cellOv
+
         expectErr "cellov/full-builder"
           (runStile4Direct #[intV 0, .builder fullBuilder1023]) .cellOv
         expectErr "error-order/cellov-before-nan-range"
@@ -225,18 +264,29 @@ def suite : InstrSuite where
     ,
     { name := "unit/opcode/decode-and-assembler-boundaries"
       run := do
-        let program : Array Instr := #[stile4Instr, .add]
+        -- Branch: contiguous ST{I,U}LE{4,8} opcode family decode boundaries.
+        let stileFamily : Array Instr :=
+          #[
+            .cellExt (.stLeInt false 4),
+            .cellExt (.stLeInt true 4),
+            .cellExt (.stLeInt false 8),
+            .cellExt (.stLeInt true 8),
+            .add
+          ]
         let code ←
-          match assembleCp0 program.toList with
+          match assembleCp0 stileFamily.toList with
           | .ok cell => pure cell
           | .error e => throw (IO.userError s!"assemble failed: {e}")
         let s0 := Slice.ofCell code
         let s1 ← expectDecodeStep "decode/stile4" s0 stile4Instr 16
-        let s2 ← expectDecodeStep "decode/tail-add" s1 .add 8
-        if s2.bitsRemaining = 0 then
+        let s2 ← expectDecodeStep "decode/stule4" s1 (.cellExt (.stLeInt true 4)) 16
+        let s3 ← expectDecodeStep "decode/stile8" s2 (.cellExt (.stLeInt false 8)) 16
+        let s4 ← expectDecodeStep "decode/stule8" s3 (.cellExt (.stLeInt true 8)) 16
+        let s5 ← expectDecodeStep "decode/tail-add" s4 .add 8
+        if s5.bitsRemaining = 0 then
           pure ()
         else
-          throw (IO.userError s!"decode/end: expected exhausted slice, got {s2.bitsRemaining} bits remaining")
+          throw (IO.userError s!"decode/end: expected exhausted slice, got {s5.bitsRemaining} bits remaining")
 
         match assembleCp0 [.cellExt (.stLeInt false 6)] with
         | .error .rangeChk => pure ()
@@ -250,30 +300,46 @@ def suite : InstrSuite where
           #[.null, intV 420] }
   ]
   oracle := #[
+    -- Branch: success store path (signed-fit pass + BE->LE byte swap + push builder).
     mkStile4Case "ok/min-int32" #[intV minInt32, .builder Builder.empty],
+    mkStile4Case "ok/min-int32-plus-one" #[intV (minInt32 + 1), .builder Builder.empty],
     mkStile4Case "ok/max-int32" #[intV maxInt32, .builder Builder.empty],
+    mkStile4Case "ok/max-int32-minus-one" #[intV (maxInt32 - 1), .builder Builder.empty],
     mkStile4Case "ok/neg-one" #[intV (-1), .builder Builder.empty],
     mkStile4Case "ok/zero" #[intV 0, .builder Builder.empty],
     mkStile4Case "ok/one" #[intV 1, .builder Builder.empty],
     mkStile4Case "ok/pattern-0x1234567" #[intV 0x1234567, .builder Builder.empty],
+    mkStile4Case "ok/pattern-0x1020304" #[intV 0x1020304, .builder Builder.empty],
+    mkStile4Case "ok/pattern-neg-0x1020304" #[intV (-0x1020304), .builder Builder.empty],
     mkStile4Case "ok/deep-stack-below-preserved" #[.null, intV 7, .builder Builder.empty],
     mkStile4ProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch: signed-32 range failures.
     mkStile4Case "range/overflow-pos" #[intV overInt32, .builder Builder.empty],
     mkStile4Case "range/overflow-neg" #[intV underInt32, .builder Builder.empty],
     mkStile4ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
 
+    -- Branch: `checkUnderflow 2` exits before stack type checks.
     mkStile4Case "underflow/empty" #[],
     mkStile4Case "underflow/one-item" #[.builder Builder.empty],
-    mkStile4Case "type/builder-pop-first" #[intV 1, .null],
-    mkStile4Case "type/int-pop-second" #[.null, .builder Builder.empty],
+    mkStile4Case "underflow/one-item-int" #[intV 7],
 
+    -- Branch: pop order is builder first, int second.
+    mkStile4Case "type/builder-pop-first" #[intV 1, .null],
+    mkStile4Case "type/builder-pop-first-cell" #[intV 1, .cell Cell.empty],
+    mkStile4Case "type/int-pop-second" #[.null, .builder Builder.empty],
+    mkStile4Case "type/int-pop-second-cell" #[.cell Cell.empty, .builder Builder.empty],
+
+    -- Branch: exact gas boundary around opcode execution.
     mkStile4Case "gas/exact-cost-succeeds" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stile4SetGasExact), .tonEnvOp .setGasLimit, stile4Instr],
     mkStile4Case "gas/exact-minus-one-out-of-gas" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stile4SetGasExactMinusOne), .tonEnvOp .setGasLimit, stile4Instr],
 
+    -- Branch: capacity/error-order boundaries around 1023-bit builder limit.
     mkStile4ProgramCase "program/build-1023-success" #[] build1023Program,
+    mkStile4ProgramCase "program/build-991-fill-to-1023-success" #[] fillTo1023Program,
+    mkStile4ProgramCase "program/build-992-overflow-cellov" #[] overflowAfter992Program,
     mkStile4ProgramCase "program/build-1023-overflow-cellov" #[] overflowAfter1023Program,
     mkStile4ProgramCase "program/cellov-before-range-nan" #[] cellovBeforeRangeNanProgram,
     mkStile4ProgramCase "program/cellov-before-range-overflow" #[] cellovBeforeRangeOverflowProgram
