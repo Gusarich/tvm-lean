@@ -83,9 +83,21 @@ private def overInt64 : Int := intPow2 63
 
 private def underInt64 : Int := -(intPow2 63) - 1
 
+private def minInt64PlusOne : Int := minInt64 + 1
+
+private def maxInt64MinusOne : Int := maxInt64 - 1
+
+private def overInt64PlusOne : Int := overInt64 + 1
+
+private def underInt64MinusOne : Int := underInt64 - 1
+
 private def samplePos64 : Int := 123456789012345678
 
 private def sampleNeg64 : Int := -123456789012345678
+
+private def patternPos64 : Int := 0x102030405060708
+
+private def patternNeg64 : Int := -0x102030405060708
 
 private def build1023Program : Array Instr :=
   build1023WithFixed .stu
@@ -99,12 +111,39 @@ private def cellovBeforeRangeNanProgram : Array Instr :=
 private def cellovBeforeRangeOverflowProgram : Array Instr :=
   build1023Program ++ #[.pushInt (.num overInt64), .xchg0 1, stile8Instr]
 
+private def cellovBeforeRangeUnderflowProgram : Array Instr :=
+  build1023Program ++ #[.pushInt (.num underInt64), .xchg0 1, stile8Instr]
+
 private def appendExistingProgram : Array Instr :=
   #[
     .newc,
     .pushInt (.num 5), .xchg0 1, .stu 3,
     .pushInt (.num (-2)), .xchg0 1, stile8Instr
   ]
+
+private def build959Program : Array Instr :=
+  #[
+    .newc,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 191
+  ]
+
+private def build960Program : Array Instr :=
+  #[
+    .newc,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 256,
+    .pushInt (.num 0), .xchg0 1, .stu 192
+  ]
+
+private def fillTo1023Program : Array Instr :=
+  build959Program ++ #[.pushInt (.num 0), .xchg0 1, stile8Instr]
+
+private def overflowAfter960Program : Array Instr :=
+  build960Program ++ #[.pushInt (.num 0), .xchg0 1, stile8Instr]
 
 private def rangeNanProgram : Array Instr :=
   #[.pushInt .nan, .xchg0 1, stile8Instr]
@@ -198,8 +237,12 @@ def suite : InstrSuite where
       run := do
         expectErr "range/overflow-pos"
           (runStile8Direct #[intV overInt64, .builder Builder.empty]) .rangeChk
+        expectErr "range/overflow-pos-plus-one"
+          (runStile8Direct #[intV overInt64PlusOne, .builder Builder.empty]) .rangeChk
         expectErr "range/overflow-neg"
           (runStile8Direct #[intV underInt64, .builder Builder.empty]) .rangeChk
+        expectErr "range/overflow-neg-minus-one"
+          (runStile8Direct #[intV underInt64MinusOne, .builder Builder.empty]) .rangeChk
         expectErr "range/nan"
           (runStile8Direct #[.int .nan, .builder Builder.empty]) .rangeChk
         expectErr "range/invalid-bytes-guard"
@@ -209,12 +252,17 @@ def suite : InstrSuite where
       run := do
         expectErr "underflow/empty" (runStile8Direct #[]) .stkUnd
         expectErr "underflow/one-item" (runStile8Direct #[.builder Builder.empty]) .stkUnd
+        expectErr "underflow/one-item-int" (runStile8Direct #[intV 7]) .stkUnd
         expectErr "underflow/single-non-int" (runStile8Direct #[.null]) .stkUnd
 
         expectErr "type/builder-pop-first"
           (runStile8Direct #[intV 1, .null]) .typeChk
+        expectErr "type/builder-pop-first-cell"
+          (runStile8Direct #[intV 1, .cell Cell.empty]) .typeChk
         expectErr "type/int-pop-second"
           (runStile8Direct #[.null, .builder Builder.empty]) .typeChk
+        expectErr "type/int-pop-second-cell"
+          (runStile8Direct #[.cell Cell.empty, .builder Builder.empty]) .typeChk
         expectErr "type/both-non-int-builder-first"
           (runStile8Direct #[.cell Cell.empty, .null]) .typeChk }
     ,
@@ -225,7 +273,9 @@ def suite : InstrSuite where
         expectErr "error-order/cellov-before-nan-range"
           (runStile8Direct #[.int .nan, .builder fullBuilder1023]) .cellOv
         expectErr "error-order/cellov-before-overflow-range"
-          (runStile8Direct #[intV overInt64, .builder fullBuilder1023]) .cellOv }
+          (runStile8Direct #[intV overInt64, .builder fullBuilder1023]) .cellOv
+        expectErr "error-order/cellov-before-underflow-range"
+          (runStile8Direct #[intV underInt64, .builder fullBuilder1023]) .cellOv }
     ,
     { name := "unit/opcode/decode-and-assembler-boundaries"
       run := do
@@ -254,33 +304,54 @@ def suite : InstrSuite where
           #[.null, intV 421] }
   ]
   oracle := #[
+    -- Branch: success path (`ok`) across signed-64 boundaries and byte-order-sensitive patterns.
     mkStile8Case "ok/min-int64" #[intV minInt64, .builder Builder.empty],
+    mkStile8Case "ok/min-int64-plus-one" #[intV minInt64PlusOne, .builder Builder.empty],
     mkStile8Case "ok/max-int64" #[intV maxInt64, .builder Builder.empty],
+    mkStile8Case "ok/max-int64-minus-one" #[intV maxInt64MinusOne, .builder Builder.empty],
     mkStile8Case "ok/neg-one" #[intV (-1), .builder Builder.empty],
     mkStile8Case "ok/zero" #[intV 0, .builder Builder.empty],
     mkStile8Case "ok/one" #[intV 1, .builder Builder.empty],
     mkStile8Case "ok/sample-pos64" #[intV samplePos64, .builder Builder.empty],
+    mkStile8Case "ok/sample-neg64" #[intV sampleNeg64, .builder Builder.empty],
+    mkStile8Case "ok/pattern-0x102030405060708" #[intV patternPos64, .builder Builder.empty],
+    mkStile8Case "ok/pattern-neg-0x102030405060708" #[intV patternNeg64, .builder Builder.empty],
     mkStile8Case "ok/deep-stack-below-preserved" #[.null, intV 7, .builder Builder.empty],
+    mkStile8Case "ok/deep-stack-cell-below-preserved" #[.cell Cell.empty, intV 7, .builder Builder.empty],
     mkStile8ProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch: signed-64 `rangeChk` outcomes (positive overflow, negative overflow, NaN).
     mkStile8Case "range/overflow-pos" #[intV overInt64, .builder Builder.empty],
+    mkStile8Case "range/overflow-pos-plus-one" #[intV overInt64PlusOne, .builder Builder.empty],
     mkStile8Case "range/overflow-neg" #[intV underInt64, .builder Builder.empty],
+    mkStile8Case "range/overflow-neg-minus-one" #[intV underInt64MinusOne, .builder Builder.empty],
     mkStile8ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
 
+    -- Branch: `checkUnderflow 2` and pop-order type checks (`builder` first, then `int`).
     mkStile8Case "underflow/empty" #[],
     mkStile8Case "underflow/one-item" #[.builder Builder.empty],
+    mkStile8Case "underflow/one-item-int" #[intV 7],
     mkStile8Case "type/builder-pop-first" #[intV 1, .null],
+    mkStile8Case "type/builder-pop-first-cell" #[intV 1, .cell Cell.empty],
     mkStile8Case "type/int-pop-second" #[.null, .builder Builder.empty],
+    mkStile8Case "type/int-pop-second-cell" #[.cell Cell.empty, .builder Builder.empty],
+    mkStile8Case "type/both-non-int-builder-first" #[.cell Cell.empty, .null],
 
+    -- Branch: exact gas boundary around the opcode's execution cost.
     mkStile8Case "gas/exact-cost-succeeds" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stile8SetGasExact), .tonEnvOp .setGasLimit, stile8Instr],
     mkStile8Case "gas/exact-minus-one-out-of-gas" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stile8SetGasExactMinusOne), .tonEnvOp .setGasLimit, stile8Instr],
 
+    -- Branch: capacity guard (`cellOv`) and precedence over range checks.
+    mkStile8Case "cellov/full-builder-direct" #[intV 0, .builder fullBuilder1023],
+    mkStile8ProgramCase "program/build-959-fill-to-1023-success" #[] fillTo1023Program,
+    mkStile8ProgramCase "program/build-960-overflow-cellov" #[] overflowAfter960Program,
     mkStile8ProgramCase "program/build-1023-success" #[] build1023Program,
     mkStile8ProgramCase "program/build-1023-overflow-cellov" #[] overflowAfter1023Program,
     mkStile8ProgramCase "program/cellov-before-range-nan" #[] cellovBeforeRangeNanProgram,
-    mkStile8ProgramCase "program/cellov-before-range-overflow" #[] cellovBeforeRangeOverflowProgram
+    mkStile8ProgramCase "program/cellov-before-range-overflow" #[] cellovBeforeRangeOverflowProgram,
+    mkStile8ProgramCase "program/cellov-before-range-underflow" #[] cellovBeforeRangeUnderflowProgram
   ]
   fuzz := #[
     { seed := 2026020918
