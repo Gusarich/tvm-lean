@@ -77,9 +77,18 @@ private def stule8Bits : Nat := 64
 
 private def maxUInt64 : Int := intPow2 64 - 1
 
+private def nearMaxUInt64 : Int := maxUInt64 - 1
+
 private def overUInt64 : Int := intPow2 64
 
+private def overUInt64PlusOne : Int := overUInt64 + 1
+
+private def highBitUInt64 : Int := intPow2 63
+
 private def samplePos64 : Int := 123456789012345678
+
+private def prefilled959Builder : Builder :=
+  Builder.empty.storeBits (Array.replicate 959 false)
 
 private def build1023Program : Array Instr :=
   build1023WithFixed .stu
@@ -92,6 +101,9 @@ private def cellovBeforeRangeNanProgram : Array Instr :=
 
 private def cellovBeforeRangeOverflowProgram : Array Instr :=
   build1023Program ++ #[.pushInt (.num overUInt64), .xchg0 1, stule8Instr]
+
+private def cellovBeforeRangeNegativeProgram : Array Instr :=
+  build1023Program ++ #[.pushInt (.num (-1)), .xchg0 1, stule8Instr]
 
 private def appendExistingProgram : Array Instr :=
   #[
@@ -113,13 +125,15 @@ private def expectedLEBitsUnsigned64 (x : Int) : BitString :=
   leBytesToBitString (natToBits x.toNat stule8Bits) 8
 
 private def pickStule8InRange (rng : StdGen) : Int × StdGen :=
-  let (pick, rng') := randNat rng 0 5
+  let (pick, rng') := randNat rng 0 7
   let x : Int :=
     if pick = 0 then 0
     else if pick = 1 then 1
     else if pick = 2 then maxUInt64
-    else if pick = 3 then samplePos64
-    else if pick = 4 then 0x102030405060708
+    else if pick = 3 then nearMaxUInt64
+    else if pick = 4 then highBitUInt64
+    else if pick = 5 then samplePos64
+    else if pick = 6 then 0x102030405060708
     else 42
   (x, rng')
 
@@ -154,9 +168,10 @@ private def genStule8FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 def suite : InstrSuite where
   id := stule8Id
   unit := #[
+    -- Branch: success path (`ok`) + byte-order conversion + append/deep-stack behavior.
     { name := "unit/direct/success-little-endian-and-append"
       run := do
-        let checks : Array Int := #[0, 1, 255, samplePos64, maxUInt64]
+        let checks : Array Int := #[0, 1, 255, highBitUInt64, samplePos64, nearMaxUInt64, maxUInt64]
         for x in checks do
           let expected := Builder.empty.storeBits (expectedLEBitsUnsigned64 x)
           expectOkStack s!"ok/x-{x}"
@@ -174,17 +189,25 @@ def suite : InstrSuite where
           (runStule8Direct #[.null, intV 7, .builder Builder.empty])
           #[.null, .builder expectedDeep] }
     ,
+    -- Branch: `rangeChk` from unsigned bounds, NaN split, and bytes guard.
     { name := "unit/direct/range-checks"
       run := do
         expectErr "range/overflow-pos"
           (runStule8Direct #[intV overUInt64, .builder Builder.empty]) .rangeChk
+        expectErr "range/overflow-pos-plus-one"
+          (runStule8Direct #[intV overUInt64PlusOne, .builder Builder.empty]) .rangeChk
         expectErr "range/negative"
           (runStule8Direct #[intV (-1), .builder Builder.empty]) .rangeChk
+        expectErr "range/negative-two"
+          (runStule8Direct #[intV (-2), .builder Builder.empty]) .rangeChk
         expectErr "range/nan"
           (runStule8Direct #[.int .nan, .builder Builder.empty]) .rangeChk
         expectErr "range/invalid-bytes-guard"
-          (runStule8DirectInstr (.cellExt (.stLeInt true 6)) #[intV 0, .builder Builder.empty]) .rangeChk }
+          (runStule8DirectInstr (.cellExt (.stLeInt true 6)) #[intV 0, .builder Builder.empty]) .rangeChk
+        expectErr "range/invalid-bytes-guard-9"
+          (runStule8DirectInstr (.cellExt (.stLeInt true 9)) #[intV 0, .builder Builder.empty]) .rangeChk }
     ,
+    -- Branch: `stkUnd` and pop-order type checks (`builder` first, then `int`).
     { name := "unit/direct/underflow-and-type-order"
       run := do
         expectErr "underflow/empty" (runStule8Direct #[]) .stkUnd
@@ -198,15 +221,19 @@ def suite : InstrSuite where
         expectErr "type/both-non-int-builder-first"
           (runStule8Direct #[.cell Cell.empty, .null]) .typeChk }
     ,
+    -- Branch: capacity guard must throw `cellOv` before range checks.
     { name := "unit/direct/cellov-before-range"
       run := do
         expectErr "cellov/full-builder"
           (runStule8Direct #[intV 0, .builder fullBuilder1023]) .cellOv
         expectErr "error-order/cellov-before-nan-range"
           (runStule8Direct #[.int .nan, .builder fullBuilder1023]) .cellOv
+        expectErr "error-order/cellov-before-negative-range"
+          (runStule8Direct #[intV (-1), .builder fullBuilder1023]) .cellOv
         expectErr "error-order/cellov-before-overflow-range"
           (runStule8Direct #[intV overUInt64, .builder fullBuilder1023]) .cellOv }
     ,
+    -- Branch: opcode encode/decode identity + neighboring opcode boundaries.
     { name := "unit/opcode/decode-and-assembler-boundaries"
       run := do
         let program : Array Instr := #[stule8Instr, .add]
@@ -222,11 +249,28 @@ def suite : InstrSuite where
         else
           throw (IO.userError s!"decode/end: expected exhausted slice, got {s2.bitsRemaining} bits remaining")
 
-        match assembleCp0 [.cellExt (.stLeInt true 6)] with
-        | .error .rangeChk => pure ()
-        | .error e => throw (IO.userError s!"stule8/bytes6: expected rangeChk, got {e}")
-        | .ok _ => throw (IO.userError "stule8/bytes6: expected assemble rangeChk, got success") }
+        let boundaryProgram : Array Instr :=
+          #[stule8Instr, .cellExt (.stLeInt false 8), .cellExt (.stLeInt true 4)]
+        let boundaryCode ←
+          match assembleCp0 boundaryProgram.toList with
+          | .ok cell => pure cell
+          | .error e => throw (IO.userError s!"assemble/boundary failed: {e}")
+        let b0 := Slice.ofCell boundaryCode
+        let b1 ← expectDecodeStep "decode/boundary/stule8" b0 stule8Instr 16
+        let b2 ← expectDecodeStep "decode/boundary/stile8" b1 (.cellExt (.stLeInt false 8)) 16
+        let b3 ← expectDecodeStep "decode/boundary/stule4" b2 (.cellExt (.stLeInt true 4)) 16
+        if b3.bitsRemaining = 0 then
+          pure ()
+        else
+          throw (IO.userError s!"decode/boundary/end: expected exhausted slice, got {b3.bitsRemaining} bits remaining")
+
+        for badBytes in ([6, 7, 9] : List Nat) do
+          match assembleCp0 [.cellExt (.stLeInt true badBytes)] with
+          | .error .rangeChk => pure ()
+          | .error e => throw (IO.userError s!"stule8/bytes{badBytes}: expected rangeChk, got {e}")
+          | .ok _ => throw (IO.userError s!"stule8/bytes{badBytes}: expected assemble rangeChk, got success") }
     ,
+    -- Branch: non-cell-ext dispatch must fall through to `next`.
     { name := "unit/dispatch/non-cellext-falls-through"
       run := do
         expectOkStack "dispatch/fallback"
@@ -234,32 +278,47 @@ def suite : InstrSuite where
           #[.null, intV 423] }
   ]
   oracle := #[
+    -- Branch: success path (`ok`) and unsigned boundary values.
     mkStule8Case "ok/zero" #[intV 0, .builder Builder.empty],
     mkStule8Case "ok/one" #[intV 1, .builder Builder.empty],
+    mkStule8Case "ok/max-minus-one" #[intV nearMaxUInt64, .builder Builder.empty],
+    mkStule8Case "ok/high-bit-2^63" #[intV highBitUInt64, .builder Builder.empty],
     mkStule8Case "ok/max-u64" #[intV maxUInt64, .builder Builder.empty],
     mkStule8Case "ok/sample-pos64" #[intV samplePos64, .builder Builder.empty],
     mkStule8Case "ok/pattern-0x102030405060708" #[intV 0x102030405060708, .builder Builder.empty],
     mkStule8Case "ok/deep-stack-below-preserved" #[.null, intV 7, .builder Builder.empty],
+    mkStule8Case "ok/deep-stack-cell-below-preserved" #[.cell Cell.empty, intV 7, .builder Builder.empty],
+    mkStule8Case "ok/prefilled-959-bits-exact-fit" #[intV 0, .builder prefilled959Builder],
     mkStule8ProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch: range errors (`rangeChk`) from over/under bounds and NaN.
     mkStule8Case "range/overflow-pos" #[intV overUInt64, .builder Builder.empty],
+    mkStule8Case "range/overflow-pos-plus-one" #[intV overUInt64PlusOne, .builder Builder.empty],
     mkStule8Case "range/negative" #[intV (-1), .builder Builder.empty],
+    mkStule8Case "range/negative-two" #[intV (-2), .builder Builder.empty],
     mkStule8ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
 
+    -- Branch: stack underflow (`stkUnd`) and pop-order type checks (`typeChk`).
     mkStule8Case "underflow/empty" #[],
     mkStule8Case "underflow/one-item" #[.builder Builder.empty],
+    mkStule8Case "underflow/single-non-int" #[.null],
     mkStule8Case "type/builder-pop-first" #[intV 1, .null],
     mkStule8Case "type/int-pop-second" #[.null, .builder Builder.empty],
+    mkStule8Case "type/both-non-int-builder-first" #[.cell Cell.empty, .null],
 
+    -- Branch: gas boundary around exact per-instruction budget.
     mkStule8Case "gas/exact-cost-succeeds" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stule8SetGasExact), .tonEnvOp .setGasLimit, stule8Instr],
     mkStule8Case "gas/exact-minus-one-out-of-gas" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stule8SetGasExactMinusOne), .tonEnvOp .setGasLimit, stule8Instr],
 
+    -- Branch: capacity guard (`cellOv`) including error precedence over range.
+    mkStule8Case "cellov/full-builder-direct" #[intV 0, .builder fullBuilder1023],
     mkStule8ProgramCase "program/build-1023-success" #[] build1023Program,
     mkStule8ProgramCase "program/build-1023-overflow-cellov" #[] overflowAfter1023Program,
     mkStule8ProgramCase "program/cellov-before-range-nan" #[] cellovBeforeRangeNanProgram,
-    mkStule8ProgramCase "program/cellov-before-range-overflow" #[] cellovBeforeRangeOverflowProgram
+    mkStule8ProgramCase "program/cellov-before-range-overflow" #[] cellovBeforeRangeOverflowProgram,
+    mkStule8ProgramCase "program/cellov-before-range-negative" #[] cellovBeforeRangeNegativeProgram
   ]
   fuzz := #[
     { seed := 2026020920
