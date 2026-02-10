@@ -247,6 +247,7 @@ private def runRawOracleCase (c : RawOracleCase) : IO Unit := do
 
 private def strefConstRawOracleCases : Array RawOracleCase :=
   #[
+    -- Branch: success path (`checkUnderflow` + `popBuilder` + `canExtendBy` all pass).
     { name := "oracle/ok/direct/empty-builder-const-empty"
       constRef := constCellEmpty
       initStack := #[.builder Builder.empty] },
@@ -259,7 +260,11 @@ private def strefConstRawOracleCases : Array RawOracleCase :=
     { name := "oracle/ok/direct/deep-stack-int-preserved"
       constRef := constCell8
       initStack := #[intV 77, .builder Builder.empty] },
+    { name := "oracle/ok/direct/deep-stack-cell-preserved"
+      constRef := constCellWithTwoRefs
+      initStack := #[.cell constCell3, .builder Builder.empty] },
 
+    -- Branch: success path on program-built builders near ref/bit boundaries.
     { name := "oracle/ok/prefix/refs0-to1"
       programPrefix := mkBuilderWithRefsProgram 0
       constRef := constCell1
@@ -288,11 +293,20 @@ private def strefConstRawOracleCases : Array RawOracleCase :=
       programPrefix := strefConstPrefixFullBitsRefs3
       constRef := constCell1
       initStack := #[] },
+    { name := "oracle/ok/prefix/full-bits1023-refs0"
+      programPrefix := build1023WithFixed .stu
+      constRef := constCell3
+      initStack := #[] },
+    { name := "oracle/ok/prefix/full-bits1023-refs2-const-two-refs"
+      programPrefix := build1023WithFixed .stu ++ appendRefsToTopBuilder 2
+      constRef := constCellWithTwoRefs
+      initStack := #[] },
     { name := "oracle/ok/prefix/const-with-two-refs"
       programPrefix := mkBuilderWithRefsProgram 2
       constRef := constCellWithTwoRefs
       initStack := #[] },
 
+    -- Branch: `checkUnderflow` / `popBuilder` type-failure outcomes.
     { name := "oracle/underflow/empty-stack"
       constRef := constCell1
       initStack := #[] },
@@ -305,7 +319,14 @@ private def strefConstRawOracleCases : Array RawOracleCase :=
     { name := "oracle/type/top-not-builder-cell"
       constRef := constCell1
       initStack := #[.cell constCell3] },
+    { name := "oracle/type/top-not-builder-slice"
+      constRef := constCell1
+      initStack := #[.slice (Slice.ofCell constCell3)] },
+    { name := "oracle/type/top-not-builder-builder-below-null"
+      constRef := constCell1
+      initStack := #[.builder Builder.empty, .null] },
 
+    -- Branch: `canExtendBy 0 1` failure (`cellOv`) under ref saturation.
     { name := "oracle/cellov/prefix-refs4"
       programPrefix := strefConstPrefixRefs4
       constRef := constCell1
@@ -322,7 +343,12 @@ private def strefConstRawOracleCases : Array RawOracleCase :=
       programPrefix := strefConstPrefixFullBitsRefs4Noise
       constRef := constCell1
       initStack := #[] },
+    { name := "oracle/cellov/prefix-bits7-refs4"
+      programPrefix := mkBuilderWithBitsRefsProgram 7 4 (.num 85)
+      constRef := constCellWithTwoRefs
+      initStack := #[] },
 
+    -- Branch: gas edge (`setGasLimit`) around raw `STREFCONST` code path.
     { name := "oracle/gas/exact/direct-empty-builder"
       programPrefix := strefConstPrefixSetGasExact
       constRef := constCell1
@@ -536,10 +562,10 @@ def suite : InstrSuite where
           (runHandlerDirect execInstrCellExt decodedInstr #[.builder Builder.empty])
           #[.builder (appendConstRef Builder.empty constCellWithRef)] }
     ,
-    { name := "unit/raw-oracle/handcrafted-24"
+    { name := "unit/raw-oracle/handcrafted-30"
       run := do
-        if strefConstRawOracleCases.size < 20 ∨ strefConstRawOracleCases.size > 40 then
-          throw (IO.userError s!"raw oracle case count must be within [20,40], got {strefConstRawOracleCases.size}")
+        if strefConstRawOracleCases.size ≠ 30 then
+          throw (IO.userError s!"raw oracle case count must be exactly 30, got {strefConstRawOracleCases.size}")
         for c in strefConstRawOracleCases do
           runRawOracleCase c }
     ,
