@@ -31,6 +31,7 @@ Key risk areas:
 - non-rev stack order is `... cb2 builder` (builder on top);
 - result builder is `builder ++ cb2` (not the other order);
 - capacity checks account for both bits and refs;
+- exact-capacity boundaries (`1023` bits, `4` refs) must succeed;
 - in non-quiet mode overflow throws `cellOv` (no status code push).
 -/
 
@@ -129,50 +130,76 @@ private def stbAppendProgram : Array Instr :=
 private def stbAppendProgramWithNoise : Array Instr :=
   mkStbProgramBitsWithNoise 4 2 (.num 9) (.num 3)
 
-private def pickStbBitsSmall (rng : StdGen) : Nat × StdGen :=
-  let (pick, rng') := randNat rng 0 6
-  let n : Nat :=
-    if pick = 0 then 0
-    else if pick = 1 then 1
-    else if pick = 2 then 2
-    else if pick = 3 then 3
-    else if pick = 4 then 7
-    else if pick = 5 then 8
-    else 15
-  (n, rng')
+private def stbBitsSmallPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15]
+
+private def stbBitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 7, 8, 15, 31, 63, 127, 255, 256]
+
+private def stbOverflowBitsPool : Array Nat :=
+  #[1, 2, 7, 8, 15]
+
+private def stbRefsSuccessPool : Array (Nat × Nat) :=
+  #[(0, 0), (1, 0), (0, 1), (2, 1), (1, 2), (2, 2), (3, 1), (4, 0)]
+
+private def pickNatFromPool (pool : Array Nat) (rng : StdGen) : Nat × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def pickStbRefPair (rng : StdGen) : (Nat × Nat) × StdGen :=
+  let (idx, rng') := randNat rng 0 (stbRefsSuccessPool.size - 1)
+  (stbRefsSuccessPool[idx]!, rng')
 
 private def genStbFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
-  let (shape, rng1) := randNat rng0 0 10
+  let (shape, rng1) := randNat rng0 0 14
   if shape = 0 then
     (mkStbCase "fuzz/ok/empty-builders" #[.builder Builder.empty, .builder Builder.empty], rng1)
   else if shape = 1 then
-    let (cb2Bits, rng2) := pickStbBitsSmall rng1
-    let (bBits, rng3) := pickStbBitsSmall rng2
+    (mkStbCase "fuzz/ok/deep-stack-preserve-below"
+      #[.null, .builder Builder.empty, .builder Builder.empty], rng1)
+  else if shape = 2 then
+    let (cb2Bits, rng2) := pickNatFromPool stbBitsSmallPool rng1
+    let (bBits, rng3) := pickNatFromPool stbBitsSmallPool rng2
     (mkStbProgramCase s!"fuzz/ok/program/cb2-{cb2Bits}-b-{bBits}" #[]
       (mkStbProgramBits cb2Bits bBits), rng3)
-  else if shape = 2 then
-    let (cb2Bits, rng2) := pickStbBitsSmall rng1
-    let (bBits, rng3) := pickStbBitsSmall rng2
+  else if shape = 3 then
+    let (cb2Bits, rng2) := pickNatFromPool stbBitsBoundaryPool rng1
+    let (bBits, rng3) := pickNatFromPool stbBitsBoundaryPool rng2
+    (mkStbProgramCase s!"fuzz/ok/program-boundary/cb2-{cb2Bits}-b-{bBits}" #[]
+      (mkStbProgramBits cb2Bits bBits), rng3)
+  else if shape = 4 then
+    let (cb2Bits, rng2) := pickNatFromPool stbBitsSmallPool rng1
+    let (bBits, rng3) := pickNatFromPool stbBitsSmallPool rng2
     (mkStbProgramCase s!"fuzz/ok/program-noise/cb2-{cb2Bits}-b-{bBits}" #[]
       (mkStbProgramBitsWithNoise cb2Bits bBits), rng3)
-  else if shape = 3 then
-    (mkStbCase "fuzz/underflow/empty" #[], rng1)
-  else if shape = 4 then
-    (mkStbCase "fuzz/underflow/one-item" #[.builder Builder.empty], rng1)
   else if shape = 5 then
-    (mkStbCase "fuzz/type/top-not-builder" #[.builder Builder.empty, .null], rng1)
+    let ((cb2Refs, bRefs), rng2) := pickStbRefPair rng1
+    (mkStbProgramCase s!"fuzz/ok/refs/cb2-{cb2Refs}-b-{bRefs}" #[]
+      (mkStbProgramRefs cb2Refs bRefs), rng2)
   else if shape = 6 then
-    (mkStbCase "fuzz/type/second-not-builder" #[.null, .builder Builder.empty], rng1)
+    (mkStbCase "fuzz/underflow/empty" #[], rng1)
   else if shape = 7 then
-    (mkStbProgramCase "fuzz/cellov/bits-overflow-program" #[] stbBitsCellOvProgram, rng1)
+    (mkStbCase "fuzz/underflow/one-item" #[.builder Builder.empty], rng1)
   else if shape = 8 then
-    (mkStbProgramCase "fuzz/cellov/refs-overflow-program" #[] stbRefsCellOvProgram, rng1)
+    (mkStbCase "fuzz/type/top-not-builder" #[.builder Builder.empty, .null], rng1)
   else if shape = 9 then
+    (mkStbCase "fuzz/type/second-not-builder" #[.null, .builder Builder.empty], rng1)
+  else if shape = 10 then
     (mkStbCase "fuzz/type/both-non-builder" #[.null, intV 1], rng1)
+  else if shape = 11 then
+    let (ovBits, rng2) := pickNatFromPool stbOverflowBitsPool rng1
+    (mkStbProgramCase s!"fuzz/cellov/bits-overflow/cb2-{ovBits}" #[]
+      (mkStbProgramCb2ThenFull ovBits), rng2)
+  else if shape = 12 then
+    (mkStbProgramCase "fuzz/cellov/refs-overflow" #[] stbRefsCellOvProgram, rng1)
+  else if shape = 13 then
+    (mkStbCase "fuzz/gas/exact-cost-succeeds"
+      #[.builder Builder.empty, .builder Builder.empty]
+      #[.pushInt (.num stbSetGasExact), .tonEnvOp .setGasLimit, stbInstr], rng1)
   else
-    let (cb2Bits, rng2) := pickStbBitsSmall rng1
-    (mkStbProgramCase s!"fuzz/program/cellov-b-1023-cb2-{cb2Bits}" #[]
-      (mkStbProgramCb2ThenFull cb2Bits), rng2)
+    (mkStbCase "fuzz/gas/exact-minus-one-out-of-gas"
+      #[.builder Builder.empty, .builder Builder.empty]
+      #[.pushInt (.num stbSetGasExactMinusOne), .tonEnvOp .setGasLimit, stbInstr], rng1)
 
 def suite : InstrSuite where
   id := stbId
@@ -200,6 +227,24 @@ def suite : InstrSuite where
         expectOkStack "ok/append-refs-and-bits"
           (runStbDirect #[.builder cb2RefsBuilder, .builder bRefsBuilder])
           #[.builder expectedRefs]
+
+        let cb2Bit1 := Builder.empty.storeBits (natToBits 1 1)
+        let bBits1022 := Builder.empty.storeBits (Array.replicate 1022 false)
+        let expected1023 : Builder :=
+          { bits := bBits1022.bits ++ cb2Bit1.bits
+            refs := bBits1022.refs ++ cb2Bit1.refs }
+        expectOkStack "ok/capacity-boundary-bits-1022-plus-1"
+          (runStbDirect #[.builder cb2Bit1, .builder bBits1022])
+          #[.builder expected1023]
+
+        let cb2Ref1 : Builder := { Builder.empty with refs := #[Cell.empty] }
+        let bRef3 : Builder := { Builder.empty with refs := #[Cell.empty, Cell.empty, Cell.empty] }
+        let expectedRef4 : Builder :=
+          { bits := bRef3.bits ++ cb2Ref1.bits
+            refs := bRef3.refs ++ cb2Ref1.refs }
+        expectOkStack "ok/capacity-boundary-refs-3-plus-1"
+          (runStbDirect #[.builder cb2Ref1, .builder bRef3])
+          #[.builder expectedRef4]
 
         expectOkStack "ok/deep-stack-preserve-below"
           (runStbDirect #[.null, .builder Builder.empty, .builder Builder.empty])
@@ -230,7 +275,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/opcode/decode-and-assembler"
       run := do
-        let program : Array Instr := #[stbInstr, .stb true false, .add]
+        let program : Array Instr := #[stbInstr, .stb true false, .stb false true, .add]
         let code ←
           match assembleCp0 program.toList with
           | .ok cell => pure cell
@@ -238,11 +283,12 @@ def suite : InstrSuite where
         let s0 := Slice.ofCell code
         let s1 ← expectDecodeStep "decode/stb" s0 stbInstr 16
         let s2 ← expectDecodeStep "decode/stbr" s1 (.stb true false) 16
-        let s3 ← expectDecodeStep "decode/tail-add" s2 .add 8
-        if s3.bitsRemaining = 0 then
+        let s3 ← expectDecodeStep "decode/stbq" s2 (.stb false true) 16
+        let s4 ← expectDecodeStep "decode/tail-add" s3 .add 8
+        if s4.bitsRemaining = 0 then
           pure ()
         else
-          throw (IO.userError s!"decode/end: expected exhausted slice, got {s3.bitsRemaining} bits remaining") }
+          throw (IO.userError s!"decode/end: expected exhausted slice, got {s4.bitsRemaining} bits remaining") }
     ,
     { name := "unit/dispatch/non-stb-falls-through"
       run := do
@@ -278,7 +324,12 @@ def suite : InstrSuite where
     mkStbProgramCase "ok/program/cb2-3-b-2" #[] (mkStbProgramBits 3 2),
     mkStbProgramCase "ok/program/cb2-7-b-8" #[] (mkStbProgramBits 7 8),
     mkStbProgramCase "ok/program/cb2-8-b-7" #[] (mkStbProgramBits 8 7),
-    mkStbProgramCase "ok/program/cb2-15-b-15" #[] (mkStbProgramBits 15 15)
+    mkStbProgramCase "ok/program/cb2-15-b-15" #[] (mkStbProgramBits 15 15),
+    mkStbProgramCase "ok/program/cb2-255-b-1" #[] (mkStbProgramBits 255 1),
+    mkStbProgramCase "ok/program/full-builder-plus-empty-cb2" #[] (mkStbProgramCb2ThenFull 0),
+    mkStbProgramCase "ok/program/refs-cb2-3-b-1" #[] (mkStbProgramRefs 3 1),
+    mkStbProgramCase "ok/program/refs-cb2-4-b-0" #[] (mkStbProgramRefs 4 0),
+    mkStbProgramCase "ok/program/refs-cb2-2-b-2" #[] (mkStbProgramRefs 2 2)
   ]
   fuzz := #[
     { seed := 2026020936
