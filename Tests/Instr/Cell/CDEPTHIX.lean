@@ -158,13 +158,24 @@ private def oracleSuccessCases : Array OracleCase :=
     mkSuccessCase "ok/depth2/i1" cellDepth2 1,
     mkSuccessCase "ok/depth4/i2" cellDepth4 2,
     mkSuccessCase "ok/depth5/i0" cellDepth5 0,
+    mkSuccessCase "ok/depth5/i3" cellDepth5 3,
     mkSuccessCase "ok/depth7/i3" cellDepth7 3,
+    mkSuccessCase "ok/branch-depth4/i0" cellBranchDepth4 0,
     mkSuccessCase "ok/branch-depth4/i3" cellBranchDepth4 3,
+    mkSuccessCase "ok/branch-depth6/i3" cellBranchDepth6 3,
     mkSuccessCase "ok/branch-depth6/i2" cellBranchDepth6 2,
+    mkSuccessCase "ok/pruned-mask1/i0" prunedMask1Depth9 0,
+    mkSuccessCase "ok/pruned-mask1/i3" prunedMask1Depth9 3,
+    mkSuccessCase "ok/pruned-mask7/i0" prunedMask7Depths 0,
+    mkSuccessCase "ok/pruned-mask7/i1" prunedMask7Depths 1,
+    mkSuccessCase "ok/pruned-mask7/i2" prunedMask7Depths 2,
+    mkSuccessCase "ok/pruned-mask7/i3" prunedMask7Depths 3,
     mkSuccessCase "ok/deep-stack/null-int-depth3/i1"
       cellDepth3 1 #[.null, intV 42],
     mkSuccessCase "ok/deep-stack/cell-null-depth6/i0"
-      cellBranchDepth6 0 #[.cell cellDepth1, .null]
+      cellBranchDepth6 0 #[.cell cellDepth1, .null],
+    mkSuccessCase "ok/deep-stack/slice-builder-pruned7/i1"
+      prunedMask7Depths 1 #[.slice (Slice.ofCell cellDepth2), .builder Builder.empty]
   ]
 
 private def oracleErrorCases : Array OracleCase :=
@@ -173,18 +184,37 @@ private def oracleErrorCases : Array OracleCase :=
       #[],
     mkCdepthIxCase "type/top-null"
       #[.null],
+    mkCdepthIxCase "type/top-cell"
+      #[.cell cellDepth2],
     mkCdepthIxCase "type/top-empty-builder"
       #[.builder Builder.empty],
     mkCdepthIxCase "type/top-full-slice"
       #[.slice (Slice.ofCell cellDepth2)],
+    mkCdepthIxCase "type/top-empty-tuple"
+      #[.tuple #[]],
     mkCdepthIxCase "range/top-negative"
       #[.cell cellDepth2, intV (-1)],
     mkCdepthIxCase "range/top-too-large"
       #[.cell cellDepth2, intV 4],
+    mkCdepthIxCase "range/top-nan-program"
+      #[.cell cellDepth2]
+      #[.pushInt .nan, cdepthIxInstr],
+    mkCdepthIxCase "range/order-before-cell-type"
+      #[.null, intV 4],
     mkCdepthIxCase "underflow/missing-cell-after-index"
       #[intV 0],
     mkCdepthIxCase "type/cell-position-null"
-      #[.null, intV 2]
+      #[.null, intV 2],
+    mkCdepthIxCase "type/cell-position-int"
+      #[intV 9, intV 1],
+    mkCdepthIxCase "type/cell-position-slice"
+      #[.slice (Slice.ofCell cellDepth1), intV 2],
+    mkCdepthIxCase "type/cell-position-builder"
+      #[.builder Builder.empty, intV 3],
+    mkCdepthIxCase "cellund/malformed-refs-overflow"
+      #[.cell malformedRefs5, intV 0],
+    mkCdepthIxCase "cellund/malformed-mask-ordinary"
+      #[.cell malformedMaskOrdinary, intV 0]
   ]
 
 private def oracleGasCases : Array OracleCase :=
