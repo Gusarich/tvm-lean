@@ -42,6 +42,9 @@ private def ldonesInstr : Instr :=
 private def ldzeroesInstr : Instr :=
   .cellOp .ldZeroes
 
+private def ldsameInstr : Instr :=
+  .cellOp .ldSame
+
 private def execCellOpLdOnesInstr (i : Instr) (next : VM Unit) : VM Unit :=
   match i with
   | .cellOp op => execCellOpLdOnes op next
@@ -118,8 +121,20 @@ private def slicePrefix8Tail : Slice :=
 private def sliceAllOnes17 : Slice :=
   mkSliceLeadingOnes 17
 
+private def sliceAllOnes255 : Slice :=
+  mkSliceLeadingOnes 255
+
+private def sliceAllOnes511 : Slice :=
+  mkSliceLeadingOnes 511
+
 private def sliceAllOnes1023 : Slice :=
   mkSliceLeadingOnes 1023
+
+private def sliceMaxPrefix1022Stop : Slice :=
+  mkSliceLeadingOnes 1022 true
+
+private def sliceHeadZeroTail1022 : Slice :=
+  mkSliceHeadZero (Array.replicate 1022 true)
 
 private def sliceRefOnly2 : Slice :=
   mkSliceWithRefs #[] 2
@@ -127,8 +142,14 @@ private def sliceRefOnly2 : Slice :=
 private def sliceRefLeading3 : Slice :=
   mkSliceWithRefs #[true, true, true, false, true] 1
 
+private def sliceShiftedPrefix4Stop : Slice :=
+  (mkSliceFromBits #[false, true, true, true, true, false, true, false]).advanceBits 1
+
 private def sliceDeepOrder : Slice :=
   mkSliceFromBits #[true, false, true, true]
+
+private def sliceDeepPrefix6 : Slice :=
+  mkSliceLeadingOnes 6 true tailBits7
 
 private def onesLensAny : Array Nat :=
   #[0, 1, 2, 3, 7, 8, 15, 31, 63, 127, 255, 511, 1023]
@@ -234,6 +255,10 @@ def suite : InstrSuite where
           (runLdonesDirect #[.slice slicePrefix8Tail])
           #[intV 8, .slice (slicePrefix8Tail.advanceBits 8)]
 
+        expectOkStack "ok/shifted-view-prefix-four"
+          (runLdonesDirect #[.slice sliceShiftedPrefix4Stop])
+          #[intV 4, .slice (sliceShiftedPrefix4Stop.advanceBits 4)]
+
         expectOkStack "ok/all-ones-17"
           (runLdonesDirect #[.slice sliceAllOnes17])
           #[intV 17, .slice (sliceAllOnes17.advanceBits 17)]
@@ -268,19 +293,29 @@ def suite : InstrSuite where
     ,
     { name := "unit/opcode/decode-and-assembler"
       run := do
-        let program : Array Instr := #[ldonesInstr, ldzeroesInstr, .add]
+        let canonicalOnly ←
+          match assembleCp0 [ldonesInstr] with
+          | .ok cell => pure cell
+          | .error e => throw (IO.userError s!"assemble ldones failed: {e}")
+        if canonicalOnly.bits = natToBits 0xd761 16 then
+          pure ()
+        else
+          throw (IO.userError s!"ldones canonical encode mismatch: got bits {canonicalOnly.bits}")
+
+        let program : Array Instr := #[ldzeroesInstr, ldonesInstr, ldsameInstr, .add]
         let code ←
           match assembleCp0 program.toList with
           | .ok cell => pure cell
           | .error e => throw (IO.userError s!"assemble failed: {e}")
         let s0 := Slice.ofCell code
-        let s1 ← expectDecodeStep "decode/ldones" s0 ldonesInstr 16
-        let s2 ← expectDecodeStep "decode/ldzeroes-neighbor" s1 ldzeroesInstr 16
-        let s3 ← expectDecodeStep "decode/tail-add" s2 .add 8
-        if s3.bitsRemaining = 0 then
+        let s1 ← expectDecodeStep "decode/ldzeroes-left-neighbor" s0 ldzeroesInstr 16
+        let s2 ← expectDecodeStep "decode/ldones-center" s1 ldonesInstr 16
+        let s3 ← expectDecodeStep "decode/ldsame-right-neighbor" s2 ldsameInstr 16
+        let s4 ← expectDecodeStep "decode/tail-add" s3 .add 8
+        if s4.bitsRemaining = 0 then
           pure ()
         else
-          throw (IO.userError s!"decode/end: expected exhausted slice, got {s3.bitsRemaining} bits remaining") }
+          throw (IO.userError s!"decode/end: expected exhausted slice, got {s4.bitsRemaining} bits remaining") }
     ,
     { name := "unit/dispatch/non-ldones-falls-through"
       run := do
@@ -289,35 +324,48 @@ def suite : InstrSuite where
           #[.null, intV 761] }
   ]
   oracle := #[
+    -- Branch B1+B2+B3a: `popSlice` success with `n = 0` (no bit cursor advance).
     mkLdonesCase "ok/empty-slice" #[.slice sliceEmpty],
     mkLdonesCase "ok/head-zero-tail7" #[.slice sliceHeadZeroTail7],
+    mkLdonesCase "ok/with-tail11-head-zero" #[.slice (mkSliceHeadZero tailBits11)],
+    mkLdonesCase "ok/head-zero-tail1022" #[.slice sliceHeadZeroTail1022],
+    mkLdonesCase "ok/ref-only-two-refs" #[.slice sliceRefOnly2],
+    mkLdonesCase "ok/ref-only-four-refs" #[.slice (mkSliceWithRefs #[] 4)],
+
+    -- Branch B1+B2+B3b: `popSlice` success with `n > 0` (advance exactly by `n` bits).
     mkLdonesCase "ok/single-one" #[.slice sliceSingleOne],
     mkLdonesCase "ok/prefix3-stop-zero" #[.slice slicePrefix3Stop],
     mkLdonesCase "ok/prefix8-tail7" #[.slice slicePrefix8Tail],
     mkLdonesCase "ok/all-ones-17" #[.slice sliceAllOnes17],
+    mkLdonesCase "ok/all-ones-255" #[.slice sliceAllOnes255],
+    mkLdonesCase "ok/all-ones-511" #[.slice sliceAllOnes511],
     mkLdonesCase "ok/all-ones-1023" #[.slice sliceAllOnes1023],
-    mkLdonesCase "ok/ref-only-two-refs" #[.slice sliceRefOnly2],
+    mkLdonesCase "ok/max-prefix-1022-stop-zero" #[.slice sliceMaxPrefix1022Stop],
+    mkLdonesCase "ok/prefix4-stop-zero-tail2" #[.slice (mkSliceLeadingOnes 4 true #[true, false])],
     mkLdonesCase "ok/ref-leading-three" #[.slice sliceRefLeading3],
-    mkLdonesCase "ok/with-tail11-head-zero" #[.slice (mkSliceHeadZero tailBits11)],
+    mkLdonesCase "ok/ref-leading-ones-four-refs"
+      #[.slice (mkSliceWithRefs #[true, true, true, true, false] 4)],
     mkLdonesCase "ok/deep-stack-null-below" #[.null, .slice slicePrefix8Tail],
     mkLdonesCase "ok/deep-stack-cell-below" #[.cell Cell.empty, .slice slicePrefix3Stop],
+    mkLdonesCase "ok/deep-stack-two-below" #[intV (-7), .null, .slice sliceDeepPrefix6],
 
+    -- Branch B2 failure surface: underflow/type from `popSlice` only.
     mkLdonesCase "underflow/empty" #[],
     mkLdonesCase "type/top-null" #[.null],
     mkLdonesCase "type/top-int" #[intV 0],
     mkLdonesCase "type/top-cell" #[.cell Cell.empty],
     mkLdonesCase "type/top-builder" #[.builder Builder.empty],
+    mkLdonesCase "type/top-tuple-empty" #[.tuple #[]],
     mkLdonesCase "type/deep-top-not-slice" #[.slice slicePrefix3Stop, .null],
     mkLdonesProgramCase "type/program-nan-top" #[] #[.pushInt .nan, ldonesInstr],
 
-    mkLdonesCase "gas/exact-cost-succeeds" #[.slice slicePrefix8Tail]
+    -- Opcode gas boundary for LDONES.
+    mkLdonesProgramCase "gas/exact-cost-succeeds"
+      #[.slice slicePrefix8Tail]
       #[.pushInt (.num ldonesSetGasExact), .tonEnvOp .setGasLimit, ldonesInstr],
-    mkLdonesCase "gas/exact-minus-one-out-of-gas" #[.slice slicePrefix8Tail]
-      #[.pushInt (.num ldonesSetGasExactMinusOne), .tonEnvOp .setGasLimit, ldonesInstr],
-
-    mkLdonesCase "ok/ref-only-four-refs" #[.slice (mkSliceWithRefs #[] 4)],
-    mkLdonesCase "ok/ref-leading-ones-four-refs"
-      #[.slice (mkSliceWithRefs #[true, true, true, true, false] 4)]
+    mkLdonesProgramCase "gas/exact-minus-one-out-of-gas"
+      #[.slice slicePrefix8Tail]
+      #[.pushInt (.num ldonesSetGasExactMinusOne), .tonEnvOp .setGasLimit, ldonesInstr]
   ]
   fuzz := #[
     { seed := 2026021031
