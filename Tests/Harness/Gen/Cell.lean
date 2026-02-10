@@ -25,6 +25,17 @@ def expectDecodeStep
 def fullBuilder1023 : Builder :=
   Builder.empty.storeBits (Array.replicate 1023 false)
 
+def maxUnsignedByBytes (bytes : Nat) : Int :=
+  intPow2 (bytes * 8) - 1
+
+def overflowUnsignedByBytes (bytes : Nat) : Int :=
+  intPow2 (bytes * 8)
+
+def encodeUnsignedVarIntBits (lenBits : Nat) (n : Int) : BitString :=
+  let lenBytes : Nat := (natLenBits n.toNat + 7) / 8
+  let payload := natToBits n.toNat (lenBytes * 8)
+  natToBits lenBytes lenBits ++ payload
+
 def build1023WithFixed
     (mkInstr : Nat → Instr)
     (x : IntVal := .num 0) : Array Instr :=
