@@ -109,6 +109,19 @@ private def build1023Program : Array Instr :=
 private def overflowAfter1023Program : Array Instr :=
   build1023Program ++ #[.pushInt (.num 0), .xchg0 1, .stu 1]
 
+private def cellovBeforeRangeNanProgram : Array Instr :=
+  build1023Program ++ #[.pushInt .nan, .xchg0 1, .stu 1]
+
+private def cellovBeforeRangeOverflowProgram : Array Instr :=
+  build1023Program ++ #[.pushInt (.num 2), .xchg0 1, .stu 1]
+
+private def appendExistingProgram : Array Instr :=
+  #[
+    .newc,
+    .pushInt (.num 5), .xchg0 1, .stu 3,
+    .pushInt (.num 17), .xchg0 1, .stu 5
+  ]
+
 private def stuGasProbeBits : Nat := 8
 
 private def stuSetGasExact : Int :=
@@ -292,33 +305,48 @@ def suite : InstrSuite where
           #[.null, intV 404] }
   ]
   oracle := #[
+    -- Branch map: success path (`unsigned fit` + append into builder).
     mkStuCase "ok/bits-1/zero" 1 #[intV 0, .builder Builder.empty],
     mkStuCase "ok/bits-1/one" 1 #[intV 1, .builder Builder.empty],
+    mkStuCase "ok/bits-8/zero" 8 #[intV 0, .builder Builder.empty],
     mkStuCase "ok/bits-8/max" 8 #[intV 255, .builder Builder.empty],
+    mkStuCase "ok/bits-16/zero" 16 #[intV 0, .builder Builder.empty],
     mkStuCase "ok/bits-16/max" 16 #[intV 65535, .builder Builder.empty],
+    mkStuCase "ok/bits-32/max" 32 #[intV (intPow2 32 - 1), .builder Builder.empty],
+    mkStuCase "ok/bits-256/zero" 256 #[intV 0, .builder Builder.empty],
     mkStuCase "ok/bits-256/max" 256 #[intV maxUInt256, .builder Builder.empty],
     mkStuCase "ok/deep-stack-below-preserved" 4 #[.null, intV 7, .builder Builder.empty],
+    mkStuProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch map: range path (`NaN`/negative/overflow => `rangeChk`).
+    mkStuCase "range/negative-bits-1" 1 #[intV (-1), .builder Builder.empty],
     mkStuCase "range/negative" 8 #[intV (-1), .builder Builder.empty],
     mkStuCase "range/overflow-bits-1" 1 #[intV 2, .builder Builder.empty],
     mkStuCase "range/overflow-bits-8" 8 #[intV 256, .builder Builder.empty],
+    mkStuCase "range/overflow-bits-255" 255 #[intV (intPow2 255), .builder Builder.empty],
     mkStuCase "range/negative-bits-256" 256 #[intV (-1), .builder Builder.empty],
     mkStuProgramCase "range/nan-via-program" #[.builder Builder.empty]
       #[.pushInt .nan, .xchg0 1, stuInstr 8],
 
+    -- Branch map: stack discipline (`checkUnderflow` + pop-order type checks).
     mkStuCase "underflow/empty" 8 #[],
     mkStuCase "underflow/one-int" 8 #[intV 1],
     mkStuCase "underflow/one-builder" 8 #[.builder Builder.empty],
+    mkStuCase "underflow/one-non-int" 8 #[.null],
     mkStuCase "type/top-not-builder" 8 #[.builder Builder.empty, intV 3],
     mkStuCase "type/second-not-int" 8 #[.null, .builder Builder.empty],
 
+    -- Branch map: deterministic gas cliff for STU execution.
     mkStuCase "gas/exact-cost-succeeds" stuGasProbeBits #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stuSetGasExact), .tonEnvOp .setGasLimit, stuInstr stuGasProbeBits],
     mkStuCase "gas/exact-minus-one-out-of-gas" stuGasProbeBits #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stuSetGasExactMinusOne), .tonEnvOp .setGasLimit, stuInstr stuGasProbeBits],
 
+    -- Branch map: capacity guard (`cellOv`) and its precedence over range diagnostics.
     mkStuProgramCase "program/build-1023-success" #[] build1023Program,
-    mkStuProgramCase "program/build-1023-overflow-cellov" #[] overflowAfter1023Program
+    mkStuProgramCase "program/build-1023-overflow-cellov" #[] overflowAfter1023Program,
+    mkStuProgramCase "program/cellov-before-range-nan" #[] cellovBeforeRangeNanProgram,
+    mkStuProgramCase "program/cellov-before-range-overflow" #[] cellovBeforeRangeOverflowProgram
   ]
   fuzz := #[
     { seed := 2026020901
