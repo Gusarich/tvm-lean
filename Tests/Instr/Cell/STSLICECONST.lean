@@ -492,9 +492,64 @@ private def handcraftedOracleCases : IO (Array RawOracleCase) := do
 
   pure cases
 
-def suite : InstrSuite where
-  id := stSliceConstId
-  unit := #[
+private def handcraftedOracleCaseNames : Array String :=
+  #[
+    "oracle/ok/empty-builder-empty-const",
+    "oracle/ok/empty-builder-bit1",
+    "oracle/ok/empty-builder-trailing-zeros-preserved",
+    "oracle/ok/empty-builder-with-ref1",
+    "oracle/ok/empty-builder-max-len7-ref3",
+    "oracle/ok/prelude-bits3-store5",
+    "oracle/ok/prelude-refs2-plus-ref1",
+    "oracle/ok/prelude-bits8-refs1-plus-bits7-refs2",
+    "oracle/ok/boundary-bits1022-plus1",
+    "oracle/ok/boundary-refs3-plus1",
+    "oracle/ok/deep-stack-noise-int",
+    "oracle/ok/deep-stack-noise-cell-prelude",
+    "oracle/ok/max-fit-bits-and-refs",
+    "oracle/underflow/empty-stack",
+    "oracle/type/top-null",
+    "oracle/type/top-int",
+    "oracle/type/prelude-full-builder-then-null",
+    "oracle/cellov/bits-full",
+    "oracle/cellov/refs-full",
+    "oracle/cellov/bits-and-refs-full",
+    "oracle/ok/prelude-mid-bits-refs",
+    "oracle/ok/deep-stack-noise-slice",
+    "oracle/ok/prelude-ref1-plus-const-ref3",
+    "oracle/ok/boundary-bits1022-plus1-alt",
+    "oracle/ok/empty-builder-empty-payload-len7",
+    "oracle/ok/prelude-ref1-plus-const-ref3-len7",
+    "oracle/ok/deep-stack-noise-empty-tuple",
+    "oracle/ok/max-fit-len7-near-max-payload",
+    "oracle/underflow/empty-stack-len7-ref3",
+    "oracle/type/top-slice"
+  ]
+
+private def runHandcraftedOracleCaseAt (idx : Nat) : IO Unit := do
+  let cases ← handcraftedOracleCases
+  if cases.size ≠ handcraftedOracleCaseNames.size then
+    failUnit s!"oracle/handcrafted: size mismatch cases={cases.size}, names={handcraftedOracleCaseNames.size}"
+  let expectedName ←
+    match handcraftedOracleCaseNames[idx]? with
+    | some n => pure n
+    | none => failUnit s!"oracle/handcrafted: case-name index out of bounds at {idx}"
+  let c ←
+    match cases[idx]? with
+    | some c => pure c
+    | none => failUnit s!"oracle/handcrafted: case index out of bounds at {idx}"
+  if c.name ≠ expectedName then
+    failUnit s!"oracle/handcrafted: case name mismatch at {idx}, expected={expectedName}, got={c.name}"
+  runRawOracleBatchCompare s!"oracle/handcrafted/{c.name}" #[c]
+
+private def handcraftedOracleUnitCases : Array UnitCase :=
+  (Array.range handcraftedOracleCaseNames.size).map fun i =>
+    let caseName := handcraftedOracleCaseNames[i]!
+    { name := s!"unit/oracle/handcrafted/{caseName}"
+      run := runHandcraftedOracleCaseAt i }
+
+private def baseUnitCases : Array UnitCase :=
+  #[
     { name := "unit/direct/success-boundaries-and-append"
       run := do
         let payload1 : BitString := #[true]
@@ -632,14 +687,10 @@ def suite : InstrSuite where
         let minusRes := runCodeVm code stack minus minus
         let _ ← expectExitCode "gas/exact-minus-one-out-of-gas" Excno.outOfGas.toInt minusRes
         pure () }
-    ,
-    { name := "unit/oracle/handcrafted-30"
-      run := do
-        let cases ← handcraftedOracleCases
-        if cases.size ≠ 30 then
-          failUnit s!"oracle/handcrafted: expected 30 cases, got {cases.size}"
-        runRawOracleBatchCompare "oracle/handcrafted" cases }
-    ,
+  ]
+
+private def fuzzUnitCases : Array UnitCase :=
+  #[
     { name := "unit/oracle/fuzz-seeded-320"
       run := do
         let seed : Nat := 2026021016
@@ -652,6 +703,10 @@ def suite : InstrSuite where
           rng := rng'
         runRawOracleBatchCompare s!"oracle/fuzz/seed-{seed}" cases }
   ]
+
+def suite : InstrSuite where
+  id := stSliceConstId
+  unit := baseUnitCases ++ handcraftedOracleUnitCases ++ fuzzUnitCases
   oracle := #[]
   fuzz := #[]
 
