@@ -367,6 +367,20 @@ private def strefConstRawOracleCases : Array RawOracleCase :=
       initStack := #[] }
   ]
 
+private def strefConstRawOracleUnitCases : Array UnitCase :=
+  strefConstRawOracleCases.map fun c =>
+    { name := s!"unit/raw-oracle/{c.name}"
+      run := runRawOracleCase c }
+
+private def strefConstRawOracleCaseCountMin : Nat := 30
+
+private def strefConstRawOracleCaseCountUnit : UnitCase :=
+  { name := "unit/raw-oracle/case-count-at-least-30"
+    run := do
+      if strefConstRawOracleUnitCases.size < strefConstRawOracleCaseCountMin then
+        throw (IO.userError
+          s!"raw oracle case count must be at least {strefConstRawOracleCaseCountMin}, got {strefConstRawOracleUnitCases.size}") }
+
 private def expectedStrefConstModel (c : Cell) (stack : Array Value) : Except Excno (Array Value) := do
   if stack.size = 0 then
     throw .stkUnd
@@ -449,7 +463,7 @@ private def strefConstFuzzCount : Nat := 320
 
 def suite : InstrSuite where
   id := strefConstId
-  unit := #[
+  unit := (#[
     { name := "unit/direct/success-stack-shape-and-append"
       run := do
         let expectedEmpty := appendConstRef Builder.empty constCell1
@@ -562,13 +576,7 @@ def suite : InstrSuite where
           (runHandlerDirect execInstrCellExt decodedInstr #[.builder Builder.empty])
           #[.builder (appendConstRef Builder.empty constCellWithRef)] }
     ,
-    { name := "unit/raw-oracle/handcrafted-30"
-      run := do
-        if strefConstRawOracleCases.size ≠ 30 then
-          throw (IO.userError s!"raw oracle case count must be exactly 30, got {strefConstRawOracleCases.size}")
-        for c in strefConstRawOracleCases do
-          runRawOracleCase c }
-    ,
+    strefConstRawOracleCaseCountUnit,
     { name := "unit/dispatch/non-strefconst-falls-through"
       run := do
         expectOkStack "dispatch/fallback"
@@ -601,7 +609,7 @@ def suite : InstrSuite where
           | _, _ =>
               throw (IO.userError
                 s!"fuzz/direct/{i}: result kind mismatch\nconst={reprStr constRef}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}") }
-  ]
+  ] ++ strefConstRawOracleUnitCases)
   oracle := #[]
   fuzz := #[]
 
