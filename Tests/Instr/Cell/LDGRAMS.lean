@@ -71,6 +71,16 @@ private def maxUnsigned15Bytes : Int := maxUnsignedByBytes 15
 
 private def samplePos : Int := intPow2 96 + 271828
 
+private def len2Max : Int := maxUnsignedByBytes 2
+
+private def len3Min : Int := intPow2 16
+
+private def len8Min : Int := intPow2 56
+
+private def len14Min : Int := intPow2 104
+
+private def len15Min : Int := intPow2 112
+
 private def tailBits7 : BitString := natToBits 93 7
 
 private def tailBits11 : BitString := natToBits 1337 11
@@ -146,15 +156,23 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/direct/success-boundaries-and-remainder"
       run := do
+        -- Branch: success path across varuint length transitions and remainder handling.
         let checks : Array (Int × BitString) :=
           #[
             (0, #[]),
             (1, #[]),
             (255, #[]),
             (256, #[]),
+            (len2Max, #[]),
+            (len3Min, #[]),
+            (len8Min, #[]),
             (samplePos, #[]),
+            (len14Min, #[]),
+            (len15Min, #[]),
             (maxUnsigned15Bytes, #[]),
             (0, tailBits7),
+            (len3Min, tailBits7),
+            (len15Min, tailBits11),
             (maxUnsigned15Bytes, tailBits11)
           ]
         for c in checks do
@@ -171,12 +189,21 @@ def suite : InstrSuite where
         let remDeep := inputDeep.advanceBits (encodeUnsignedVarIntBits 4 7).size
         expectOkStack "ok/deep-stack-preserve-below"
           (runLdgramsDirect #[.null, .slice inputDeep])
-          #[.null, intV 7, .slice remDeep] }
+          #[.null, intV 7, .slice remDeep]
+
+        let inputDeeper := mkSliceFromBits (encodeUnsignedVarIntBits 4 len3Min ++ tailBits11)
+        let remDeeper := inputDeeper.advanceBits (encodeUnsignedVarIntBits 4 len3Min).size
+        expectOkStack "ok/deep-stack-two-below-preserved"
+          (runLdgramsDirect #[intV 9, .null, .slice inputDeeper])
+          #[intV 9, .null, intV len3Min, .slice remDeeper] }
     ,
     { name := "unit/direct/cellund-branches"
       run := do
+        -- Branch: short length-prefix and short payload both converge to `cellUnd`.
         expectErr "cellund/prefix-too-short-0"
           (runLdgramsDirect #[.slice (mkSliceFromBits #[])]) .cellUnd
+        expectErr "cellund/prefix-too-short-1"
+          (runLdgramsDirect #[.slice (mkSliceFromBits (Array.replicate 1 false))]) .cellUnd
         expectErr "cellund/prefix-too-short-3"
           (runLdgramsDirect #[.slice (mkSliceFromBits (Array.replicate 3 false))]) .cellUnd
         expectErr "cellund/len1-no-payload"
@@ -185,6 +212,10 @@ def suite : InstrSuite where
           (runLdgramsDirect #[.slice (mkTruncatedPayloadSlice 2 9)]) .cellUnd
         expectErr "cellund/len4-payload-short"
           (runLdgramsDirect #[.slice (mkTruncatedPayloadSlice 4 31)]) .cellUnd
+        expectErr "cellund/len8-payload-short"
+          (runLdgramsDirect #[.slice (mkTruncatedPayloadSlice 8 63)]) .cellUnd
+        expectErr "cellund/len14-payload-short"
+          (runLdgramsDirect #[.slice (mkTruncatedPayloadSlice 14 111)]) .cellUnd
         expectErr "cellund/len15-prefix-only"
           (runLdgramsDirect #[.slice (mkTruncatedPayloadSlice 15 0)]) .cellUnd
         expectErr "cellund/len15-payload-short"
@@ -192,8 +223,11 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/underflow-and-type-order"
       run := do
+        -- Branch: `popSlice` ordering decides underflow/type outcomes.
         expectErr "underflow/empty" (runLdgramsDirect #[]) .stkUnd
         expectErr "type/top-not-slice" (runLdgramsDirect #[.null]) .typeChk
+        expectErr "type/top-cell-not-slice"
+          (runLdgramsDirect #[.cell Cell.empty]) .typeChk
         expectErr "type/deep-top-not-slice"
           (runLdgramsDirect #[.slice (mkLdgramsSlice 1), .null]) .typeChk }
     ,
@@ -224,28 +258,44 @@ def suite : InstrSuite where
           #[.null, intV 428] }
   ]
   oracle := #[
+    -- Branch: success path (length boundaries + tails + deep-stack preservation).
     mkLdgramsCase "ok/zero" #[.slice (mkLdgramsSlice 0)],
     mkLdgramsCase "ok/one" #[.slice (mkLdgramsSlice 1)],
     mkLdgramsCase "ok/255" #[.slice (mkLdgramsSlice 255)],
     mkLdgramsCase "ok/256" #[.slice (mkLdgramsSlice 256)],
+    mkLdgramsCase "ok/len2-max" #[.slice (mkLdgramsSlice len2Max)],
+    mkLdgramsCase "ok/len3-min" #[.slice (mkLdgramsSlice len3Min)],
+    mkLdgramsCase "ok/len8-min" #[.slice (mkLdgramsSlice len8Min)],
     mkLdgramsCase "ok/sample-pos" #[.slice (mkLdgramsSlice samplePos)],
+    mkLdgramsCase "ok/len14-min" #[.slice (mkLdgramsSlice len14Min)],
+    mkLdgramsCase "ok/len15-min" #[.slice (mkLdgramsSlice len15Min)],
     mkLdgramsCase "ok/max-unsigned-15-bytes" #[.slice (mkLdgramsSlice maxUnsigned15Bytes)],
     mkLdgramsCase "ok/len0-with-tail" #[.slice (mkSliceFromBits (natToBits 0 4 ++ tailBits7))],
+    mkLdgramsCase "ok/len3-with-tail" #[.slice (mkLdgramsSlice len3Min tailBits7)],
     mkLdgramsCase "ok/max-with-tail" #[.slice (mkLdgramsSlice maxUnsigned15Bytes tailBits11)],
     mkLdgramsCase "ok/deep-stack-below-preserved" #[.null, .slice (mkLdgramsSlice 7 tailBits7)],
+    mkLdgramsCase "ok/deep-stack-two-below-preserved"
+      #[intV 9, .null, .slice (mkLdgramsSlice len3Min tailBits11)],
 
+    -- Branch: parse failures (`cellUnd`) from prefix and payload truncation.
     mkLdgramsCase "cellund/prefix-too-short-0" #[.slice (mkSliceFromBits #[])],
+    mkLdgramsCase "cellund/prefix-too-short-1" #[.slice (mkSliceFromBits (Array.replicate 1 false))],
     mkLdgramsCase "cellund/prefix-too-short-3" #[.slice (mkSliceFromBits (Array.replicate 3 false))],
     mkLdgramsCase "cellund/len1-no-payload" #[.slice (mkTruncatedPayloadSlice 1 0)],
     mkLdgramsCase "cellund/len2-payload-short" #[.slice (mkTruncatedPayloadSlice 2 9)],
     mkLdgramsCase "cellund/len4-payload-short" #[.slice (mkTruncatedPayloadSlice 4 31)],
+    mkLdgramsCase "cellund/len8-payload-short" #[.slice (mkTruncatedPayloadSlice 8 63)],
+    mkLdgramsCase "cellund/len14-payload-short" #[.slice (mkTruncatedPayloadSlice 14 111)],
     mkLdgramsCase "cellund/len15-prefix-only" #[.slice (mkTruncatedPayloadSlice 15 0)],
     mkLdgramsCase "cellund/len15-payload-short" #[.slice (mkTruncatedPayloadSlice 15 119)],
 
+    -- Branch: stack underflow/type before parse path.
     mkLdgramsCase "underflow/empty" #[],
     mkLdgramsCase "type/top-not-slice" #[.null],
+    mkLdgramsCase "type/top-cell-not-slice" #[.cell Cell.empty],
     mkLdgramsCase "type/deep-top-not-slice" #[.slice (mkLdgramsSlice 1), .null],
 
+    -- Branch: gas-limit success and failure boundary.
     mkLdgramsCase "gas/exact-cost-succeeds" #[.slice (mkLdgramsSlice 7)]
       #[.pushInt (.num ldgramsSetGasExact), .tonEnvOp .setGasLimit, ldgramsInstr],
     mkLdgramsCase "gas/exact-minus-one-out-of-gas" #[.slice (mkLdgramsSlice 7)]
