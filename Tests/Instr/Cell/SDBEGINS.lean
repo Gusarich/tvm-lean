@@ -508,6 +508,24 @@ private def buildRawOracleCases : Except String (Array RawOracleCase) := do
 
   pure cases
 
+private def rawOracleUnitCases : Array UnitCase :=
+  match buildRawOracleCases with
+  | .ok cases =>
+      if cases.size = 30 then
+        cases.map fun c =>
+          { name := s!"unit/raw-oracle/{c.name}"
+            run := runRawOracleCase c }
+      else
+        #[
+          { name := "unit/raw-oracle/spec-count-mismatch"
+            run := failUnit s!"raw-oracle: expected exactly 30 cases, got {cases.size}" }
+        ]
+  | .error e =>
+      #[
+        { name := "unit/raw-oracle/spec-build-error"
+          run := failUnit s!"raw-oracle: failed to build handcrafted cases: {e}" }
+      ]
+
 def suite : InstrSuite where
   id := { name := "SDBEGINS" }
   unit := #[
@@ -704,14 +722,6 @@ def suite : InstrSuite where
         expectDecodeErr "decode/invalid/short-12bits"
           (mkSliceFromBits (natToBits (sdbeginsPrefix13 >>> 1) 12)) .invOpcode }
     ,
-    { name := "unit/raw-oracle/handcrafted-30"
-      run := do
-        let cases ← fromExceptIO "raw-oracle/cases" buildRawOracleCases
-        if cases.size != 30 then
-          failUnit s!"raw-oracle: expected exactly 30 cases, got {cases.size}"
-        for c in cases do
-          runRawOracleCase c }
-    ,
     { name := "unit/fuzz/direct-model-seeded-280"
       run := do
         let seed : UInt64 := 2026021018
@@ -738,7 +748,7 @@ def suite : InstrSuite where
           | _, _ =>
               failUnit
                 s!"fuzz/{i}/kind-mismatch\nquiet={quiet}\npref={reprStr pref}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}" }
-  ]
+  ] ++ rawOracleUnitCases
   oracle := #[]
   fuzz := #[]
 
