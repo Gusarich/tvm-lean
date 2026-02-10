@@ -1,15 +1,338 @@
 import Tests.Harness.Registry
+import Tests.Harness.Gen.Arith
+import Tests.Harness.Gen.Cell
 import TvmLean.Spec.Index
 
 open TvmLean
 open Tests
+open Tests.Harness.Gen.Arith
+open Tests.Harness.Gen.Cell
 
 namespace Tests.Instr.Cell.SDFIRST
 
+/-
+SDFIRST branch-mapping notes (Lean + C++ reference):
+- Lean analyzed files:
+  - `TvmLean/Semantics/Exec/CellOp/Ext.lean` (`.sdFirst`)
+  - `TvmLean/Model/Instr/Codepage/Cp0.lean` (`0xc703` decode to `.cellOp .sdFirst`)
+  - `TvmLean/Model/Instr/Asm/Cp0.lean` (`.cellOp .sdFirst` encode as `0xc703`)
+- C++ analyzed file:
+  - `/Users/daniil/Coding/ton/crypto/vm/cellops.cpp`
+    (`SDFIRST`, `prefetch_long(1) == -1` at opcode `0xc703`).
+
+Branch map used for this suite:
+- dispatch guard in instruction-local handler (`.cellOp .sdFirst` vs fallback);
+- `checkUnderflow 1` then `popSlice` (type-check on top value);
+- boolean result split: first remaining bit is `1` -> push `-1`, otherwise push `0`;
+- decode/assemble boundary at exact opcode `0xc703` with nearby `0xc702`/`0xc704`.
+-/
+
+private def sdFirstId : InstrId := { name := "SDFIRST" }
+
+private def sdFirstInstr : Instr :=
+  .cellOp .sdFirst
+
+private def sdSfxInstr : Instr :=
+  .cellOp .sdSfx
+
+private def dispatchSentinel : Int := 53003
+
+private def sdFirstOpcode : Nat := 0xc703
+
+private def execInstrCellOpSdFirstOnly (i : Instr) (next : VM Unit) : VM Unit := do
+  match i with
+  | .cellOp .sdFirst => execCellOpExt .sdFirst next
+  | _ => next
+
+private def mkSdFirstCase
+    (name : String)
+    (stack : Array Value)
+    (program : Array Instr := #[sdFirstInstr])
+    (gasLimits : OracleGasLimits := {})
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := sdFirstId
+    program := program
+    initStack := stack
+    gasLimits := gasLimits
+    fuel := fuel }
+
+private def runSdFirstDirect (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrCellOpSdFirstOnly sdFirstInstr stack
+
+private def runSdFirstDispatchFallback (instr : Instr) (stack : Array Value) :
+    Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrCellOpSdFirstOnly instr (VM.push (intV dispatchSentinel)) stack
+
+private def expectedSdFirstInt (s : Slice) : Int :=
+  if s.haveBits 1 && s.cell.bits[s.bitPos]! then -1 else 0
+
+private def runSdFirstModel (stack : Array Value) : Except Excno (Array Value) := do
+  if stack.isEmpty then
+    throw .stkUnd
+  let top := stack.back!
+  let below := stack.extract 0 (stack.size - 1)
+  match top with
+  | .slice s =>
+      pure (below.push (intV (expectedSdFirstInt s)))
+  | _ =>
+      throw .typeChk
+
+private def expectSameOutcome
+    (label : String)
+    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
+  let same :=
+    match lhs, rhs with
+    | .ok ls, .ok rs => ls == rs
+    | .error le, .error re => le == re
+    | _, _ => false
+  if same then
+    pure ()
+  else
+    throw (IO.userError
+      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
+
+private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
+  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
+
+private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
+  Slice.ofCell (Cell.mkOrdinary bits refs)
+
+private def refLeafA : Cell :=
+  Cell.mkOrdinary (natToBits 5 3) #[]
+
+private def refLeafB : Cell :=
+  Cell.mkOrdinary (natToBits 9 4) #[]
+
+private def refLeafC : Cell :=
+  Cell.mkOrdinary (natToBits 3 2) #[]
+
+private def bitsLeadTrue256 : BitString :=
+  #[true] ++ stripeBits 255 0
+
+private def bitsLeadFalse256 : BitString :=
+  #[false] ++ stripeBits 255 1
+
+private def bitsLeadTrue1023 : BitString :=
+  #[true] ++ stripeBits 1022 0
+
+private def bitsLeadFalse1023 : BitString :=
+  #[false] ++ stripeBits 1022 1
+
+private def sliceEmpty : Slice := mkSliceWithBitsRefs #[]
+private def sliceSingleFalse : Slice := mkSliceWithBitsRefs #[false]
+private def sliceSingleTrue : Slice := mkSliceWithBitsRefs #[true]
+private def sliceLeadTrue5 : Slice := mkSliceWithBitsRefs #[true, false, true, false, true]
+private def sliceLeadFalse5 : Slice := mkSliceWithBitsRefs #[false, true, false, true, false]
+private def sliceLeadTrue8 : Slice := mkSliceWithBitsRefs #[true, false, true, false, true, false, true, false]
+private def sliceLeadFalse8 : Slice := mkSliceWithBitsRefs #[false, true, false, true, false, true, false, true]
+private def sliceLeadTrue256 : Slice := mkSliceWithBitsRefs bitsLeadTrue256
+private def sliceLeadFalse256 : Slice := mkSliceWithBitsRefs bitsLeadFalse256
+private def sliceLeadTrue1023 : Slice := mkSliceWithBitsRefs bitsLeadTrue1023
+private def sliceLeadFalse1023 : Slice := mkSliceWithBitsRefs bitsLeadFalse1023
+private def sliceRefsOnly : Slice := mkSliceWithBitsRefs #[] #[refLeafA, refLeafB]
+private def sliceBitsRefsLeadTrue : Slice := mkSliceWithBitsRefs #[true, false, false, true] #[refLeafA, refLeafB]
+
+private def partialCursorCell : Cell :=
+  Cell.mkOrdinary #[false, true, false, true, true, false] #[refLeafA, refLeafB, refLeafC]
+
+private def partialSliceBitPos1 : Slice :=
+  { cell := partialCursorCell, bitPos := 1, refPos := 0 }
+
+private def partialSliceBitPos2 : Slice :=
+  { cell := partialCursorCell, bitPos := 2, refPos := 1 }
+
+private def partialSliceAtEnd : Slice :=
+  { cell := partialCursorCell, bitPos := partialCursorCell.bits.size, refPos := 2 }
+
+private def sdFirstSetGasExact : Int :=
+  computeExactGasBudget sdFirstInstr
+
+private def sdFirstSetGasExactMinusOne : Int :=
+  computeExactGasBudgetMinusOne sdFirstInstr
+
 def suite : InstrSuite where
   id := { name := "SDFIRST" }
-  unit := #[]
-  oracle := #[]
+  unit := #[
+    { name := "unit/direct/first-bit-semantic-and-stack-shape"
+      run := do
+        let checks : Array (String × Slice × Int) :=
+          #[
+            ("empty-slice", sliceEmpty, 0),
+            ("single-false", sliceSingleFalse, 0),
+            ("single-true", sliceSingleTrue, -1),
+            ("lead-true-5", sliceLeadTrue5, -1),
+            ("lead-false-5", sliceLeadFalse5, 0),
+            ("refs-only-empty-bits", sliceRefsOnly, 0),
+            ("bits-and-refs-lead-true", sliceBitsRefsLeadTrue, -1)
+          ]
+        for (name, s, expected) in checks do
+          expectOkStack s!"{name}"
+            (runSdFirstDirect #[.slice s])
+            #[intV expected]
+
+        expectOkStack "deep-stack/preserve-below-values"
+          (runSdFirstDirect #[.null, intV 77, .slice sliceLeadTrue8])
+          #[.null, intV 77, intV (-1)]
+
+        expectOkStack "deep-stack/preserve-below-cell"
+          (runSdFirstDirect #[.cell refLeafA, .slice sliceLeadFalse8])
+          #[.cell refLeafA, intV 0] }
+    ,
+    { name := "unit/direct/partial-cursor-selects-current-bit"
+      run := do
+        expectOkStack "partial/bitpos1-first-bit-true"
+          (runSdFirstDirect #[.slice partialSliceBitPos1])
+          #[intV (-1)]
+
+        expectOkStack "partial/bitpos2-first-bit-false"
+          (runSdFirstDirect #[.slice partialSliceBitPos2])
+          #[intV 0]
+
+        expectOkStack "partial/at-end-no-bits-left"
+          (runSdFirstDirect #[.slice partialSliceAtEnd])
+          #[intV 0]
+
+        expectOkStack "partial/refpos-does-not-affect-bit-result"
+          (runSdFirstDirect #[.slice { partialSliceBitPos1 with refPos := 2 }])
+          #[intV (-1)] }
+    ,
+    { name := "unit/direct/underflow-type-and-order"
+      run := do
+        expectErr "underflow/empty"
+          (runSdFirstDirect #[]) .stkUnd
+
+        expectErr "type/top-null"
+          (runSdFirstDirect #[.null]) .typeChk
+        expectErr "type/top-int"
+          (runSdFirstDirect #[intV 5]) .typeChk
+        expectErr "type/top-cell"
+          (runSdFirstDirect #[.cell refLeafA]) .typeChk
+        expectErr "type/top-builder"
+          (runSdFirstDirect #[.builder Builder.empty]) .typeChk
+        expectErr "type/top-empty-tuple"
+          (runSdFirstDirect #[.tuple #[]]) .typeChk
+
+        expectErr "type/order-top-null-over-valid-slice"
+          (runSdFirstDirect #[.slice sliceSingleTrue, .null]) .typeChk
+        expectErr "type/order-top-cell-over-valid-slice"
+          (runSdFirstDirect #[.slice sliceSingleTrue, .cell refLeafB]) .typeChk }
+    ,
+    { name := "unit/model/alignment-on-representative-stacks"
+      run := do
+        let samples : Array (String × Array Value) :=
+          #[
+            ("ok/empty-slice", #[.slice sliceEmpty]),
+            ("ok/single-true", #[.slice sliceSingleTrue]),
+            ("ok/single-false", #[.slice sliceSingleFalse]),
+            ("ok/partial-bitpos1", #[.slice partialSliceBitPos1]),
+            ("ok/partial-at-end", #[.slice partialSliceAtEnd]),
+            ("ok/deep", #[.null, intV 9, .slice sliceLeadFalse8]),
+            ("err/underflow", #[]),
+            ("err/type-null", #[.null]),
+            ("err/type-order", #[.slice sliceSingleTrue, .null])
+          ]
+        for (name, stack) in samples do
+          expectSameOutcome s!"model/{name}"
+            (runSdFirstDirect stack)
+            (runSdFirstModel stack) }
+    ,
+    { name := "unit/opcode/decode-and-assembler-boundaries"
+      run := do
+        let canonical ←
+          match assembleCp0 [sdFirstInstr] with
+          | .ok cell => pure cell
+          | .error e => throw (IO.userError s!"assemble/canonical failed: {e}")
+        if canonical.bits = natToBits sdFirstOpcode 16 then
+          pure ()
+        else
+          throw (IO.userError
+            s!"assemble/canonical: expected opcode 0xc703, got bits {canonical.bits}")
+
+        let program : Array Instr :=
+          #[.sdempty, .srempty, sdFirstInstr, .sdLexCmp, sdSfxInstr, .add]
+        let code ←
+          match assembleCp0 program.toList with
+          | .ok cell => pure cell
+          | .error e => throw (IO.userError s!"assemble/sequence failed: {e}")
+        let s0 := Slice.ofCell code
+        let s1 ← expectDecodeStep "decode/sdempty-neighbor" s0 .sdempty 16
+        let s2 ← expectDecodeStep "decode/srempty-neighbor" s1 .srempty 16
+        let s3 ← expectDecodeStep "decode/sdfirst" s2 sdFirstInstr 16
+        let s4 ← expectDecodeStep "decode/sdlexcmp-neighbor" s3 .sdLexCmp 16
+        let s5 ← expectDecodeStep "decode/sdsfx-neighbor" s4 sdSfxInstr 16
+        let s6 ← expectDecodeStep "decode/tail-add" s5 .add 8
+        if s6.bitsRemaining = 0 then
+          pure ()
+        else
+          throw (IO.userError s!"decode/sequence-end: expected exhausted slice, got {s6.bitsRemaining} bits remaining")
+
+        let addCell ←
+          match assembleCp0 [.add] with
+          | .ok cell => pure cell
+          | .error e => throw (IO.userError s!"assemble/add failed: {e}")
+        let rawBits : BitString :=
+          natToBits 0xc702 16
+            ++ natToBits sdFirstOpcode 16
+            ++ natToBits 0xc704 16
+            ++ natToBits 0xc70c 16
+            ++ addCell.bits
+        let r0 := mkSliceFromBits rawBits
+        let r1 ← expectDecodeStep "decode/raw-srempty" r0 .srempty 16
+        let r2 ← expectDecodeStep "decode/raw-sdfirst" r1 sdFirstInstr 16
+        let r3 ← expectDecodeStep "decode/raw-sdlexcmp" r2 .sdLexCmp 16
+        let r4 ← expectDecodeStep "decode/raw-sdsfx" r3 sdSfxInstr 16
+        let r5 ← expectDecodeStep "decode/raw-tail-add" r4 .add 8
+        if r5.bitsRemaining = 0 then
+          pure ()
+        else
+          throw (IO.userError s!"decode/raw-end: expected exhausted slice, got {r5.bitsRemaining} bits remaining") }
+    ,
+    { name := "unit/dispatch/non-sdfirst-falls-through"
+      run := do
+        expectOkStack "dispatch/non-cellop-add"
+          (runSdFirstDispatchFallback .add #[.null])
+          #[.null, intV dispatchSentinel]
+        expectOkStack "dispatch/non-cellop-sdempty"
+          (runSdFirstDispatchFallback .sdempty #[intV 7])
+          #[intV 7, intV dispatchSentinel]
+        expectOkStack "dispatch/other-cellop-sdsfx"
+          (runSdFirstDispatchFallback sdSfxInstr #[.slice sliceSingleTrue])
+          #[.slice sliceSingleTrue, intV dispatchSentinel] }
+  ]
+  oracle := #[
+    mkSdFirstCase "ok/empty-slice" #[.slice sliceEmpty],
+    mkSdFirstCase "ok/single-false" #[.slice sliceSingleFalse],
+    mkSdFirstCase "ok/single-true" #[.slice sliceSingleTrue],
+    mkSdFirstCase "ok/lead-true-5" #[.slice sliceLeadTrue5],
+    mkSdFirstCase "ok/lead-false-5" #[.slice sliceLeadFalse5],
+    mkSdFirstCase "ok/lead-true-8" #[.slice sliceLeadTrue8],
+    mkSdFirstCase "ok/lead-false-8" #[.slice sliceLeadFalse8],
+    mkSdFirstCase "ok/lead-true-256" #[.slice sliceLeadTrue256],
+    mkSdFirstCase "ok/lead-false-256" #[.slice sliceLeadFalse256],
+    mkSdFirstCase "ok/lead-true-1023" #[.slice sliceLeadTrue1023],
+    mkSdFirstCase "ok/lead-false-1023" #[.slice sliceLeadFalse1023],
+    mkSdFirstCase "ok/refs-only-empty-bits" #[.slice sliceRefsOnly],
+    mkSdFirstCase "ok/bits-and-refs-lead-true" #[.slice sliceBitsRefsLeadTrue],
+    mkSdFirstCase "ok/deep-stack-preserve-below"
+      #[.null, intV 42, .slice sliceLeadFalse8],
+
+    mkSdFirstCase "underflow/empty" #[],
+    mkSdFirstCase "type/top-null" #[.null],
+    mkSdFirstCase "type/top-int" #[intV 11],
+    mkSdFirstCase "type/top-cell" #[.cell refLeafA],
+    mkSdFirstCase "type/top-builder" #[.builder Builder.empty],
+    mkSdFirstCase "type/top-empty-tuple" #[.tuple #[]],
+    mkSdFirstCase "type/order-top-null-over-slice" #[.slice sliceSingleTrue, .null],
+    mkSdFirstCase "type/order-top-cell-over-slice" #[.slice sliceSingleTrue, .cell refLeafB],
+
+    mkSdFirstCase "gas/exact-cost-succeeds"
+      #[.slice sliceSingleTrue]
+      #[.pushInt (.num sdFirstSetGasExact), .tonEnvOp .setGasLimit, sdFirstInstr],
+    mkSdFirstCase "gas/exact-minus-one-out-of-gas"
+      #[.slice sliceSingleTrue]
+      #[.pushInt (.num sdFirstSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdFirstInstr]
+  ]
   fuzz := #[]
 
 initialize registerSuite suite
