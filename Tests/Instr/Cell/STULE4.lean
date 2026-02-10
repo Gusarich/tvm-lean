@@ -79,6 +79,18 @@ private def maxUInt32 : Int := intPow2 32 - 1
 
 private def overUInt32 : Int := intPow2 32
 
+private def nearMaxUInt32 : Int := maxUInt32 - 1
+
+private def highBitUInt32 : Int := intPow2 31
+
+private def farOverUInt32 : Int := intPow2 40
+
+private def almostFullBuilder991 : Builder :=
+  Builder.empty.storeBits (Array.replicate 991 false)
+
+private def almostFullBuilder992 : Builder :=
+  Builder.empty.storeBits (Array.replicate 992 false)
+
 private def build1023Program : Array Instr :=
   build1023WithFixed .stu
 
@@ -232,28 +244,44 @@ def suite : InstrSuite where
           #[.null, intV 422] }
   ]
   oracle := #[
+    -- Branch map: success path (`unsigned fit` + LE byte reorder + append).
     mkStule4Case "ok/zero" #[intV 0, .builder Builder.empty],
     mkStule4Case "ok/one" #[intV 1, .builder Builder.empty],
+    mkStule4Case "ok/u8-max-255" #[intV 255, .builder Builder.empty],
+    mkStule4Case "ok/high-bit-2^31" #[intV highBitUInt32, .builder Builder.empty],
+    mkStule4Case "ok/max-minus-one" #[intV nearMaxUInt32, .builder Builder.empty],
     mkStule4Case "ok/max-u32" #[intV maxUInt32, .builder Builder.empty],
     mkStule4Case "ok/pattern-0x1234567" #[intV 0x1234567, .builder Builder.empty],
     mkStule4Case "ok/pattern-0x1020304" #[intV 0x1020304, .builder Builder.empty],
+    mkStule4Case "ok/capacity-991-plus-32" #[intV 0, .builder almostFullBuilder991],
     mkStule4Case "ok/deep-stack-below-preserved" #[.null, intV 7, .builder Builder.empty],
+    mkStule4Case "ok/deep-stack-two-below-preserved"
+      #[.cell Cell.empty, .null, intV 9, .builder Builder.empty],
     mkStule4ProgramCase "ok/append-existing-bits-via-program" #[] appendExistingProgram,
 
+    -- Branch map: range path (`NaN` / negative / positive overflow => `rangeChk`).
     mkStule4Case "range/overflow-pos" #[intV overUInt32, .builder Builder.empty],
+    mkStule4Case "range/overflow-far-pos" #[intV farOverUInt32, .builder Builder.empty],
     mkStule4Case "range/negative" #[intV (-1), .builder Builder.empty],
+    mkStule4Case "range/negative-two" #[intV (-2), .builder Builder.empty],
     mkStule4ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
 
+    -- Branch map: stack discipline (`checkUnderflow` + pop-order type checks).
     mkStule4Case "underflow/empty" #[],
     mkStule4Case "underflow/one-item" #[.builder Builder.empty],
+    mkStule4Case "underflow/single-non-int" #[.null],
     mkStule4Case "type/builder-pop-first" #[intV 1, .null],
     mkStule4Case "type/int-pop-second" #[.null, .builder Builder.empty],
+    mkStule4Case "type/both-non-int-builder-first" #[.cell Cell.empty, .null],
 
+    -- Branch map: deterministic gas cliff for `SETGASLIMIT; STULE4`.
     mkStule4Case "gas/exact-cost-succeeds" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stule4SetGasExact), .tonEnvOp .setGasLimit, stule4Instr],
     mkStule4Case "gas/exact-minus-one-out-of-gas" #[intV 7, .builder Builder.empty]
       #[.pushInt (.num stule4SetGasExactMinusOne), .tonEnvOp .setGasLimit, stule4Instr],
 
+    -- Branch map: capacity guard (`cellOv`) and precedence over range diagnostics.
+    mkStule4Case "cellov/capacity-992-plus-32" #[intV 0, .builder almostFullBuilder992],
     mkStule4ProgramCase "program/build-1023-success" #[] build1023Program,
     mkStule4ProgramCase "program/build-1023-overflow-cellov" #[] overflowAfter1023Program,
     mkStule4ProgramCase "program/cellov-before-range-nan" #[] cellovBeforeRangeNanProgram,
