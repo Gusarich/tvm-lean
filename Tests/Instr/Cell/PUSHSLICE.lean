@@ -455,9 +455,68 @@ private def handcraftedOracleCases : IO (Array RawOracleCase) := do
 
   pure cases
 
+initialize handcraftedOracleCasesCache : IO.Ref (Option (Array RawOracleCase)) ← IO.mkRef none
+
+private def getHandcraftedOracleCases : IO (Array RawOracleCase) := do
+  match (← handcraftedOracleCasesCache.get) with
+  | some cases => pure cases
+  | none =>
+      let cases ← handcraftedOracleCases
+      handcraftedOracleCasesCache.set (some cases)
+      pure cases
+
+private def runHandcraftedOracleCaseByIndex (idx : Nat) (expectedName : String) : IO Unit := do
+  let cases ← getHandcraftedOracleCases
+  let c ←
+    match cases[idx]? with
+    | some c => pure c
+    | none =>
+        failUnit
+          s!"oracle/handcrafted/index-{idx}: expected `{expectedName}`, but only {cases.size} cases exist"
+  if c.name != expectedName then
+    failUnit s!"oracle/handcrafted/index-{idx}: expected `{expectedName}`, got `{c.name}`"
+  runRawOracleBatchCompare s!"oracle/handcrafted/{expectedName}" #[c]
+
+private def mkHandcraftedOracleUnitCase (idx : Nat) (caseName : String) : UnitCase :=
+  { name := s!"unit/oracle/handcrafted/{caseName}"
+    run := runHandcraftedOracleCaseByIndex idx caseName }
+
+private def handcraftedOracleUnitCases : Array UnitCase := #[
+  mkHandcraftedOracleUnitCase 0 "oracle/ok/8b/empty",
+  mkHandcraftedOracleUnitCase 1 "oracle/ok/8b/bit1",
+  mkHandcraftedOracleUnitCase 2 "oracle/ok/8b/trailing-zeros",
+  mkHandcraftedOracleUnitCase 3 "oracle/ok/8b/max-len15-payload123",
+  mkHandcraftedOracleUnitCase 4 "oracle/ok/8b/deep-stack-null",
+  mkHandcraftedOracleUnitCase 5 "oracle/ok/8b/deep-stack-int-cell",
+  mkHandcraftedOracleUnitCase 6 "oracle/ok/8b/prelude-and-tail",
+  mkHandcraftedOracleUnitCase 7 "oracle/ok/8c/r0-bits0-ref1-empty",
+  mkHandcraftedOracleUnitCase 8 "oracle/ok/8c/r0-bits1-ref1",
+  mkHandcraftedOracleUnitCase 9 "oracle/ok/8c/r1-bits5-ref2",
+  mkHandcraftedOracleUnitCase 10 "oracle/ok/8c/r2-bits9-ref3",
+  mkHandcraftedOracleUnitCase 11 "oracle/ok/8c/r3-bits31-ref4-max",
+  mkHandcraftedOracleUnitCase 12 "oracle/ok/8c/deep-stack-preserve",
+  mkHandcraftedOracleUnitCase 13 "oracle/ok/8d/r0-len0-empty",
+  mkHandcraftedOracleUnitCase 14 "oracle/ok/8d/r1-len1-ref1",
+  mkHandcraftedOracleUnitCase 15 "oracle/ok/8d/r2-len7-ref2",
+  mkHandcraftedOracleUnitCase 16 "oracle/ok/8d/r3-len31-ref3",
+  mkHandcraftedOracleUnitCase 17 "oracle/ok/8d/r4-len31-ref4",
+  mkHandcraftedOracleUnitCase 18 "oracle/ok/8d/r0-len124-max-fit",
+  mkHandcraftedOracleUnitCase 19 "oracle/ok/8d/deep-stack-preserve",
+  mkHandcraftedOracleUnitCase 20 "oracle/ok/8b/len2-payload15",
+  mkHandcraftedOracleUnitCase 21 "oracle/ok/8b/len0-empty-with-slice-below",
+  mkHandcraftedOracleUnitCase 22 "oracle/ok/8b/tail-pushnull",
+  mkHandcraftedOracleUnitCase 23 "oracle/ok/8c/r0-bits0-ref1-with-int-below",
+  mkHandcraftedOracleUnitCase 24 "oracle/ok/8c/r1-bits1-ref2",
+  mkHandcraftedOracleUnitCase 25 "oracle/ok/8c/r3-bits3-ref4",
+  mkHandcraftedOracleUnitCase 26 "oracle/ok/8d/r0-len1-altpayload",
+  mkHandcraftedOracleUnitCase 27 "oracle/ok/8d/r1-len15-ref1",
+  mkHandcraftedOracleUnitCase 28 "oracle/ok/8d/r2-len63-ref2",
+  mkHandcraftedOracleUnitCase 29 "oracle/ok/8d/r4-len0-ref4-empty"
+]
+
 def suite : InstrSuite where
   id := { name := "PUSHSLICE" }
-  unit := #[
+  unit := ( #[
     { name := "unit/direct/pushes-slice-and-preserves-stack"
       run := do
         let refA : Cell := Cell.empty
@@ -620,11 +679,11 @@ def suite : InstrSuite where
     ,
     { name := "unit/oracle/handcrafted-30"
       run := do
-        let cases ← handcraftedOracleCases
+        let cases ← getHandcraftedOracleCases
         if cases.size != 30 then
           failUnit s!"oracle/handcrafted: expected 30 cases, got {cases.size}"
         runRawOracleBatchCompare "oracle/handcrafted" cases }
-  ]
+  ] ++ handcraftedOracleUnitCases)
   oracle := #[]
   fuzz := #[]
 
