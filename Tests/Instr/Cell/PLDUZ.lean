@@ -257,6 +257,20 @@ private def rawOracleFailCases : Array RawOracleCase :=
 private def plduzRawOracleCases : Array RawOracleCase :=
   rawOracleExactCases ++ rawOracleShortCases ++ rawOracleExtraCases ++ rawOracleFailCases
 
+private def plduzRawOracleUnitCases : Array UnitCase :=
+  plduzRawOracleCases.map fun c =>
+    { name := s!"unit/raw-oracle/{c.name}"
+      run := runRawOracleCase c }
+
+private def plduzRawOracleCaseCountMin : Nat := 24
+
+private def plduzRawOracleCaseCountUnit : UnitCase :=
+  { name := "unit/raw-oracle/case-count-at-least-24"
+    run := do
+      if plduzRawOracleUnitCases.size < plduzRawOracleCaseCountMin then
+        throw (IO.userError
+          s!"raw oracle case count must be at least {plduzRawOracleCaseCountMin}, got {plduzRawOracleUnitCases.size}") }
+
 private def noisePool : Array Value :=
   #[.null, intV 23, .cell refLeafA, .builder Builder.empty]
 
@@ -341,9 +355,8 @@ private def plduzFuzzSeed : UInt64 := 2026021049
 
 private def plduzFuzzCount : Nat := 320
 
-def suite : InstrSuite where
-  id := plduzId
-  unit := #[
+private def plduzBaseUnitCases : Array UnitCase :=
+  #[
     { name := "unit/direct/width-min-zeroext-order-and-deep-stack"
       run := do
         for c in [0:8] do
@@ -442,13 +455,6 @@ def suite : InstrSuite where
           (runPlduzDispatchFallback (.cellExt .btos) #[intV (-3)])
           #[intV (-3), intV dispatchSentinel] }
     ,
-    { name := "unit/raw-oracle/handcrafted-24"
-      run := do
-        if plduzRawOracleCases.size < 20 ∨ plduzRawOracleCases.size > 40 then
-          throw (IO.userError s!"raw oracle case count must be within [20,40], got {plduzRawOracleCases.size}")
-        for c in plduzRawOracleCases do
-          runRawOracleCase c }
-    ,
     { name := "unit/fuzz/targeted-c0-to-c7-320"
       run := do
         if plduzFuzzCount < 240 then
@@ -476,6 +482,10 @@ def suite : InstrSuite where
               throw (IO.userError
                 s!"fuzz/{i}: result kind mismatch\nc={c}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}") }
   ]
+
+def suite : InstrSuite where
+  id := plduzId
+  unit := plduzBaseUnitCases ++ #[plduzRawOracleCaseCountUnit] ++ plduzRawOracleUnitCases
   oracle := #[]
   fuzz := #[]
 
