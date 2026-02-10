@@ -64,6 +64,12 @@ private def maxSigned31Bytes : Int := intPow2 247 - 1
 
 private def minSigned31Bytes : Int := -(intPow2 247)
 
+private def maxSigned2Bytes : Int := intPow2 15 - 1
+
+private def minSigned3Bytes : Int := -(intPow2 15) - 1
+
+private def maxSigned30Bytes : Int := intPow2 239 - 1
+
 private def samplePos : Int := intPow2 200 + 222333
 
 private def sampleNeg : Int := -(intPow2 200) + 333222
@@ -153,6 +159,7 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/direct/signed-boundaries-and-remainder"
       run := do
+        -- Branch map: successful len decode -> signed payload decode -> push int + remainder.
         let checks : Array (Int × BitString) :=
           #[
             (0, #[]),
@@ -160,8 +167,11 @@ def suite : InstrSuite where
             (-1, #[]),
             (127, #[]),
             (-128, #[]),
+            (maxSigned2Bytes, #[]),
+            (minSigned3Bytes, #[]),
             (samplePos, #[]),
             (sampleNeg, #[]),
+            (maxSigned30Bytes, #[]),
             (maxSigned31Bytes, #[]),
             (minSigned31Bytes, #[]),
             (0, tailBits9),
@@ -192,8 +202,13 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/cellund-branches"
       run := do
+        -- Branch map: cell underflow from short 5-bit len prefix and short declared payload.
         expectErr "cellund/prefix-too-short-0"
           (runLdvarint32Direct #[.slice (mkSliceFromBits #[])]) .cellUnd
+        expectErr "cellund/prefix-too-short-1"
+          (runLdvarint32Direct #[.slice (mkSliceFromBits (Array.replicate 1 false))]) .cellUnd
+        expectErr "cellund/prefix-too-short-2"
+          (runLdvarint32Direct #[.slice (mkSliceFromBits (Array.replicate 2 false))]) .cellUnd
         expectErr "cellund/prefix-too-short-4"
           (runLdvarint32Direct #[.slice (mkSliceFromBits (Array.replicate 4 false))]) .cellUnd
         expectErr "cellund/len1-no-payload"
@@ -209,13 +224,16 @@ def suite : InstrSuite where
     ,
     { name := "unit/direct/underflow-and-type-order"
       run := do
+        -- Branch map: popSlice ordering (underflow first, then type check on top stack value).
         expectErr "underflow/empty" (runLdvarint32Direct #[]) .stkUnd
         expectErr "type/top-not-slice" (runLdvarint32Direct #[.null]) .typeChk
+        expectErr "type/top-int" (runLdvarint32Direct #[intV 7]) .typeChk
         expectErr "type/deep-top-not-slice"
           (runLdvarint32Direct #[.slice (mkLdvarint32Slice 1), .null]) .typeChk }
     ,
     { name := "unit/opcode/decode-and-assembler-boundaries"
       run := do
+        -- Branch map: cp0 opcode encode/decode boundary + non-LDVARINT32 rejection.
         let program : Array Instr := #[ldvarint32Instr, .add]
         let code ←
           match assembleCp0 program.toList with
@@ -246,20 +264,27 @@ def suite : InstrSuite where
           #[.null, intV 431] }
   ]
   oracle := #[
+    -- Branch map: success decode path (len/payload boundaries + remainder preservation).
     mkLdvarint32Case "ok/zero" #[.slice (mkLdvarint32Slice 0)],
     mkLdvarint32Case "ok/one" #[.slice (mkLdvarint32Slice 1)],
     mkLdvarint32Case "ok/neg-one" #[.slice (mkLdvarint32Slice (-1))],
     mkLdvarint32Case "ok/127" #[.slice (mkLdvarint32Slice 127)],
     mkLdvarint32Case "ok/minus-128" #[.slice (mkLdvarint32Slice (-128))],
+    mkLdvarint32Case "ok/2-byte-max-32767" #[.slice (mkLdvarint32Slice maxSigned2Bytes)],
+    mkLdvarint32Case "ok/3-byte-min-minus-32769" #[.slice (mkLdvarint32Slice minSigned3Bytes)],
     mkLdvarint32Case "ok/sample-pos" #[.slice (mkLdvarint32Slice samplePos)],
     mkLdvarint32Case "ok/sample-neg" #[.slice (mkLdvarint32Slice sampleNeg)],
+    mkLdvarint32Case "ok/max-signed-30-bytes" #[.slice (mkLdvarint32Slice maxSigned30Bytes)],
     mkLdvarint32Case "ok/max-signed-31-bytes" #[.slice (mkLdvarint32Slice maxSigned31Bytes)],
     mkLdvarint32Case "ok/min-signed-31-bytes" #[.slice (mkLdvarint32Slice minSigned31Bytes)],
     mkLdvarint32Case "ok/len0-with-tail" #[.slice (mkSliceFromBits (natToBits 0 5 ++ tailBits9))],
     mkLdvarint32Case "ok/min-with-tail" #[.slice (mkLdvarint32Slice minSigned31Bytes tailBits13)],
     mkLdvarint32Case "ok/deep-stack-below-preserved" #[.null, .slice (mkLdvarint32Slice (-7) tailBits9)],
 
+    -- Branch map: cell underflow from short prefix and truncated payload branches.
     mkLdvarint32Case "cellund/prefix-too-short-0" #[.slice (mkSliceFromBits #[])],
+    mkLdvarint32Case "cellund/prefix-too-short-1" #[.slice (mkSliceFromBits (Array.replicate 1 false))],
+    mkLdvarint32Case "cellund/prefix-too-short-2" #[.slice (mkSliceFromBits (Array.replicate 2 false))],
     mkLdvarint32Case "cellund/prefix-too-short-4" #[.slice (mkSliceFromBits (Array.replicate 4 false))],
     mkLdvarint32Case "cellund/len1-no-payload" #[.slice (mkTruncatedPayloadSlice 1 0)],
     mkLdvarint32Case "cellund/len2-payload-short" #[.slice (mkTruncatedPayloadSlice 2 9)],
@@ -267,10 +292,13 @@ def suite : InstrSuite where
     mkLdvarint32Case "cellund/len31-prefix-only" #[.slice (mkTruncatedPayloadSlice 31 0)],
     mkLdvarint32Case "cellund/len31-payload-short" #[.slice (mkTruncatedPayloadSlice 31 247)],
 
+    -- Branch map: stack pop/type guard ordering.
     mkLdvarint32Case "underflow/empty" #[],
     mkLdvarint32Case "type/top-not-slice" #[.null],
+    mkLdvarint32Case "type/top-int" #[intV 7],
     mkLdvarint32Case "type/deep-top-not-slice" #[.slice (mkLdvarint32Slice 1), .null],
 
+    -- Branch map: gas metering pass/fail boundaries for LDVARINT32 execution.
     mkLdvarint32Case "gas/exact-cost-succeeds" #[.slice (mkLdvarint32Slice 7)]
       #[.pushInt (.num ldvarint32SetGasExact), .tonEnvOp .setGasLimit, ldvarint32Instr],
     mkLdvarint32Case "gas/exact-minus-one-out-of-gas" #[.slice (mkLdvarint32Slice 7)]
