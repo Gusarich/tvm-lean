@@ -26,22 +26,17 @@ def Slice.takeBitsAsNatCellUnd (s : Slice) (n : Nat) : Except Excno (Nat × Slic
     throw .cellUnd
 
 def Slice.skipMaybeAnycast (s : Slice) : Except Excno Slice := do
-  -- Mirrors C++ `skip_maybe_anycast` (tonops.cpp).
+  -- Mirrors C++ `skip_maybe_anycast` for modern TVM (global_version >= 10):
+  -- only `nothing$0` is accepted.
   let (b, s1) ← s.takeBitsAsNatCellUnd 1
   if b = 0 then
     return s1
   else
-    let lenBits : Nat := 5 -- natLenBits 30
-    let (depth, s2) ← s1.takeBitsAsNatCellUnd lenBits
-    if depth = 0 ∨ depth > 30 then
-      throw .cellUnd
-    if s2.haveBits depth then
-      return s2.advanceBits depth
-    else
-      throw .cellUnd
+    throw .cellUnd
 
 def Slice.skipMessageAddr (s : Slice) : Except Excno Slice := do
-  -- Minimal `MsgAddress` support (enough for common std addresses used in real txs).
+  -- Mirrors C++ `skip_message_addr` for modern TVM (global_version >= 10):
+  -- `addr_var$11` and anycast `just$1` are rejected.
   let (tag, s2) ← s.takeBitsAsNatCellUnd 2
   match tag with
   | 0 =>
@@ -63,35 +58,22 @@ def Slice.skipMessageAddr (s : Slice) : Except Excno Slice := do
       else
         throw .cellUnd
   | 3 =>
-      -- addr_var$11 anycast:(Maybe Anycast) addr_len:(## 9) workchain_id:int32 address:(bits addr_len)
-      let s3 ← s2.skipMaybeAnycast
-      let (len, s12) ← s3.takeBitsAsNatCellUnd 9
-      let need : Nat := 32 + len
-      if s12.haveBits need then
-        return s12.advanceBits need
-      else
-        throw .cellUnd
+      -- addr_var$11 is unavailable for modern TVM.
+      throw .cellUnd
   | _ =>
       throw .cellUnd
 
 def Slice.parseMaybeAnycast (s : Slice) : Except Excno (Value × Slice) := do
-  -- Mirrors C++ `parse_maybe_anycast` (tonops.cpp): returns (null) for nothing$0 or a slice for just$1.
+  -- Mirrors C++ `parse_maybe_anycast` for modern TVM (global_version >= 10):
+  -- only `nothing$0` is accepted.
   let (b, s1) ← s.takeBitsAsNatCellUnd 1
   if b = 0 then
     return (.null, s1)
   else
-    let lenBits : Nat := 5 -- natLenBits 30
-    let (depth, s2) ← s1.takeBitsAsNatCellUnd lenBits
-    if depth = 0 ∨ depth > 30 then
-      throw .cellUnd
-    if !s2.haveBits depth then
-      throw .cellUnd
-    let pfxBits := s2.readBits depth
-    let s3 := s2.advanceBits depth
-    return (.slice (Slice.ofCell (Cell.mkOrdinary pfxBits #[])), s3)
+    throw .cellUnd
 
 def Slice.parseMessageAddr (s : Slice) : Except Excno (Array Value × Slice) := do
-  -- Mirrors C++ `parse_message_addr` (tonops.cpp).
+  -- Mirrors C++ `parse_message_addr` for modern TVM (global_version >= 10).
   let (tag, s2) ← s.takeBitsAsNatCellUnd 2
   match tag with
   | 0 =>
@@ -117,17 +99,8 @@ def Slice.parseMessageAddr (s : Slice) : Except Excno (Array Value × Slice) := 
       let wc : Int := natToIntSignedTwos wcNat 8
       return (#[.int (.num 2), anycast, .int (.num wc), .slice (Slice.ofCell (Cell.mkOrdinary addrBits #[]))], s5)
   | 3 =>
-      -- addr_var$11 anycast:(Maybe Anycast) addr_len:(## 9) workchain_id:int32 address:(bits addr_len) = MsgAddressInt;
-      -- -> (3, anycast_or_null, workchain, addr)
-      let (anycast, s3) ← s2.parseMaybeAnycast
-      let (len, s4) ← s3.takeBitsAsNatCellUnd 9
-      let (wcNat, s5) ← s4.takeBitsAsNatCellUnd 32
-      if !s5.haveBits len then
-        throw .cellUnd
-      let addrBits := s5.readBits len
-      let s6 := s5.advanceBits len
-      let wc : Int := natToIntSignedTwos wcNat 32
-      return (#[.int (.num 3), anycast, .int (.num wc), .slice (Slice.ofCell (Cell.mkOrdinary addrBits #[]))], s6)
+      -- addr_var$11 is unavailable for modern TVM.
+      throw .cellUnd
   | _ =>
       throw .cellUnd
 

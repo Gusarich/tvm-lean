@@ -31,6 +31,7 @@ Branch map used for this suite:
 Key risk areas covered here:
 - stack ordering (`addr` pushed before remainder);
 - strict underflow/type ordering from `popSlice`;
+- modern-TVМ gates (`global_version >= 10`) where anycast and `addr_var` are rejected;
 - malformed-shape `cellUnd` paths (short prefixes, short payloads, invalid anycast encodings);
 - decode/asm opcode boundary (`0xfa40`) and dispatch fallback.
 -/
@@ -266,11 +267,7 @@ def suite : InstrSuite where
             ("ok/extern-len0", mkAddrExternBits #[], #[], consumedExternBits 0),
             ("ok/extern-len9-with-tail", mkAddrExternBits extPayload9, tailBits11, consumedExternBits extPayload9.size),
             ("ok/std-no-anycast", mkAddrStdBits 0 addr256A, #[], consumedStdBits),
-            ("ok/std-no-anycast-tail", mkAddrStdBits 255 addr256B, tailBits13, consumedStdBits),
-            ("ok/std-anycast-depth3", mkAddrStdAnycastBits 3 anycastPfx3 17 addr256A, #[], consumedStdAnycastBits 3),
-            ("ok/var-no-anycast-len73", mkAddrVarBits 0x11223344 varPayload73, tailBits7, consumedVarBits varPayload73.size),
-            ("ok/var-anycast-depth5-len73", mkAddrVarAnycastBits 5 anycastPfx5 0x01020304 varPayload73, #[],
-              consumedVarAnycastBits 5 varPayload73.size)
+            ("ok/std-no-anycast-tail", mkAddrStdBits 255 addr256B, tailBits13, consumedStdBits)
           ]
         for c in checks do
           let label := c.1
@@ -317,6 +314,8 @@ def suite : InstrSuite where
         expectErr "cellund/anycast-depth5-prefix-short"
           (runLdmsgaddrDirect #[.slice (mkSliceFromBits
             (natToBits 2 2 ++ natToBits 1 1 ++ natToBits 5 5 ++ Array.replicate 4 false))]) .cellUnd
+        expectErr "cellund/std-anycast-depth3-disallowed"
+          (runLdmsgaddrDirect #[.slice (mkAddrSlice (mkAddrStdAnycastBits 3 anycastPfx3 17 addr256A))]) .cellUnd
 
         expectErr "cellund/var-tag-only"
           (runLdmsgaddrDirect #[.slice (mkSliceFromBits (natToBits 3 2))]) .cellUnd
@@ -324,7 +323,11 @@ def suite : InstrSuite where
           (runLdmsgaddrDirect #[.slice (mkSliceFromBits (natToBits 3 2 ++ natToBits 0 1 ++ natToBits 73 9))]) .cellUnd
         expectErr "cellund/var-len73-no-payload"
           (runLdmsgaddrDirect #[.slice (mkSliceFromBits
-            (natToBits 3 2 ++ natToBits 0 1 ++ natToBits 73 9 ++ natToBits 0x11223344 32))]) .cellUnd }
+            (natToBits 3 2 ++ natToBits 0 1 ++ natToBits 73 9 ++ natToBits 0x11223344 32))]) .cellUnd
+        expectErr "cellund/var-anycast0-len73-disallowed"
+          (runLdmsgaddrDirect #[.slice (mkAddrSlice (mkAddrVarBits 0x11223344 varPayload73))]) .cellUnd
+        expectErr "cellund/var-anycast5-len73-disallowed"
+          (runLdmsgaddrDirect #[.slice (mkAddrSlice (mkAddrVarAnycastBits 5 anycastPfx5 0x01020304 varPayload73))]) .cellUnd }
     ,
     { name := "unit/opcode/decode-and-assembler-boundaries"
       run := do
