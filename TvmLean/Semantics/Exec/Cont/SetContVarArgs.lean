@@ -2,6 +2,16 @@ import TvmLean.Semantics.Exec.Common
 
 namespace TvmLean
 
+private def popSetContVarArgBounded (lo hi : Int) : VM Int := do
+  let v ← VM.popInt
+  let n ←
+    match v with
+    | .nan => throw .rangeChk
+    | .num n => pure n
+  if decide (n < lo ∨ n > hi) then
+    throw .rangeChk
+  pure n
+
 set_option maxHeartbeats 1000000 in
 def execInstrContSetContVarArgs (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
@@ -9,12 +19,8 @@ def execInstrContSetContVarArgs (i : Instr) (next : VM Unit) : VM Unit := do
       -- Mirrors `SETCONTVARARGS` from `crypto/vm/contops.cpp` (exec_setcont_varargs + exec_setcontargs_common).
       -- Stack effect: ... <args...> cont copy more -- ... cont
       VM.checkUnderflow 2
-      let more ← VM.popIntFinite
-      if decide (more < -1 ∨ more > 255) then
-        throw .rangeChk
-      let copy ← VM.popIntFinite
-      if decide (copy < 0 ∨ copy > 255) then
-        throw .rangeChk
+      let more ← popSetContVarArgBounded (-1) 255
+      let copy ← popSetContVarArgBounded 0 255
       let copyN : Nat := copy.toNat
       let st ← get
       if copyN + 1 > st.stack.size then
