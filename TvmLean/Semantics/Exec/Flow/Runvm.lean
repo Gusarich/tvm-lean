@@ -129,11 +129,13 @@ def tryCommit (st : VmState) : Bool × VmState :=
 
 def cp0InvOpcodeGasBitsRunvm (code : Slice) : Nat :=
   -- Mirror the main-step fallback (`cp0InvOpcodeGasBits`) for child VM decode errors.
-  -- C++ may charge one opcode slot for invalid/too-short prefixes.
+  -- For dummy invalid-opcode dispatches C++ charges only `gas_per_instr` (no per-bit addend),
+  -- so unresolved prefixes must return 0 bits here.
   let bits0 : BitString := code.readBits code.bitsRemaining
+  let padBitsTo : Nat := 2048
   let bitsPad : BitString :=
-    if bits0.size < 24 then
-      bits0 ++ Array.replicate (24 - bits0.size) false
+    if bits0.size < padBitsTo then
+      bits0 ++ Array.replicate (padBitsTo - bits0.size) false
     else
       bits0
   let refs0 : Array Cell := code.cell.refs.extract code.refPos code.cell.refs.size
@@ -144,8 +146,7 @@ def cp0InvOpcodeGasBitsRunvm (code : Slice) : Nat :=
       refs0
   match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary bitsPad refsPad)) with
   | .ok (_instr, totBits, _rest) => totBits
-  | .error _ =>
-      if code.bitsRemaining < 4 then 16 else 8
+  | .error _ => 0
 
 set_option maxHeartbeats 1000000 in
 def execInstrFlowChildNoRunvm (_host : Host) (i : Instr) (next : VM Unit) : VM Unit :=
@@ -612,6 +613,7 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
       gas := childGas
       loadedCells := if isolateGas then #[] else parentAfterPops.loadedCells
       chksgnCounter := if isolateGas then 0 else parentAfterPops.chksgnCounter
+      libraries := parentAfterPops.libraries
       maxDataDepth := parentAfterPops.maxDataDepth }
 
   let (childExit, childFinal) := childRun host childFuelDefault child
@@ -620,6 +622,10 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
   let childConsumed : Int := childFinal.gas.gasConsumed
   let pay : Int := min childConsumed (childFinal.gas.gasLimit + 1)
   let mut parentAfter : VmState := parentAfterPops.consumeGas pay
+  parentAfter := { parentAfter with
+    libraries := childFinal.libraries
+    chksgnCounter := childFinal.chksgnCounter
+    loadedCells := if isolateGas then parentAfter.loadedCells else childFinal.loadedCells }
   if decide (parentAfter.gas.gasRemaining < 0) then
     throw .outOfGas
 
@@ -670,6 +676,8 @@ set_option maxHeartbeats 1000000 in
 def execInstrFlowRunvm (host : Host) (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .contExt (.runvm mode) =>
+      -- Match C++ helper canonicalization (`exec_runvm(..., args & 4095)`).
+      let mode := mode &&& 0xfff
       let st ← get
       let st' ← runChildVm host st mode
       set st'
