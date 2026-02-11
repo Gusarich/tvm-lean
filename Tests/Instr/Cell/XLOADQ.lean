@@ -108,6 +108,57 @@ private def mkLibraryCellByHashBits (hashBits : BitString) : Cell :=
 private def mkLibraryCellForTarget (target : Cell) : Cell :=
   mkLibraryCellByHashBits (hashBitsOfCell target)
 
+private def bytesToBitsBE (bytes : Array UInt8) : BitString :=
+  bytes.foldl (init := #[]) (fun acc b => acc ++ natToBits b.toNat 8)
+
+private def depthBytesBE2 (d : Nat) : Array UInt8 :=
+  #[UInt8.ofNat ((d >>> 8) &&& 0xff), UInt8.ofNat (d &&& 0xff)]
+
+private def mkPrunedBranchBits (mask : Nat) : BitString :=
+  let hashCnt := LevelMask.getHashI mask
+  let totalBytes : Nat := 2 + hashCnt * (32 + 2)
+  natToBits 1 8 ++ natToBits mask 8 ++ Array.replicate ((totalBytes - 2) * 8) false
+
+private def specialPrunedMask1 : Cell :=
+  { bits := mkPrunedBranchBits 1
+    refs := #[]
+    special := true
+    levelMask := 1 }
+
+private instance : Inhabited CellLevelInfo where
+  default :=
+    { ty := .ordinary
+      levelMask := 0
+      effectiveLevel := 0
+      depths := Array.replicate (Cell.maxLevel + 1) 0
+      hashes := Array.replicate (Cell.maxLevel + 1) (Array.replicate 32 0) }
+
+private def cellInfoP (label : String) (c : Cell) : CellLevelInfo :=
+  match c.computeLevelInfo? with
+  | .ok info => info
+  | .error e => panic! s!"XLOADQ oracle: {label}: computeLevelInfo failed: {e}"
+
+private def mkMerkleProofCell (child : Cell) : Cell :=
+  let info := cellInfoP "merkle-proof/child" child
+  let depthBytes := depthBytesBE2 (info.getDepth 0)
+  let bytes : Array UInt8 := #[UInt8.ofNat 3] ++ info.getHash 0 ++ depthBytes
+  { bits := bytesToBitsBE bytes
+    refs := #[child]
+    special := true
+    levelMask := 0 }
+
+private def mkMerkleUpdateCell (fromCell toCell : Cell) : Cell :=
+  let infoFrom := cellInfoP "merkle-update/from" fromCell
+  let infoTo := cellInfoP "merkle-update/to" toCell
+  let dFrom := depthBytesBE2 (infoFrom.getDepth 0)
+  let dTo := depthBytesBE2 (infoTo.getDepth 0)
+  let bytes : Array UInt8 :=
+    #[UInt8.ofNat 4] ++ infoFrom.getHash 0 ++ infoTo.getHash 0 ++ dFrom ++ dTo
+  { bits := bytesToBitsBE bytes
+    refs := #[fromCell, toCell]
+    special := true
+    levelMask := 0 }
+
 private def mkLibraryCollectionRef (keyBits : BitString) (target : Cell) : Except Excno Cell := do
   let (root?, ok, _, _) ← dictSetRefWithCells none keyBits target .set
   if !ok then
@@ -189,6 +240,79 @@ private def genRandomOrdinaryCell (rng0 : StdGen) : Cell × StdGen :=
     else
       #[refLeafA, refLeafB]
   (Cell.mkOrdinary bits refs, rng3)
+
+private def liftExcP {α} [Inhabited α] (label : String) (x : Except Excno α) : α :=
+  match x with
+  | .ok a => a
+  | .error e => panic! s!"XLOADQ oracle: {label}: {reprStr e}"
+
+private def assembleBitsP (label : String) (program : List Instr) : BitString :=
+  match assembleCp0 program with
+  | .ok c => c.bits
+  | .error e => panic! s!"XLOADQ oracle: {label}: assembleCp0 failed: {reprStr e}"
+
+private def xchg01Bits : BitString :=
+  assembleBitsP "xchg01" [(.xchg0 1)]
+
+private def xloadqCode1 : Cell :=
+  Cell.mkOrdinary (natToBits 0xd73b 16) #[]
+
+private def xloadqCodeReload : Cell :=
+  Cell.mkOrdinary (natToBits 0xd73b 16 ++ xchg01Bits ++ natToBits 0xd73b 16) #[]
+
+private def libTargetHit : Cell := ordinaryAlt
+private def libTargetOther : Cell := ordinaryNested
+private def libKeyHit : BitString := hashBitsOfCell libTargetHit
+
+private def libRefHit : Cell := mkLibraryCellByHashBits libKeyHit
+
+private def libCollectionHit : Cell :=
+  liftExcP "lib/collection-hit" (mkLibraryCollectionRef libKeyHit libTargetHit)
+
+private def libCollectionMismatch : Cell :=
+  liftExcP "lib/collection-mismatch" (mkLibraryCollectionRef libKeyHit libTargetOther)
+
+private def libCollectionNoRefValue : Cell :=
+  liftExcP "lib/collection-noref" (mkLibraryCollectionSlice libKeyHit (Slice.ofCell Cell.empty))
+
+private def mkOracleCase
+    (name : String)
+    (code : Cell)
+    (stack : Array Value)
+    (libraries : Array Cell := #[]) : OracleCase :=
+  { name := name
+    instr := xloadqId
+    codeCell? := some code
+    initStack := stack
+    initLibraries := libraries }
+
+private def oracleCases : Array OracleCase :=
+  #[
+    mkOracleCase "oracle/ok/ordinary-empty" xloadqCode1 #[.cell ordinaryEmpty],
+    mkOracleCase "oracle/ok/ordinary-refs2" xloadqCode1 #[.cell ordinaryRefs2],
+    mkOracleCase "oracle/ok/deep-stack-preserved" xloadqCode1 #[.null, intV (-1), .cell ordinaryNested],
+
+    -- `registerCellLoad`: fresh then reload (second XLOADQ runs after swapping top two values).
+    mkOracleCase "oracle/ok/reload-via-xchg01" xloadqCodeReload #[.cell ordinaryBits31],
+
+    -- Quiet failure: resolution failures push `0` instead of throwing.
+    -- Note: malformed exotic/library cells are rejected at BOC deserialization time by the C++ oracle,
+    -- so oracle tests use well-formed exotic shapes only.
+    mkOracleCase "oracle/ok/quiet-fail/special-pruned-branch" xloadqCode1 #[.cell specialPrunedMask1],
+    mkOracleCase "oracle/ok/quiet-fail/special-merkle-proof" xloadqCode1
+      #[.cell (mkMerkleProofCell ordinaryBits31)],
+    mkOracleCase "oracle/ok/quiet-fail/special-merkle-update" xloadqCode1
+      #[.cell (mkMerkleUpdateCell ordinaryEmpty ordinaryBits31)],
+
+    mkOracleCase "oracle/ok/quiet-fail/library-miss" xloadqCode1 #[.cell libRefHit],
+    mkOracleCase "oracle/ok/quiet-hit/library-collection" xloadqCode1 #[.cell libRefHit] #[libCollectionHit],
+    mkOracleCase "oracle/ok/quiet-fail/library-hash-mismatch" xloadqCode1 #[.cell libRefHit] #[libCollectionMismatch],
+    mkOracleCase "oracle/ok/quiet-fail/library-no-ref-value" xloadqCode1 #[.cell libRefHit] #[libCollectionNoRefValue],
+
+    -- Underflow/type still throw even in quiet mode.
+    mkOracleCase "oracle/err/underflow-empty-stack" xloadqCode1 #[],
+    mkOracleCase "oracle/err/type-top-null" xloadqCode1 #[.null]
+  ]
 
 def suite : InstrSuite where
   id := xloadqId
@@ -550,7 +674,7 @@ def suite : InstrSuite where
               (quietFailExpected #[])
             rng := rng1 }
   ]
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

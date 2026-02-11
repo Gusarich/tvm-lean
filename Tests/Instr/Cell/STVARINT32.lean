@@ -289,7 +289,7 @@ def suite : InstrSuite where
     mkStvarint32Case "range/overflow-pos" #[.builder Builder.empty, intV overflowPosSigned31Bytes],
     mkStvarint32Case "range/overflow-neg" #[.builder Builder.empty, intV overflowNegSigned31Bytes],
     mkStvarint32ProgramCase "range/nan-via-program" #[.builder Builder.empty] rangeNanProgram,
-    mkStvarint32Case "range/nan-before-builder-type" #[.null, .int .nan],
+    mkStvarint32ProgramCase "range/nan-before-builder-type" #[.null] rangeNanProgram,
     mkStvarint32ProgramCase "range-before-cellov-overflow-full-builder" #[]
       (fullBuilderProgramWith (.num overflowPosSigned31Bytes)),
     mkStvarint32ProgramCase "range-before-cellov-nan-full-builder" #[]

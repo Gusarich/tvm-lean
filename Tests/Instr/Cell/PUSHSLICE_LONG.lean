@@ -135,8 +135,68 @@ private def mkPushsliceRefsBits (r bits5 : Nat) (raw : BitString) : IO BitString
 private def addOpcodeBits : BitString :=
   natToBits 0xa0 8
 
+private def pushsliceLongId : InstrId := { name := "PUSHSLICE_LONG" }
+
+private def mkMarkedRawForWidthP (label : String) (payload : BitString) (width : Nat) : BitString :=
+  if payload.size + 1 > width then
+    panic! s!"PUSHSLICE_LONG oracle: {label}: payload={payload.size} exceeds width={width} (needs marker)"
+  else
+    payload ++ #[true] ++ Array.replicate (width - payload.size - 1) false
+
+private def mkLongRawMarkedP (label : String) (payload : BitString) (len7 : Nat) : BitString :=
+  mkMarkedRawForWidthP label payload (longDataBits len7)
+
+private def mkLongCodeCellP
+    (label : String)
+    (refs len7 : Nat)
+    (raw : BitString)
+    (codeRefs : Array Cell := #[]) : Cell :=
+  let wantRaw := longDataBits len7
+  if raw.size != wantRaw then
+    panic! s!"PUSHSLICE_LONG oracle: {label}: raw size={raw.size}, expected={wantRaw} for len7={len7}"
+  else
+    Cell.mkOrdinary (natToBits (longWord refs len7) 18 ++ raw) codeRefs
+
+private def mkOracleCase
+    (name : String)
+    (code : Cell)
+    (initStack : Array Value := #[]) : OracleCase :=
+  { name := name
+    instr := pushsliceLongId
+    codeCell? := some code
+    initStack := initStack }
+
+private def oracleCases : Array OracleCase :=
+  #[
+    mkOracleCase "oracle/ok/len0/marker-only-refs0"
+      (mkLongCodeCellP "ok/len0/marker-only" 0 0 (mkLongRawMarkedP "ok/len0/marker-only" #[] 0)),
+    mkOracleCase "oracle/ok/len0/payload5-refs0"
+      (mkLongCodeCellP "ok/len0/payload5" 0 0 (mkLongRawMarkedP "ok/len0/payload5" (stripeBits 5 1) 0)),
+    mkOracleCase "oracle/ok/len1/payload12-refs0"
+      (mkLongCodeCellP "ok/len1/payload12" 0 1 (mkLongRawMarkedP "ok/len1/payload12" (stripeBits 12 0) 1)),
+    mkOracleCase "oracle/ok/len0/all-zero-raw-noncanonical"
+      (mkLongCodeCellP "ok/len0/all-zero-raw" 0 0 (Array.replicate (longDataBits 0) false)),
+    mkOracleCase "oracle/ok/refs4-len1"
+      (mkLongCodeCellP "ok/refs4-len1" 4 1 (mkLongRawMarkedP "ok/refs4-len1" (stripeBits 9 1) 1)
+        #[refLeafA, refLeafB, refLeafC, refLeafD]),
+    mkOracleCase "oracle/ok/deep-stack-preserved"
+      (mkLongCodeCellP "ok/deep-stack" 1 0 (mkLongRawMarkedP "ok/deep-stack" (stripeBits 5 0) 0) #[refLeafA])
+      #[.null, intV 7, .cell refLeafB],
+
+    mkOracleCase "oracle/err/decode/missing-inline-refs"
+      (mkLongCodeCellP "err/missing-refs" 2 0 (mkLongRawMarkedP "err/missing-refs" #[] 0) #[refLeafA])
+      #[.null]
+    ,
+    -- Invalid opcode gas charging: header recognized (18-bit), but inline payload bits are truncated.
+    mkOracleCase "oracle/err/decode/truncated-inline-data"
+      (Cell.mkOrdinary
+        (natToBits (longWord 0 1) 18 ++ (mkLongRawMarkedP "err/truncated" (stripeBits 3 1) 1).take (longDataBits 1 - 1))
+        #[])
+      #[.null]
+  ]
+
 def suite : InstrSuite where
-  id := { name := "PUSHSLICE_LONG" }
+  id := pushsliceLongId
   unit := #[
     { name := "unit/exec/push-empty-slice-on-empty-stack"
       run := do
@@ -393,7 +453,7 @@ def suite : InstrSuite where
       run := do
         expectDecodeErr "decode/error/empty" (mkSliceFromBits #[]) .invOpcode }
   ]
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

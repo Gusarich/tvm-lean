@@ -500,6 +500,16 @@ private def rawOracleUnitCases : Array UnitCase :=
     { name := s!"unit/raw-oracle/{c.name}"
       run := runRawOracleCase c }
 
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  { name := s!"oracle/{c.name}"
+    instr := sdbeginsqId
+    codeCell? := some c.code
+    initStack := c.initStack
+    fuel := c.fuel }
+
+private def oracleCases : Array OracleCase :=
+  rawOracleCases.map rawOracleToOracleCase
+
 private def baseUnitCases : Array UnitCase :=
   #[
     { name := "unit/direct/quiet-success-equal-proper-empty"
@@ -705,7 +715,7 @@ private def fuzzUnitCases : Array UnitCase :=
 def suite : InstrSuite where
   id := sdbeginsqId
   unit := baseUnitCases ++ rawOracleUnitCases ++ fuzzUnitCases
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

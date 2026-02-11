@@ -687,10 +687,104 @@ private def fuzzUnitCases : Array UnitCase :=
         runRawOracleBatchCompare s!"oracle/fuzz/seed-{seed}" cases }
   ]
 
+private def oracleRefA : Cell := Cell.empty
+private def oracleRefB : Cell := Cell.ofUInt 1 1
+private def oracleRefC : Cell := Cell.ofUInt 2 2
+private def oracleRefD : Cell := Cell.ofUInt 3 5
+
+private def payloadTrailing : BitString := #[true, false, false, true, false, false]
+private def payloadLarge : BitString := Array.replicate 57 true
+
+private instance : Inhabited OracleCase :=
+  ⟨{ name := "<inhabited>", instr := stSliceConstId }⟩
+
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  { name := c.name
+    instr := stSliceConstId
+    codeCell? := some c.code
+    initStack := c.initStack
+    fuel := c.fuel }
+
+private def unwrapRawOracleCase (label : String) (res : Except String RawOracleCase) : OracleCase :=
+  match res with
+  | .ok c => rawOracleToOracleCase c
+  | .error e => panic! s!"STSLICECONST oracle case build failed ({label}): {e}"
+
+private def oracleCases : Array OracleCase :=
+  #[
+    unwrapRawOracleCase "oracle/01"
+      (mkRawCase "oracle/ok/empty-builder-empty-const" #[.builder Builder.empty] #[] #[] #[] 0),
+    unwrapRawOracleCase "oracle/02"
+      (mkRawCase "oracle/ok/empty-builder-bit1" #[.builder Builder.empty] #[] #[true] #[] 0),
+    unwrapRawOracleCase "oracle/03"
+      (mkRawCase "oracle/ok/empty-builder-trailing-zeros-preserved" #[.builder Builder.empty] #[] payloadTrailing #[] 1),
+    unwrapRawOracleCase "oracle/04"
+      (mkRawCase "oracle/ok/empty-builder-with-ref1" #[.builder Builder.empty] #[] #[true, false] #[oracleRefA] 1),
+    unwrapRawOracleCase "oracle/05"
+      (mkRawCase "oracle/ok/empty-builder-max-len7-ref3" #[.builder Builder.empty] #[] payloadLarge #[oracleRefA, oracleRefB, oracleRefC] 7),
+    unwrapRawOracleCase "oracle/06"
+      (mkRawCase "oracle/ok/prelude-bits3-store5" #[] (mkBuilderPrelude 3 0) (natToBits 21 5) #[] 1),
+    unwrapRawOracleCase "oracle/07"
+      (mkRawCase "oracle/ok/prelude-refs2-plus-ref1" #[] (mkBuilderPrelude 0 2) #[] #[oracleRefD] 0),
+    unwrapRawOracleCase "oracle/08"
+      (mkRawCase "oracle/ok/prelude-bits8-refs1-plus-bits7-refs2" #[] (mkBuilderPrelude 8 1) (natToBits 73 7) #[oracleRefA, oracleRefB] 1),
+    unwrapRawOracleCase "oracle/09"
+      (mkRawCase "oracle/ok/boundary-bits1022-plus1" #[] (mkBuilderPrelude 1022 0) #[true] #[] 0),
+    unwrapRawOracleCase "oracle/10"
+      (mkRawCase "oracle/ok/boundary-refs3-plus1" #[] (mkBuilderPrelude 0 3) #[] #[oracleRefC] 0),
+    unwrapRawOracleCase "oracle/11"
+      (mkRawCase "oracle/ok/deep-stack-noise-int" #[intV 11, .builder Builder.empty] #[] (natToBits 5 3) #[] 1),
+    unwrapRawOracleCase "oracle/12"
+      (mkRawCase "oracle/ok/deep-stack-noise-cell-prelude" #[.cell oracleRefD] (mkBuilderPrelude 2 1) (natToBits 3 2) #[oracleRefA] 1),
+    unwrapRawOracleCase "oracle/13"
+      (mkRawCase "oracle/ok/max-fit-bits-and-refs" #[] (mkBuilderPrelude (1023 - payloadLarge.size) 1) payloadLarge #[oracleRefA, oracleRefB, oracleRefC] 7),
+
+    unwrapRawOracleCase "oracle/14"
+      (mkRawCase "oracle/underflow/empty-stack" #[] #[] #[true] #[] 0),
+    unwrapRawOracleCase "oracle/15"
+      (mkRawCase "oracle/type/top-null" #[.null] #[] #[true] #[] 0),
+    unwrapRawOracleCase "oracle/16"
+      (mkRawCase "oracle/type/top-int" #[intV 17] #[] #[true] #[] 0),
+    unwrapRawOracleCase "oracle/17"
+      (mkRawCase "oracle/type/prelude-full-builder-then-null" #[] (mkBuilderPrelude 1023 0 ++ #[.pushNull]) #[true] #[] 0),
+    unwrapRawOracleCase "oracle/18"
+      (mkRawCase "oracle/cellov/bits-full" #[] (mkBuilderPrelude 1023 0) #[true] #[] 0),
+    unwrapRawOracleCase "oracle/19"
+      (mkRawCase "oracle/cellov/refs-full" #[] (mkBuilderPrelude 0 4) #[] #[oracleRefA] 0),
+    unwrapRawOracleCase "oracle/20"
+      (mkRawCase "oracle/cellov/bits-and-refs-full" #[] (mkBuilderPrelude 1023 4) #[true] #[oracleRefA] 0),
+
+    unwrapRawOracleCase "oracle/21"
+      (mkRawCase "oracle/ok/prelude-mid-bits-refs" #[] (mkBuilderPrelude 31 1) (natToBits 93 7) #[oracleRefA] 1),
+    unwrapRawOracleCase "oracle/22"
+      (mkRawCase "oracle/ok/deep-stack-noise-slice" #[.slice (Slice.ofCell oracleRefB), .builder Builder.empty] #[] (natToBits 6 3) #[] 1),
+    unwrapRawOracleCase "oracle/23"
+      (mkRawCase "oracle/ok/prelude-ref1-plus-const-ref3" #[] (mkBuilderPrelude 0 1) #[] #[oracleRefA, oracleRefB, oracleRefC] 0),
+    unwrapRawOracleCase "oracle/24"
+      (mkRawCase "oracle/ok/boundary-bits1022-plus1-alt" #[] (mkBuilderPrelude 1022 0) #[false] #[] 0),
+    unwrapRawOracleCase "oracle/25"
+      (mkRawCase "oracle/ok/empty-builder-empty-payload-len7" #[.builder Builder.empty] #[] #[] #[] 7),
+    unwrapRawOracleCase "oracle/26"
+      (mkRawCase "oracle/ok/prelude-ref1-plus-const-ref3-len7"
+        #[] (mkBuilderPrelude 3 1) #[true] #[oracleRefA, oracleRefB, oracleRefC] 7),
+    unwrapRawOracleCase "oracle/27"
+      (mkRawCase "oracle/ok/deep-stack-noise-empty-tuple"
+        #[.tuple #[], .builder Builder.empty] #[] (natToBits 5 3) #[oracleRefD] 1),
+    unwrapRawOracleCase "oracle/28"
+      (mkRawCase "oracle/ok/max-fit-len7-near-max-payload"
+        #[] (mkBuilderPrelude 967 1) (Array.replicate 56 false) #[oracleRefA, oracleRefB, oracleRefC] 7),
+    unwrapRawOracleCase "oracle/29"
+      (mkRawCase "oracle/underflow/empty-stack-len7-ref3"
+        #[] #[] (natToBits 3 2) #[oracleRefA, oracleRefB, oracleRefC] 7),
+    unwrapRawOracleCase "oracle/30"
+      (mkRawCase "oracle/type/top-slice"
+        #[.slice (Slice.ofCell oracleRefB)] #[] #[true] #[] 0)
+  ]
+
 def suite : InstrSuite where
   id := stSliceConstId
   unit := baseUnitCases ++ handcraftedOracleUnitCases ++ fuzzUnitCases
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

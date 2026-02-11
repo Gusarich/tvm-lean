@@ -111,6 +111,29 @@ private def expectInvOpcode
   | .error e => throw (IO.userError s!"{label}: expected invOpcode, got {e}")
   | .ok _ => throw (IO.userError s!"{label}: expected invOpcode, got success")
 
+private def pushRefOpcode : Nat := 0x88
+
+private def mkOracleCase
+    (name : String)
+    (refCell : Cell)
+    (initStack : Array Value := #[])
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := pushRefId
+    codeCell? := some (Cell.mkOrdinary (natToBits pushRefOpcode 8) #[refCell])
+    initStack := initStack
+    fuel := fuel }
+
+private def mkOracleMissingRefCase
+    (name : String)
+    (initStack : Array Value := #[])
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := pushRefId
+    codeCell? := some (Cell.mkOrdinary (natToBits pushRefOpcode 8) #[])
+    initStack := initStack
+    fuel := fuel }
+
 def suite : InstrSuite where
   id := pushRefId
   unit := #[
@@ -421,7 +444,21 @@ def suite : InstrSuite where
         expectInvOpcode "assembler/assemble-seq-with-pushref"
           (assembleCp0 [.add, (.pushRef pushCellNested), .newc]) }
   ]
-  oracle := #[]
+  oracle := #[
+    -- Branch: successful decode+exec pushes referenced cell value.
+    mkOracleCase "ok/ref-empty-cell" pushCellEmpty,
+    mkOracleCase "ok/ref-bits-only" pushCellBitsOnly,
+    mkOracleCase "ok/ref-one-ref" pushCellOneRef,
+    mkOracleCase "ok/ref-nested" pushCellNested,
+    mkOracleCase "ok/ref-four-refs-1023-bits" pushCellFourRefsMaxBits,
+    mkOracleCase "ok/deep-stack-preservation" pushCellOneRef
+      #[.null, intV 7, .slice noiseSlice, .builder Builder.empty, .tuple #[]],
+
+    -- Branch: decode-time `haveRefs 1` guard (`invOpcode`) when ref is missing.
+    mkOracleMissingRefCase "decode/err/missing-ref",
+    mkOracleMissingRefCase "decode/err/missing-ref-with-deep-stack"
+      #[.null, intV (-9)]
+  ]
   fuzz := #[]
 
 initialize registerSuite suite

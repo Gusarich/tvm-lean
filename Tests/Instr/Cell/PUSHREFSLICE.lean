@@ -179,6 +179,17 @@ private def mkDirectCase
         (runPushRefSliceDirect c below)
         (expectedPushRefSliceStack below c) }
 
+private def mkDirectErrCase
+    (name : String)
+    (c : Cell)
+    (expected : Excno := .cellUnd)
+    (below : Array Value := #[]) : UnitCase :=
+  { name := name
+    run := do
+      expectErr name
+        (runPushRefSliceDirect c below)
+        expected }
+
 private def mkFallbackCase
     (name : String)
     (instr : Instr)
@@ -188,6 +199,38 @@ private def mkFallbackCase
       expectOkStack name
         (runPushRefSliceDispatchFallback instr stack)
         (stack ++ #[intV dispatchSentinel]) }
+
+private def mkOracleCase
+    (name : String)
+    (refCell : Cell)
+    (initStack : Array Value := #[])
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := pushRefSliceId
+    codeCell? := some (Cell.mkOrdinary (natToBits pushRefSliceOpcode 8) #[refCell])
+    initStack := initStack
+    fuel := fuel }
+
+private def mkOracleDoubleLoadCase
+    (name : String)
+    (refCell : Cell)
+    (initStack : Array Value := #[])
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  let bits : BitString := natToBits pushRefSliceOpcode 8 ++ natToBits pushRefSliceOpcode 8
+  { name := name
+    instr := pushRefSliceId
+    codeCell? := some (Cell.mkOrdinary bits #[refCell, refCell])
+    initStack := initStack
+    fuel := fuel }
+
+private def mkOracleMissingRefCase
+    (name : String)
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := pushRefSliceId
+    codeCell? := some (Cell.mkOrdinary (natToBits pushRefSliceOpcode 8) #[])
+    initStack := #[]
+    fuel := fuel }
 
 def suite : InstrSuite where
   id := pushRefSliceId
@@ -200,9 +243,9 @@ def suite : InstrSuite where
     mkDirectCase "unit/direct/ok/ordinary-refs1" cOrdRefs1,
     mkDirectCase "unit/direct/ok/ordinary-refs4" cOrdRefs4,
     mkDirectCase "unit/direct/ok/ordinary-nested" cOrdNested,
-    mkDirectCase "unit/direct/ok/special-library" specialLibraryCell,
-    mkDirectCase "unit/direct/ok/special-unknown" specialUnknownCell,
-    mkDirectCase "unit/direct/ok/special-with-ref" specialWithRefCell,
+    mkDirectErrCase "unit/direct/cellund/special-library" specialLibraryCell,
+    mkDirectErrCase "unit/direct/cellund/special-unknown" specialUnknownCell,
+    mkDirectErrCase "unit/direct/cellund/special-with-ref" specialWithRefCell,
     mkDirectCase "unit/direct/ok/deep-preserve-null" cOrdBits7 #[.null],
     mkDirectCase "unit/direct/ok/deep-preserve-int-and-builder"
       cOrdRefs1 #[intV (-17), .builder Builder.empty],
@@ -365,7 +408,21 @@ def suite : InstrSuite where
         expectAssembleInvOpcode "assemble/pushrefslice" (.pushRefSlice refLeafB)
         expectAssembleInvOpcode "assemble/pushrefcont" (.pushRefCont refLeafC) }
   ]
-  oracle := #[]
+  oracle := #[
+    -- Branch: successful decode+exec pushes referenced cell slice (and charges cell load).
+    mkOracleCase "ok/ordinary-empty" cOrdEmpty,
+    mkOracleCase "ok/ordinary-bits255" cOrdBits255,
+    mkOracleCase "ok/ordinary-refs4" cOrdRefs4,
+    mkOracleCase "ok/special-library" specialLibraryCell,
+    mkOracleCase "ok/deep-stack-preservation" cOrdNested
+      #[.null, intV 7, .cell refLeafB],
+
+    -- Branch: `registerCellLoad` reload path by loading the same ref twice.
+    mkOracleDoubleLoadCase "ok/register-cell-load/reload-same-ref-twice" cOrdRefs1,
+
+    -- Branch: decode-time `haveRefs 1` guard (`invOpcode`) when ref is missing.
+    mkOracleMissingRefCase "decode/err/missing-ref"
+  ]
   fuzz := #[]
 
 initialize registerSuite suite

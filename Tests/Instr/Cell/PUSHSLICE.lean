@@ -514,8 +514,110 @@ private def handcraftedOracleUnitCases : Array UnitCase := #[
   mkHandcraftedOracleUnitCase 29 "oracle/ok/8d/r4-len0-ref4-empty"
 ]
 
+private def pushsliceId : InstrId := { name := "PUSHSLICE" }
+
+private instance : Inhabited OracleCase :=
+  ⟨{ name := "<inhabited>", instr := pushsliceId }⟩
+
+private def oracleRefA : Cell := Cell.empty
+private def oracleRefB : Cell := Cell.ofUInt 1 1
+private def oracleRefC : Cell := Cell.ofUInt 2 2
+private def oracleRefD : Cell := Cell.ofUInt 3 5
+private def oracleRefE : Cell := Cell.mkOrdinary (natToBits 0b101011 6) #[oracleRefB]
+
+private def payload8bMax : BitString := patternBits 123 0
+private def payload8cMax : BitString := patternBits 248 1
+private def payload8dMax : BitString := patternBits 997 2
+
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  { name := c.name
+    instr := pushsliceId
+    codeCell? := some c.code
+    initStack := c.initStack
+    fuel := c.fuel }
+
+private def unwrapRawOracleCase (label : String) (res : Except String RawOracleCase) : OracleCase :=
+  match res with
+  | .ok c => rawOracleToOracleCase c
+  | .error e => panic! s!"PUSHSLICE oracle case build failed ({label}): {e}"
+
+private def oracleCases : Array OracleCase :=
+  #[
+    unwrapRawOracleCase "oracle/01"
+      (mkRawCase8 "oracle/ok/8b/empty" #[] 0),
+    unwrapRawOracleCase "oracle/02"
+      (mkRawCase8 "oracle/ok/8b/bit1" #[true] 0),
+    unwrapRawOracleCase "oracle/03"
+      (mkRawCase8 "oracle/ok/8b/trailing-zeros" #[true, false, false, true, false, false, false] 1),
+    unwrapRawOracleCase "oracle/04"
+      (mkRawCase8 "oracle/ok/8b/max-len15-payload123" payload8bMax 15),
+    unwrapRawOracleCase "oracle/05"
+      (mkRawCase8 "oracle/ok/8b/deep-stack-null" (natToBits 0b101 3) 0 #[.null]),
+    unwrapRawOracleCase "oracle/06"
+      (mkRawCase8 "oracle/ok/8b/deep-stack-int-cell"
+        (natToBits 0x2a 6) 1 #[intV (-7), .cell oracleRefC]),
+    unwrapRawOracleCase "oracle/07"
+      (mkRawCase8 "oracle/ok/8b/prelude-and-tail" (natToBits 0x15 5) 1 #[] #[.pushNull] #[.nop]),
+
+    unwrapRawOracleCase "oracle/08"
+      (mkRawCase15 "oracle/ok/8c/r0-bits0-ref1-empty" #[] 0 0 #[oracleRefA]),
+    unwrapRawOracleCase "oracle/09"
+      (mkRawCase15 "oracle/ok/8c/r0-bits1-ref1" (natToBits 0b1011011 7) 0 1 #[oracleRefB]),
+    unwrapRawOracleCase "oracle/10"
+      (mkRawCase15 "oracle/ok/8c/r1-bits5-ref2" (patternBits 39 1) 1 5 #[oracleRefA, oracleRefC]),
+    unwrapRawOracleCase "oracle/11"
+      (mkRawCase15 "oracle/ok/8c/r2-bits9-ref3" (patternBits 56 2) 2 9 #[oracleRefA, oracleRefB, oracleRefD]),
+    unwrapRawOracleCase "oracle/12"
+      (mkRawCase15 "oracle/ok/8c/r3-bits31-ref4-max" payload8cMax 3 31 #[oracleRefA, oracleRefB, oracleRefC, oracleRefD]),
+    unwrapRawOracleCase "oracle/13"
+      (mkRawCase15 "oracle/ok/8c/deep-stack-preserve"
+        (patternBits 17 4) 1 3 #[oracleRefD, oracleRefE] #[.slice (Slice.ofCell oracleRefC), .null]),
+
+    unwrapRawOracleCase "oracle/14"
+      (mkRawCase18 "oracle/ok/8d/r0-len0-empty" #[] 0 0 #[]),
+    unwrapRawOracleCase "oracle/15"
+      (mkRawCase18 "oracle/ok/8d/r1-len1-ref1" (patternBits 12 0) 1 1 #[oracleRefA]),
+    unwrapRawOracleCase "oracle/16"
+      (mkRawCase18 "oracle/ok/8d/r2-len7-ref2" (patternBits 57 1) 2 7 #[oracleRefB, oracleRefD]),
+    unwrapRawOracleCase "oracle/17"
+      (mkRawCase18 "oracle/ok/8d/r3-len31-ref3" (patternBits 200 2) 3 31 #[oracleRefA, oracleRefB, oracleRefC]),
+    unwrapRawOracleCase "oracle/18"
+      (mkRawCase18 "oracle/ok/8d/r4-len31-ref4" (patternBits 222 3) 4 31 #[oracleRefA, oracleRefB, oracleRefC, oracleRefD]),
+    unwrapRawOracleCase "oracle/19"
+      (mkRawCase18 "oracle/ok/8d/r0-len124-max-fit" payload8dMax 0 124 #[]),
+    unwrapRawOracleCase "oracle/20"
+      (mkRawCase18 "oracle/ok/8d/deep-stack-preserve"
+        (patternBits 31 0) 2 4 #[oracleRefD, oracleRefE] #[.null, intV 9, .slice (Slice.ofCell oracleRefB)]),
+
+    unwrapRawOracleCase "oracle/21"
+      (mkRawCase8 "oracle/ok/8b/len2-payload15" (patternBits 15 3) 2),
+    unwrapRawOracleCase "oracle/22"
+      (mkRawCase8 "oracle/ok/8b/len0-empty-with-slice-below"
+        #[] 0 #[.slice (Slice.ofCell oracleRefD)]),
+    unwrapRawOracleCase "oracle/23"
+      (mkRawCase8 "oracle/ok/8b/tail-pushnull" (patternBits 63 1) 8 #[] #[] #[.pushNull]),
+
+    unwrapRawOracleCase "oracle/24"
+      (mkRawCase15 "oracle/ok/8c/r0-bits0-ref1-with-int-below"
+        #[] 0 0 #[oracleRefC] #[intV 123]),
+    unwrapRawOracleCase "oracle/25"
+      (mkRawCase15 "oracle/ok/8c/r1-bits1-ref2" (patternBits 8 0) 1 1 #[oracleRefA, oracleRefE]),
+    unwrapRawOracleCase "oracle/26"
+      (mkRawCase15 "oracle/ok/8c/r3-bits3-ref4" (patternBits 20 2) 3 3 #[oracleRefA, oracleRefB, oracleRefC, oracleRefD]),
+
+    unwrapRawOracleCase "oracle/27"
+      (mkRawCase18 "oracle/ok/8d/r0-len1-altpayload" (patternBits 6 1) 0 1 #[]),
+    unwrapRawOracleCase "oracle/28"
+      (mkRawCase18 "oracle/ok/8d/r1-len15-ref1" (patternBits 90 0) 1 15 #[oracleRefE]),
+    unwrapRawOracleCase "oracle/29"
+      (mkRawCase18 "oracle/ok/8d/r2-len63-ref2" (patternBits 420 3) 2 63 #[oracleRefB, oracleRefD]),
+    unwrapRawOracleCase "oracle/30"
+      (mkRawCase18 "oracle/ok/8d/r4-len0-ref4-empty"
+        #[] 4 0 #[oracleRefA, oracleRefB, oracleRefC, oracleRefD] #[.null, .cell oracleRefE])
+  ]
+
 def suite : InstrSuite where
-  id := { name := "PUSHSLICE" }
+  id := pushsliceId
   unit := ( #[
     { name := "unit/direct/pushes-slice-and-preserves-stack"
       run := do
@@ -684,7 +786,7 @@ def suite : InstrSuite where
           failUnit s!"oracle/handcrafted: expected 30 cases, got {cases.size}"
         runRawOracleBatchCompare "oracle/handcrafted" cases }
   ] ++ handcraftedOracleUnitCases)
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

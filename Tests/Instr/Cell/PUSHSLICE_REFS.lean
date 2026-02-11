@@ -28,6 +28,8 @@ Covered branches:
   18-bit 0x8d (`PUSHSLICE_LONG`), and 16-bit 0x8e (`PUSHCONT`).
 -/
 
+private def pushsliceRefsId : InstrId := { name := "PUSHSLICE_REFS" }
+
 private def dispatchSentinel : Int := 920317
 
 private def execInstrFlowPushsliceRefsOnly (i : Instr) (next : VM Unit) : VM Unit :=
@@ -235,7 +237,7 @@ private def decodeOnce
   | .error e => throw (IO.userError s!"{label}: decode failed with {e}")
 
 def suite : InstrSuite where
-  id := { name := "PUSHSLICE_REFS" }
+  id := pushsliceRefsId
   unit := #[
     { name := "unit/exec/direct/push-empty-slice"
       run := do
@@ -483,7 +485,56 @@ def suite : InstrSuite where
             16
         pure () }
   ]
-  oracle := #[]
+  oracle :=
+    let unwrapBitsP (label : String) (x : Except String BitString) : BitString :=
+      match x with
+      | .ok bits => bits
+      | .error e => panic! s!"PUSHSLICE_REFS oracle: {label}: {e}"
+
+    let mkOk
+        (name : String)
+        (r bits5 : Nat)
+        (payloadBits : BitString)
+        (refs : Array Cell)
+        (initStack : Array Value := #[]) : OracleCase :=
+      let codeBits := unwrapBitsP name (mkPushsliceRefsCodeBits r bits5 payloadBits)
+      { name := name
+        instr := pushsliceRefsId
+        codeCell? := some (Cell.mkOrdinary codeBits refs)
+        initStack := initStack }
+
+    let mkTruncatedRaw
+        (name : String)
+        (r bits5 : Nat)
+        (payloadBits : BitString)
+        (refs : Array Cell)
+        (initStack : Array Value := #[]) : OracleCase :=
+      let hdr := unwrapBitsP s!"{name}/hdr" (mkPushsliceRefsHeaderBits r bits5)
+      let raw := unwrapBitsP s!"{name}/raw" (mkRawWithMarker payloadBits bits5)
+      { name := name
+        instr := pushsliceRefsId
+        codeCell? := some (Cell.mkOrdinary (hdr ++ raw.take (raw.size - 1)) refs)
+        initStack := initStack }
+
+    #[
+      mkOk "oracle/ok/r0-bits0-ref1-empty" 0 0 #[] refs1,
+      mkOk "oracle/ok/r0-bits1-ref1" 0 1 (patternBits 7 0) refs1,
+      mkOk "oracle/ok/r1-bits5-ref2" 1 5 (patternBits 39 1) refs2 #[.null, intV (-17)],
+      mkOk "oracle/ok/r2-bits9-ref3" 2 9 (patternBits 56 2) refs3,
+      mkOk "oracle/ok/r3-bits31-ref4-max" 3 31 (patternBits 248 1) refs4,
+
+      -- Decode error: missing inline bits after header.
+      { name := "oracle/err/decode/header-only-missing-inline-data"
+        instr := pushsliceRefsId
+        codeCell? := some (Cell.mkOrdinary (unwrapBitsP "oracle/err/decode/header-only" (mkPushsliceRefsHeaderBits 0 31)) refs1)
+        initStack := #[] },
+
+      -- Decode error: missing inline refs for r>0.
+      mkOk "oracle/err/decode/missing-inline-refs" 3 3 (patternBits 20 0) refs3,
+
+      -- Decode error: truncated inline data (raw missing final bit).
+      mkTruncatedRaw "oracle/err/decode/truncated-inline-data" 0 1 (patternBits 4 1) refs1
+    ]
   fuzz := #[]
 
 initialize registerSuite suite

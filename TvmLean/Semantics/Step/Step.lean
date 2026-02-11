@@ -53,9 +53,17 @@ def cp0InvOpcodeGasBits (code : Slice) : Nat :=
   -- decode the same prefix after zero-padding bits so short fixed/ext opcodes
   -- report their declared bit length (e.g. 16/24) instead of falling back to 8.
   let bits0 : BitString := code.readBits code.bitsRemaining
+  -- Some cp0 opcodes (e.g. PUSHSLICE_REFS/LONG, PUSHCONT) validate the presence of
+  -- inline payload bits and refs *after* their header is recognized. When the code
+  -- slice is truncated in the payload, C++ still charges based on the matched
+  -- opcode entry width (header bits), not the 8-bit fallback.
+  --
+  -- To approximate this, always pad enough bits so the decoder can proceed past
+  -- payload-length guards and report the header width.
+  let padBitsTo : Nat := 2048
   let bitsPad : BitString :=
-    if bits0.size < 24 then
-      bits0 ++ Array.replicate (24 - bits0.size) false
+    if bits0.size < padBitsTo then
+      bits0 ++ Array.replicate (padBitsTo - bits0.size) false
     else
       bits0
   let refs0 : Array Cell := code.cell.refs.extract code.refPos code.cell.refs.size

@@ -157,6 +157,57 @@ private def mkLibraryRefCellFromHashBits (hashBits : BitString) : Cell :=
 private def mkLibraryRefCell (target : Cell) : Cell :=
   mkLibraryRefCellFromHashBits (hashBitsOf target)
 
+private def bytesToBitsBE (bytes : Array UInt8) : BitString :=
+  bytes.foldl (init := #[]) (fun acc b => acc ++ natToBits b.toNat 8)
+
+private def depthBytesBE2 (d : Nat) : Array UInt8 :=
+  #[UInt8.ofNat ((d >>> 8) &&& 0xff), UInt8.ofNat (d &&& 0xff)]
+
+private def mkPrunedBranchBits (mask : Nat) : BitString :=
+  let hashCnt := LevelMask.getHashI mask
+  let totalBytes : Nat := 2 + hashCnt * (32 + 2)
+  natToBits 1 8 ++ natToBits mask 8 ++ Array.replicate ((totalBytes - 2) * 8) false
+
+private def specialPrunedMask1 : Cell :=
+  { bits := mkPrunedBranchBits 1
+    refs := #[]
+    special := true
+    levelMask := 1 }
+
+private instance : Inhabited CellLevelInfo where
+  default :=
+    { ty := .ordinary
+      levelMask := 0
+      effectiveLevel := 0
+      depths := Array.replicate (Cell.maxLevel + 1) 0
+      hashes := Array.replicate (Cell.maxLevel + 1) (Array.replicate 32 0) }
+
+private def cellInfoP (label : String) (c : Cell) : CellLevelInfo :=
+  match c.computeLevelInfo? with
+  | .ok info => info
+  | .error e => panic! s!"XLOAD oracle: {label}: computeLevelInfo failed: {e}"
+
+private def mkMerkleProofCell (child : Cell) : Cell :=
+  let info := cellInfoP "merkle-proof/child" child
+  let depthBytes := depthBytesBE2 (info.getDepth 0)
+  let bytes : Array UInt8 := #[UInt8.ofNat 3] ++ info.getHash 0 ++ depthBytes
+  { bits := bytesToBitsBE bytes
+    refs := #[child]
+    special := true
+    levelMask := 0 }
+
+private def mkMerkleUpdateCell (fromCell toCell : Cell) : Cell :=
+  let infoFrom := cellInfoP "merkle-update/from" fromCell
+  let infoTo := cellInfoP "merkle-update/to" toCell
+  let dFrom := depthBytesBE2 (infoFrom.getDepth 0)
+  let dTo := depthBytesBE2 (infoTo.getDepth 0)
+  let bytes : Array UInt8 :=
+    #[UInt8.ofNat 4] ++ infoFrom.getHash 0 ++ infoTo.getHash 0 ++ dFrom ++ dTo
+  { bits := bytesToBitsBE bytes
+    refs := #[fromCell, toCell]
+    special := true
+    levelMask := 0 }
+
 private def specialShort7 : Cell :=
   { bits := natToBits 0b1010101 7
     refs := #[]
@@ -225,6 +276,60 @@ private def expectedXloadOut (below : Array Value) (c : Cell) : Array Value :=
 
 private def expectedXloadQOut (below : Array Value) (c : Cell) : Array Value :=
   below ++ #[.cell c, intV (-1)]
+
+private def liftExcP {α} [Inhabited α] (label : String) (x : Except Excno α) : α :=
+  match x with
+  | .ok a => a
+  | .error e => panic! s!"XLOAD oracle: {label}: {reprStr e}"
+
+private def xloadCode1 : Cell :=
+  Cell.mkOrdinary (natToBits xloadOpcode 16) #[]
+
+private def xloadCode2 : Cell :=
+  Cell.mkOrdinary (natToBits xloadOpcode 16 ++ natToBits xloadOpcode 16) #[]
+
+private def libCollectionHitA : Cell :=
+  liftExcP "lib/hit-a" (mkLibraryCollectionFor libTargetA)
+
+private def libCollectionMismatchA : Cell :=
+  liftExcP "lib/mismatch-a" (mkLibraryCollectionKeyToValue libTargetA libTargetB)
+
+private def libCollectionNoRefA : Cell :=
+  liftExcP "lib/noref-a" (mkLibraryCollectionNoRefValue libTargetA)
+
+private def mkOracleCase
+    (name : String)
+    (code : Cell)
+    (stack : Array Value)
+    (libraries : Array Cell := #[]) : OracleCase :=
+  { name := name
+    instr := xloadId
+    codeCell? := some code
+    initStack := stack
+    initLibraries := libraries }
+
+private def oracleCases : Array OracleCase :=
+  #[
+    mkOracleCase "oracle/err/underflow-empty-stack" xloadCode1 #[],
+    mkOracleCase "oracle/err/type-top-null" xloadCode1 #[.null],
+
+    mkOracleCase "oracle/ok/ordinary-empty" xloadCode1 #[.cell cOrdEmpty],
+    mkOracleCase "oracle/ok/ordinary-bits8" xloadCode1 #[.cell cOrdBits8],
+    mkOracleCase "oracle/ok/ordinary-reload" xloadCode2 #[.cell cOrdBits8],
+
+    -- Non-library exotic cells are rejected by XLOAD (cell_und).
+    -- Note: malformed exotic cells are rejected at BOC deserialization time by the C++ oracle,
+    -- so only well-formed exotic shapes are usable in oracle tests.
+    mkOracleCase "oracle/err/nonquiet/special-pruned-branch" xloadCode1 #[.cell specialPrunedMask1],
+    mkOracleCase "oracle/err/nonquiet/special-merkle-proof" xloadCode1 #[.cell (mkMerkleProofCell cOrdBits8)],
+    mkOracleCase "oracle/err/nonquiet/special-merkle-update" xloadCode1
+      #[.cell (mkMerkleUpdateCell cOrdEmpty cOrdBits8)],
+
+    mkOracleCase "oracle/err/nonquiet/library-miss" xloadCode1 #[.cell specialLibraryRefA],
+    mkOracleCase "oracle/ok/nonquiet/library-hit" xloadCode1 #[.cell specialLibraryRefA] #[libCollectionHitA],
+    mkOracleCase "oracle/err/nonquiet/library-hash-mismatch" xloadCode1 #[.cell specialLibraryRefA] #[libCollectionMismatchA],
+    mkOracleCase "oracle/err/nonquiet/library-no-ref-value" xloadCode1 #[.cell specialLibraryRefA] #[libCollectionNoRefA]
+  ]
 
 def suite : InstrSuite where
   id := xloadId
@@ -462,7 +567,7 @@ def suite : InstrSuite where
           (runXloadDispatchFallback .xctos #[.null])
           #[.null, intV dispatchSentinel] }
   ]
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

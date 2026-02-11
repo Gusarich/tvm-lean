@@ -17,11 +17,12 @@ structure OracleRunResult where
   deriving Repr
 
 private def assembleCaseCode (c : OracleCase) : Except String Cell := do
-  let codeCell ←
-    match assembleCp0 c.program.toList with
-    | .ok cell => pure cell
-    | .error e => throw s!"assembleCp0 failed: {reprStr e}"
-  pure codeCell
+  match c.codeCell? with
+  | some codeCell => pure codeCell
+  | none =>
+      match assembleCp0 c.program.toList with
+      | .ok cell => pure cell
+      | .error e => throw s!"assembleCp0 failed: {reprStr e}"
 
 private def toBocHex (c : Cell) : Except String String := do
   let bytes ←
@@ -48,7 +49,8 @@ private def valueToToken (v : Value) : Except String String := do
       if b.bits.isEmpty && b.refs.isEmpty then
         pure "B"
       else
-        throw "non-empty builders are not yet supported in oracle stack token stream"
+        let hex ← toBocHex b.finalize
+        pure s!"BB:{hex}"
   | .tuple t =>
       if t.isEmpty then
         pure "T"
@@ -90,6 +92,7 @@ private def runLeanCase (code : Cell) (c : OracleCase) : StepResult :=
     { seed with
       stack := c.initStack
       regs := regs
+      libraries := c.initLibraries
       gas := GasLimits.ofLimits c.gasLimits.gasLimit c.gasLimits.gasMax c.gasLimits.gasCredit }
   VmState.run nativeHost c.fuel st0
 
@@ -128,7 +131,7 @@ def runOracleCase (c : OracleCase) : IO OracleRunResult := do
 
   let oracleRes : Except String TvmLeanOracleValidate.OracleOut ←
     try
-      pure (Except.ok (← TvmLeanOracleValidate.runOracle codeCell stackTokens))
+      pure (Except.ok (← TvmLeanOracleValidate.runOracle codeCell stackTokens c.initLibraries))
     catch e =>
       pure (Except.error s!"oracle run failed: {e.toString}")
   let oracleOut ←

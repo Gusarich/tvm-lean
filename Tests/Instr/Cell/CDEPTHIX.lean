@@ -211,10 +211,8 @@ private def oracleErrorCases : Array OracleCase :=
       #[.slice (Slice.ofCell cellDepth1), intV 2],
     mkCdepthIxCase "type/cell-position-builder"
       #[.builder Builder.empty, intV 3],
-    mkCdepthIxCase "cellund/malformed-refs-overflow"
-      #[.cell malformedRefs5, intV 0],
-    mkCdepthIxCase "cellund/malformed-mask-ordinary"
-      #[.cell malformedMaskOrdinary, intV 0]
+    -- Malformed cell layouts (e.g. >4 refs, levelMask mismatch) are rejected by the C++ oracle at BOC
+    -- deserialization time, so they are covered by unit tests only.
   ]
 
 private def oracleGasCases : Array OracleCase :=

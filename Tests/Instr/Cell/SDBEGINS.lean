@@ -519,8 +519,20 @@ private def rawOracleUnitCases : Array UnitCase :=
           run := failUnit s!"raw-oracle: failed to build handcrafted cases: {e}" }
       ]
 
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  { name := c.name
+    instr := sdbeginsId
+    codeCell? := some c.code
+    initStack := c.initStack
+    fuel := c.fuel }
+
+private def oracleCases : Array OracleCase :=
+  match buildRawOracleCases with
+  | .ok cases => cases.map rawOracleToOracleCase
+  | .error e => panic! s!"SDBEGINS oracle case build failed: {e}"
+
 def suite : InstrSuite where
-  id := { name := "SDBEGINS" }
+  id := sdbeginsId
   unit := #[
     { name := "unit/direct/success-edge-and-cursor"
       run := do
@@ -742,7 +754,7 @@ def suite : InstrSuite where
               failUnit
                 s!"fuzz/{i}/kind-mismatch\nquiet={quiet}\npref={reprStr pref}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}" }
   ] ++ rawOracleUnitCases
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

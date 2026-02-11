@@ -158,6 +158,20 @@ private def codeShifted : Slice :=
 private def code1016 : BitString :=
   stripeBits (127 * 8) 3
 
+private def mkOracleGeneralCase
+    (name : String)
+    (refs : Nat)
+    (lenBytes : Nat)
+    (payload : BitString)
+    (codeRefs : Array Cell := #[])
+    (initStack : Array Value := #[])
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := pushContId
+    codeCell? := some (Cell.mkOrdinary (mkGeneralBits refs lenBytes payload) codeRefs)
+    initStack := initStack
+    fuel := fuel }
+
 def suite : InstrSuite where
   id := pushContId
   unit := #[
@@ -467,8 +481,20 @@ def suite : InstrSuite where
         expectInvOpcode "assemble/sequence-pushcont"
           (assembleCp0 [.add, (.pushCont codeWithRefs3), .newc]) }
   ]
-  -- `.pushCont` is not encodable by `assembleCp0`; oracle/fuzz harness requires assembly.
-  oracle := #[]
+  oracle := #[
+    -- Branch: general PUSHCONT exec succeeds for various (lenBytes, refs) shapes.
+    mkOracleGeneralCase "ok/general/len0-refs0" 0 0 #[],
+    mkOracleGeneralCase "ok/general/len4-refs0" 0 4 (stripeBits 32 0),
+    mkOracleGeneralCase "ok/general/len3-refs1" 1 3 (stripeBits 24 1) #[refLeafA],
+    mkOracleGeneralCase "ok/general/len5-refs3" 3 5 (stripeBits 40 2) #[refLeafA, refLeafB, refLeafC],
+    mkOracleGeneralCase "ok/general/deep-stack-preservation" 0 2 (stripeBits 16 3) #[]
+      #[.null, intV 7, .cell refLeafB],
+
+    -- Branch: decode failures for missing payload bits / missing refs.
+    mkOracleGeneralCase "decode/err/missing-payload-bits" 0 1 #[],
+    mkOracleGeneralCase "decode/err/missing-refs" 2 0 #[] #[],
+    mkOracleGeneralCase "decode/err/missing-refs-with-payload" 3 1 (stripeBits 8 0) #[refLeafA]
+  ]
   fuzz := #[]
 
 initialize registerSuite suite

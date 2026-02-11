@@ -50,6 +50,12 @@ private def cellWithRef : Cell := Cell.mkOrdinary (natToBits 3 2) #[cell1]
 private def cellWithTwoRefs : Cell := Cell.mkOrdinary (natToBits 0x15 5) #[cell1, cell3]
 private def cellNested : Cell := Cell.mkOrdinary (natToBits 0x2a 6) #[cellWithRef, cell8]
 
+private def specialLibraryCell : Cell :=
+  { bits := natToBits 2 8 ++ Array.replicate 256 false
+    refs := #[]
+    special := true
+    levelMask := 0 }
+
 private def contCellPool : Array Cell :=
   #[cellEmpty, cell1, cell3, cell8, cell12, cellWithRef, cellWithTwoRefs, cellNested]
 
@@ -272,6 +278,9 @@ private def pushRefContRawOracleCases : Array RawOracleCase :=
     { name := "oracle/ok/single/with-two-refs"
       refs := #[cellWithTwoRefs]
       initStack := #[] },
+    { name := "oracle/error/exec/special-library-ref"
+      refs := #[specialLibraryCell]
+      initStack := #[] },
     { name := "oracle/ok/single/deep-null-int"
       refs := #[cell3]
       initStack := #[.null, intV 7] },
@@ -356,6 +365,17 @@ private def pushRefContRawOracleCases : Array RawOracleCase :=
       refs := #[cell1, cell3]
       initStack := #[] }
   ]
+
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  let code : Cell :=
+    match mkRawProgramCell c.programPrefix c.ops8 c.extraBits c.tail c.refs with
+    | .ok cell => cell
+    | .error e => panic! s!"PUSHREFCONT oracle case build failed ({c.name}): {e}"
+  { name := c.name
+    instr := pushRefContId
+    codeCell? := some code
+    initStack := c.initStack
+    fuel := c.fuel }
 
 private instance : Inhabited Value := ⟨.null⟩
 private instance : Inhabited Cell := ⟨cellEmpty⟩
@@ -576,7 +596,7 @@ def suite : InstrSuite where
               throw (IO.userError
                 s!"fuzz/direct/{i}: unexpected error {e}\ncell={reprStr c}\nstack={reprStr stack}") }
   ]
-  oracle := #[]
+  oracle := pushRefContRawOracleCases.map rawOracleToOracleCase
   fuzz := #[]
 
 initialize registerSuite suite

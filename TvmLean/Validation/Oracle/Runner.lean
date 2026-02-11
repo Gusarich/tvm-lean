@@ -1314,7 +1314,7 @@ def runOracleBatch (cases : Array (Cell × List String)) : IO (Array OracleOut) 
       catch _ =>
         pure ()
 
-def runOracle (code : Cell) (stackArgs : List String) : IO OracleOut := do
+def runOracle (code : Cell) (stackArgs : List String) (libraries : Array Cell := #[]) : IO OracleOut := do
   let tonFift := (← IO.getEnv "TON_FIFT_BIN").getD "/Users/daniil/Coding/ton/build/crypto/fift"
   let tonLib := (← IO.getEnv "TON_FIFT_LIB").getD "/Users/daniil/Coding/ton/crypto/fift/lib"
   let oracleScript := (← IO.getEnv "TVMLEANTON_ORACLE_FIF").getD "oracle/fif/ton_oracle_runvm.fif"
@@ -1323,13 +1323,24 @@ def runOracle (code : Cell) (stackArgs : List String) : IO OracleOut := do
     | .ok b => pure b
     | .error e => die s!"stdBocSerialize failed: {reprStr e}"
   let codeHex := bytesToHex bocBytes
-  let args :=
+  let mut args : Array String :=
     #[
       s!"-I{tonLib}",
       "-s",
       oracleScript,
       codeHex
-    ] ++ stackArgs.toArray
+    ]
+  if !libraries.isEmpty then
+    if libraries.size > 1 then
+      die s!"oracle runner supports at most one library collection cell, got {libraries.size}"
+    let libCell := libraries[0]!
+    let libBocBytes ←
+      match stdBocSerialize libCell with
+      | .ok b => pure b
+      | .error e => die s!"stdBocSerialize(lib) failed: {reprStr e}"
+    let libHex := bytesToHex libBocBytes
+    args := args ++ #["LIB", libHex]
+  args := args ++ stackArgs.toArray
   let res ← IO.Process.output { cmd := tonFift, args := args, env := #[("GLOG_minloglevel", "2")] }
   if res.exitCode != 0 then
     die s!"oracle process failed (exit={res.exitCode}):\n{res.stderr}\n{res.stdout}"

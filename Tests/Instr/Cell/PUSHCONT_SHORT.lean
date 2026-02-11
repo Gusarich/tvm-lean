@@ -114,8 +114,22 @@ private def codeEightBytes : Slice :=
 private def codeFifteenBytes : Slice :=
   codeSliceFromBytes (stripedBytes 15 2)
 
+private def pushContShortId : InstrId := { name := "PUSHCONT_SHORT" }
+
+private def mkOracleShortCase
+    (name : String)
+    (lenBytes : Nat)
+    (payloadBytes : Array Nat)
+    (initStack : Array Value := #[])
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := pushContShortId
+    codeCell? := some (Cell.mkOrdinary (shortBits lenBytes payloadBytes) #[])
+    initStack := initStack
+    fuel := fuel }
+
 def suite : InstrSuite where
-  id := { name := "PUSHCONT_SHORT" }
+  id := pushContShortId
   unit := #[
     -- Branch map: exec success arm (`.pushCont code`) with empty short-style payload.
     { name := "unit/direct/push-empty-cont-on-empty-stack"
@@ -416,7 +430,20 @@ def suite : InstrSuite where
         expectInvOpcode "assembler/assemble-sequence-with-pushcont"
           (assembleCp0 [.add, (.pushCont codeOneByte), .newc]) }
   ]
-  oracle := #[]
+  oracle := #[
+    -- Branch: short PUSHCONT decode + exec success for various payload sizes.
+    mkOracleShortCase "ok/short/len0" 0 #[],
+    mkOracleShortCase "ok/short/len1" 1 #[0xa0],
+    mkOracleShortCase "ok/short/len2" 2 #[0x70, 0xa0],
+    mkOracleShortCase "ok/short/len8" 8 (stripedBytes 8 1),
+    mkOracleShortCase "ok/short/len15-max" 15 (stripedBytes 15 2),
+    mkOracleShortCase "ok/short/deep-stack-preservation" 1 #[0xa0]
+      #[.null, intV 7, .cell refLeafB],
+
+    -- Branch: short decode failure when payload bits are truncated.
+    mkOracleShortCase "decode/err/truncated-len1-missing-payload" 1 #[],
+    mkOracleShortCase "decode/err/truncated-len15-missing-payload" 15 (stripedBytes 14 0)
+  ]
   fuzz := #[]
 
 initialize registerSuite suite

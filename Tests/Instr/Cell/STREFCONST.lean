@@ -367,6 +367,20 @@ private def strefConstRawOracleCases : Array RawOracleCase :=
       initStack := #[] }
   ]
 
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  let code : Cell :=
+    match mkRawStrefConstCode c.programPrefix c.constRef with
+    | .ok code => code
+    | .error e => panic! s!"STREFCONST oracle case build failed ({c.name}): {e}"
+  { name := c.name
+    instr := strefConstId
+    codeCell? := some code
+    initStack := c.initStack
+    fuel := c.fuel }
+
+private def oracleCases : Array OracleCase :=
+  strefConstRawOracleCases.map rawOracleToOracleCase
+
 private def strefConstRawOracleUnitCases : Array UnitCase :=
   strefConstRawOracleCases.map fun c =>
     { name := s!"unit/raw-oracle/{c.name}"
@@ -610,7 +624,7 @@ def suite : InstrSuite where
               throw (IO.userError
                 s!"fuzz/direct/{i}: result kind mismatch\nconst={reprStr constRef}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}") }
   ] ++ strefConstRawOracleUnitCases)
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

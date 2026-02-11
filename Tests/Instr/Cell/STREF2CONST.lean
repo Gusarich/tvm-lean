@@ -297,6 +297,113 @@ private def buildRawOracleCases : IO (Array RawOracleCase) := do
 
   pure cases
 
+private def liftExcP {α} [Inhabited α] (label : String) (x : Except Excno α) : α :=
+  match x with
+  | .ok a => a
+  | .error e => panic! s!"STREF2CONST oracle: {label}: {reprStr e}"
+
+private def mkRawCaseP
+    (name : String)
+    (pref : Array Instr)
+    (c1 c2 : Cell)
+    (initStack : Array Value := #[])
+    (suffix : Array Instr := #[])
+    (fuel : Nat := 1_000_000) : RawOracleCase :=
+  let code := liftExcP name (mkRawStref2ConstCode pref c1 c2 suffix)
+  { name, code, initStack, fuel }
+
+private def rawOracleCases : Array RawOracleCase :=
+  #[
+    -- Branch: success path (`checkUnderflow` + `popBuilder` + `canExtendBy 0 2` all pass).
+    mkRawCaseP "oracle/ok/direct/empty-builder"
+      #[] constCell1 constCell2 #[.builder Builder.empty],
+    mkRawCaseP "oracle/ok/direct/deep-null"
+      #[] constCell3 constCell4 #[.null, .builder Builder.empty],
+    mkRawCaseP "oracle/ok/direct/deep-int"
+      #[] constCell0 constCell2 #[intV 5, .builder Builder.empty],
+    mkRawCaseP "oracle/ok/direct/swapped-consts"
+      #[] constCell2 constCell1 #[.builder Builder.empty],
+    mkRawCaseP "oracle/ok/direct/nested-consts"
+      #[] constCell3 constCell0 #[.builder Builder.empty],
+    mkRawCaseP "oracle/ok/direct/alt-pair"
+      #[] constCell4 constCell3 #[.builder Builder.empty],
+
+    -- Branch: `checkUnderflow` / `popBuilder` failure outcomes.
+    mkRawCaseP "oracle/err/underflow-empty"
+      #[] constCell1 constCell2 #[],
+    mkRawCaseP "oracle/err/type-null"
+      #[] constCell1 constCell2 #[.null],
+    mkRawCaseP "oracle/err/type-int"
+      #[] constCell1 constCell2 #[intV 11],
+    mkRawCaseP "oracle/err/type-cell"
+      #[] constCell1 constCell2 #[.cell constCell0],
+    mkRawCaseP "oracle/err/type-slice"
+      #[] constCell1 constCell2 #[.slice (Slice.ofCell constCell3)],
+
+    -- Branch: success path on program-built builders near bit/ref boundaries.
+    mkRawCaseP "oracle/ok/program/refs0"
+      (mkBuilderWithRefsProgram 0) constCell1 constCell2,
+    mkRawCaseP "oracle/ok/program/refs1"
+      (mkBuilderWithRefsProgram 1) constCell1 constCell2,
+    mkRawCaseP "oracle/ok/program/refs2"
+      (mkBuilderWithRefsProgram 2) constCell1 constCell2,
+    mkRawCaseP "oracle/ok/program/bits7-refs1"
+      (mkBuilderWithBitsRefsProgram 7 1 (.num 65)) constCell3 constCell4,
+    mkRawCaseP "oracle/ok/program/fullbits-refs2"
+      (mkBuilderFullBitsWithRefsProgram 2) constCell1 constCell2,
+    mkRawCaseP "oracle/ok/program/noise-null-refs2"
+      (#[.pushNull] ++ mkBuilderWithRefsProgram 2) constCell1 constCell2,
+
+    -- Branch: `canExtendBy 0 2` failure (`cellOv`) under ref saturation.
+    mkRawCaseP "oracle/err/cellov-refs3"
+      (mkBuilderWithRefsProgram 3) constCell1 constCell2,
+    mkRawCaseP "oracle/err/cellov-refs4"
+      (mkBuilderWithRefsProgram 4) constCell1 constCell2,
+    mkRawCaseP "oracle/err/cellov-bits3-refs3"
+      (mkBuilderWithBitsRefsProgram 3 3 (.num 5)) constCell1 constCell2,
+    mkRawCaseP "oracle/err/cellov-fullbits-refs3"
+      (mkBuilderFullBitsWithRefsProgram 3) constCell1 constCell2,
+    mkRawCaseP "oracle/err/cellov-noise-null"
+      (#[.pushNull] ++ mkBuilderWithRefsProgram 3) constCell1 constCell2,
+    mkRawCaseP "oracle/err/cellov-noise-int"
+      (#[.pushInt (.num 42)] ++ mkBuilderWithRefsProgram 3) constCell1 constCell2,
+
+    -- Branch: decode guard (`haveRefs 2`) and >2-refs boundary on `0xcf21`.
+    { name := "oracle/err/decode-one-ref"
+      code := liftExcP "oracle/err/decode-one-ref" (mkRawCf21CodeWithRefs #[constCell1])
+      initStack := #[.builder Builder.empty] },
+    { name := "oracle/err/decode-zero-ref"
+      code := liftExcP "oracle/err/decode-zero-ref" (mkRawCf21CodeWithRefs #[])
+      initStack := #[.builder Builder.empty] },
+    { name := "oracle/ok/decode-three-refs"
+      code := liftExcP "oracle/ok/decode-three-refs" (mkRawCf21CodeWithRefs #[constCell1, constCell2, constCell3])
+      initStack := #[.builder Builder.empty] },
+
+    -- Branch: gas edge around raw `STREF2CONST` path (`setGasLimit` exact vs exact-minus-one).
+    mkRawCaseP "oracle/gas/exact"
+      #[.pushInt (.num stref2constSetGasExact), .tonEnvOp .setGasLimit]
+      constCell1 constCell2 #[.builder Builder.empty],
+    mkRawCaseP "oracle/gas/exact-minus-one"
+      #[.pushInt (.num stref2constSetGasExactMinusOne), .tonEnvOp .setGasLimit]
+      constCell1 constCell2 #[.builder Builder.empty],
+    mkRawCaseP "oracle/gas/exact/prefix-refs2"
+      (mkBuilderWithRefsProgram 2 ++ #[.pushInt (.num stref2constSetGasExact), .tonEnvOp .setGasLimit])
+      constCell1 constCell2,
+    mkRawCaseP "oracle/gas/exact-minus-one/prefix-refs2"
+      (mkBuilderWithRefsProgram 2 ++ #[.pushInt (.num stref2constSetGasExactMinusOne), .tonEnvOp .setGasLimit])
+      constCell1 constCell2
+  ]
+
+private def rawOracleToOracleCase (c : RawOracleCase) : OracleCase :=
+  { name := c.name
+    instr := stref2constId
+    codeCell? := some c.code
+    initStack := c.initStack
+    fuel := c.fuel }
+
+private def oracleCases : Array OracleCase :=
+  rawOracleCases.map rawOracleToOracleCase
+
 private def pickCellFromPool (rng : StdGen) : Cell × StdGen :=
   let (idx, rng') := randNat rng 0 (constPool.size - 1)
   (constPool[idx]!, rng')
@@ -517,7 +624,7 @@ def suite : InstrSuite where
         for i in [0:320] do
           rng := (← runStructuredFuzzIter i rng) }
   ]
-  oracle := #[]
+  oracle := oracleCases
   fuzz := #[]
 
 initialize registerSuite suite

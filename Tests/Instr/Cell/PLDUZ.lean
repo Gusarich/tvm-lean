@@ -126,6 +126,17 @@ private structure RawOracleCase where
 private def mkRawPlduzCode (c : Nat) : Cell :=
   Cell.mkOrdinary (natToBits (plduzWord c) 16) #[]
 
+private def mkOracleCase
+    (name : String)
+    (c : Nat)
+    (initStack : Array Value)
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := plduzId
+    codeCell? := some (mkRawPlduzCode c)
+    initStack := initStack
+    fuel := fuel }
+
 private def toBocHex (c : Cell) : Except String String := do
   let bytes ←
     match stdBocSerialize c with
@@ -483,7 +494,41 @@ private def plduzBaseUnitCases : Array UnitCase :=
 def suite : InstrSuite where
   id := plduzId
   unit := plduzBaseUnitCases ++ #[plduzRawOracleCaseCountUnit] ++ plduzRawOracleUnitCases
-  oracle := #[]
+  oracle := #[
+    -- Branch: `c=0..7`, exact-width slices (no zero-extension).
+    mkOracleCase "ok/exact/c-0/w-32" 0 #[.slice (mkPlduzSlice 32 0)],
+    mkOracleCase "ok/exact/c-1/w-64" 1 #[.slice (mkPlduzSlice 64 1)],
+    mkOracleCase "ok/exact/c-2/w-96" 2 #[.slice (mkPlduzSlice 96 0)],
+    mkOracleCase "ok/exact/c-3/w-128" 3 #[.slice (mkPlduzSlice 128 1)],
+    mkOracleCase "ok/exact/c-4/w-160" 4 #[.slice (mkPlduzSlice 160 0)],
+    mkOracleCase "ok/exact/c-5/w-192" 5 #[.slice (mkPlduzSlice 192 1)],
+    mkOracleCase "ok/exact/c-6/w-224" 6 #[.slice (mkPlduzSlice 224 0)],
+    mkOracleCase "ok/exact/c-7/w-256" 7 #[.slice (mkPlduzSlice 256 1)],
+
+    -- Branch: `ldBits < bits` (zero-extension by left shift).
+    mkOracleCase "ok/short/c-0/avail-31" 0 #[.slice (mkPlduzSlice 31 1)],
+    mkOracleCase "ok/short/c-1/avail-63" 1 #[.slice (mkPlduzSlice 63 0)],
+    mkOracleCase "ok/short/c-2/avail-95" 2 #[.slice (mkPlduzSlice 95 1)],
+    mkOracleCase "ok/short/c-3/avail-127" 3 #[.slice (mkPlduzSlice 127 0)],
+    mkOracleCase "ok/short/c-4/avail-159" 4 #[.slice (mkPlduzSlice 159 1)],
+    mkOracleCase "ok/short/c-5/avail-191" 5 #[.slice (mkPlduzSlice 191 0)],
+    mkOracleCase "ok/short/c-6/avail-223" 6 #[.slice (mkPlduzSlice 223 1)],
+    mkOracleCase "ok/short/c-7/avail-255" 7 #[.slice (mkPlduzSlice 255 0)],
+
+    -- Branch: deep-stack preservation and slice refs are preserved.
+    mkOracleCase "ok/long/c-0/avail-45/refs-2" 0
+      #[.slice (mkSliceWithBitsRefs (stripeBits 45 1) #[refLeafA, refLeafB])],
+    mkOracleCase "ok/long/c-3/deep-stack" 3 #[.null, intV 11, .slice (mkPlduzSlice 180 0)],
+    mkOracleCase "ok/long/c-6/deep-stack" 6 #[intV (-5), .null, .slice (mkPlduzSlice 240 1)],
+    mkOracleCase "ok/long/c-7/avail-300/ref-1" 7
+      #[.slice (mkSliceWithBitsRefs (stripeBits 300 0) #[refLeafC])],
+
+    -- Branch: underflow and type-check errors.
+    mkOracleCase "err/underflow/empty" 0 #[],
+    mkOracleCase "err/type/top-null" 2 #[.null],
+    mkOracleCase "err/type/top-int" 5 #[intV 77],
+    mkOracleCase "err/type/deep-top-not-slice" 7 #[.slice (mkPlduzSlice 256 0), .null]
+  ]
   fuzz := #[]
 
 initialize registerSuite suite
