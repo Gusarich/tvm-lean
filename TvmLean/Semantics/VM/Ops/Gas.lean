@@ -31,4 +31,14 @@ def VmState.registerCellLoad (st : VmState) (c : Cell) : VmState :=
       { st with loadedCells := st.loadedCells.push h }
   st'.consumeGas (if seen then cellReloadGasPrice else cellLoadGasPrice)
 
+/-- VM-monad cell load: registers the cell, consumes gas, and throws `.outOfGas`
+    if gas goes negative.  This mirrors C++ `load_cell_slice_impl` →
+    `register_cell_load` → `consume_gas` → `consume_chk` (global_version ≥ 4)
+    which immediately throws `VmNoGas` on gas exhaustion, aborting the instruction. -/
+def VM.registerCellLoad (c : Cell) : VM Unit := do
+  modify fun st => st.registerCellLoad c
+  let st ← get
+  if decide (st.gas.gasRemaining < 0) then
+    throw .outOfGas
+
 end TvmLean

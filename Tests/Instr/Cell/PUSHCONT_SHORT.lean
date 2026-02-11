@@ -128,6 +128,68 @@ private def mkOracleShortCase
     initStack := initStack
     fuel := fuel }
 
+private def noisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBytes (n : Nat) (rng0 : StdGen) : Array Nat × StdGen := Id.run do
+  let mut out : Array Nat := #[]
+  let mut rng := rng0
+  for _ in [0:n] do
+    let (b, rng') := randNat rng 0 255
+    out := out.push b
+    rng := rng'
+  return (out, rng)
+
+private def genPushContShortFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (lenBytes, rng2) := randNat rng1 0 15
+    let (payload, rng3) := genBytes lenBytes rng2
+    (mkOracleShortCase s!"fuzz/ok/len{lenBytes}" lenBytes payload, rng3)
+  else if shape = 1 then
+    let (lenBytes0, rng2) := randNat rng1 1 15
+    let lenBytes : Nat := lenBytes0
+    let (payload, rng3) := genBytes (lenBytes - 1) rng2
+    (mkOracleShortCase s!"fuzz/decode-err/truncated-len{lenBytes}" lenBytes payload, rng3)
+  else if shape = 2 then
+    let (lenBytes, rng2) := randNat rng1 0 15
+    let (payload, rng3) := genBytes lenBytes rng2
+    let (noise, rng4) := pickFromPool noisePool rng3
+    (mkOracleShortCase s!"fuzz/ok/deep-noise/len{lenBytes}" lenBytes payload #[noise], rng4)
+  else if shape = 3 then
+    let (lenBytes0, rng2) := randNat rng1 1 15
+    let lenBytes : Nat := lenBytes0
+    let (payload, rng3) := genBytes (lenBytes - 1) rng2
+    let (noise, rng4) := pickFromPool noisePool rng3
+    (mkOracleShortCase s!"fuzz/decode-err/deep-truncated/len{lenBytes}" lenBytes payload #[noise], rng4)
+  else if shape = 4 then
+    let codeCell : Cell := Cell.mkOrdinary (natToBits 0x48 7) #[]
+    ({ name := "fuzz/decode-err/truncated-prefix-7bits"
+       instr := pushContShortId
+       codeCell? := some codeCell
+       initStack := #[]
+       fuel := 1_000_000 }, rng1)
+  else if shape = 5 then
+    let codeCell : Cell := Cell.mkOrdinary #[] #[]
+    ({ name := "fuzz/decode-err/empty-code"
+       instr := pushContShortId
+       codeCell? := some codeCell
+       initStack := #[]
+       fuel := 1_000_000 }, rng1)
+  else if shape = 6 then
+    let (lenBytes, rng2) := randNat rng1 0 15
+    let payload := stripedBytes lenBytes (lenBytes % 5)
+    (mkOracleShortCase s!"fuzz/ok/striped/len{lenBytes}" lenBytes payload, rng2)
+  else
+    let (lenBytes, rng2) := randNat rng1 0 15
+    let (payload, rng3) := genBytes lenBytes rng2
+    let stack : Array Value := #[.null, intV (-9), .builder Builder.empty, .tuple #[]]
+    (mkOracleShortCase s!"fuzz/ok/deep-fixed/len{lenBytes}" lenBytes payload stack, rng3)
+
 def suite : InstrSuite where
   id := pushContShortId
   unit := #[
@@ -444,7 +506,11 @@ def suite : InstrSuite where
     mkOracleShortCase "decode/err/truncated-len1-missing-payload" 1 #[],
     mkOracleShortCase "decode/err/truncated-len15-missing-payload" 15 (stripedBytes 14 0)
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021108
+      count := 500
+      gen := genPushContShortFuzzCase }
+  ]
 
 initialize registerSuite suite
 

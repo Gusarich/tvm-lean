@@ -312,7 +312,7 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
         if code.refsRemaining == 0 then
           let st0 := st.consumeGas implicitRetGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            gasCheckFailed st0
+            outOfGasHalt st0
           else
             let (res, st1) := (VM.ret).run st0
             match res with
@@ -327,12 +327,12 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
         else
           let st0 := st.consumeGas implicitJmpRefGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            gasCheckFailed st0
+            outOfGasHalt st0
           else if code.refPos < code.cell.refs.size then
             let refCell := code.cell.refs[code.refPos]!
             let st1 := st0.registerCellLoad refCell
             if decide (st1.gas.gasRemaining < 0) then
-              gasCheckFailed st1
+              outOfGasHalt st1
             else
               .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
           else
@@ -366,22 +366,25 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
             let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
             let stGas := st0.consumeGas (instrGas instr totBits)
             if decide (stGas.gas.gasRemaining < 0) then
-              gasCheckFailed stGas
+              outOfGasHalt stGas
             else
               let (res, st1) := (execInstrChildNoRunvm host instr).run stGas
               match res with
               | .ok _ =>
                   if decide (st1.gas.gasRemaining < 0) then
-                    gasCheckFailed st1
+                    outOfGasHalt st1
                   else
                     .continue st1
               | .error e =>
-                  let stExc := st1.throwException e.toInt
-                  let stExcGas := stExc.consumeGas exceptionGasPrice
-                  if decide (stExcGas.gas.gasRemaining < 0) then
-                    outOfGasHalt stExcGas
+                  if e = .outOfGas then
+                    outOfGasHalt st1
                   else
-                    .continue stExcGas
+                    let stExc := st1.throwException e.toInt
+                    let stExcGas := stExc.consumeGas exceptionGasPrice
+                    if decide (stExcGas.gas.gasRemaining < 0) then
+                      outOfGasHalt stExcGas
+                    else
+                      .continue stExcGas
 
 def childRun (host : Host) (fuel : Nat) (st : VmState) : Int × VmState :=
   match fuel with

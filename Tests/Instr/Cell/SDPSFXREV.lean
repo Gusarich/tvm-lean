@@ -146,6 +146,87 @@ private def cursorSuffixBits : BitString :=
 private def cursorNonSuffix : Slice :=
   mkSliceFromBits (flipHeadBit cursorSuffixBits)
 
+private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
+
+private def refsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 256
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell Cell.empty, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def genSdpsfxrevFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (wholeLen0, rng2) := pickBitsMixed rng1
+    let wholeLen : Nat := if wholeLen0 = 0 then 1 else wholeLen0
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let (sufLen, rng4) := randNat rng3 0 (wholeLen - 1)
+    let sufBits := wholeBits.extract (wholeLen - sufLen) wholeLen
+    let (wholeRefs, rng5) := pickRefsMixed rng4
+    let (sufRefs, rng6) := pickRefsMixed rng5
+    let whole := mkSliceWithBitsRefs wholeBits (refsByCount wholeRefs)
+    let suf := mkSliceWithBitsRefs sufBits (refsByCount sufRefs)
+    (mkSdpsfxrevCase "fuzz/ok/proper-suffix" #[.slice whole, .slice suf], rng6)
+  else if shape = 1 then
+    let (wholeLen, rng2) := pickBitsMixed rng1
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let whole := mkSliceWithBitsRefs wholeBits
+    let suf := mkSliceWithBitsRefs wholeBits
+    (mkSdpsfxrevCase "fuzz/false/equal" #[.slice whole, .slice suf], rng3)
+  else if shape = 2 then
+    let (wholeLen0, rng2) := pickBitsMixed rng1
+    let wholeLen : Nat := if wholeLen0 = 0 then 1 else wholeLen0
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let (sufLen, rng4) := randNat rng3 1 wholeLen
+    let sufBits := flipHeadBit (wholeBits.extract (wholeLen - sufLen) wholeLen)
+    (mkSdpsfxrevCase "fuzz/false/mismatch"
+      #[.slice (mkSliceWithBitsRefs wholeBits), .slice (mkSliceWithBitsRefs sufBits)], rng4)
+  else if shape = 3 then
+    let (wholeLen, rng2) := randNat rng1 0 128
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let sufBits := wholeBits ++ #[true]
+    (mkSdpsfxrevCase "fuzz/false/longer"
+      #[.slice (mkSliceWithBitsRefs wholeBits), .slice (mkSliceWithBitsRefs sufBits)], rng3)
+  else if shape = 4 then
+    (mkSdpsfxrevCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 5 then
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdpsfxrevCase "fuzz/underflow/one" #[noise], rng2)
+  else if shape = 6 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdpsfxrevCase "fuzz/type/top" #[.slice whole6, bad], rng2)
+  else
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdpsfxrevCase "fuzz/ok/deep" #[noise, .slice whole6, .slice suffix4], rng2)
+
 def suite : InstrSuite where
   id := sdpsfxrevId
   unit := #[
@@ -331,7 +412,11 @@ def suite : InstrSuite where
       #[.slice whole6, .slice suffix4]
       #[.pushInt (.num sdpsfxrevSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdpsfxrevInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021125
+      count := 500
+      gen := genSdpsfxrevFuzzCase }
+  ]
 
 initialize registerSuite suite
 

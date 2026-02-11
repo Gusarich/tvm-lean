@@ -192,6 +192,90 @@ private def oracleGasCases : Array OracleCase :=
       #[.pushInt (.num sdsfxrevSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdsfxrevInstr]
   ]
 
+private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
+
+private def refsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 256
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell Cell.empty, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def flipHeadBit (bs : BitString) : BitString :=
+  if bs.isEmpty then
+    bs
+  else
+    let b0 := (bs[0]?).getD false
+    #[!b0] ++ bs.extract 1 bs.size
+
+private def genSdsfxrevFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (wholeLen, rng2) := pickBitsMixed rng1
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let (sufLen, rng4) := randNat rng3 0 wholeLen
+    let sufBits := wholeBits.extract (wholeLen - sufLen) wholeLen
+    let (wholeRefs, rng5) := pickRefsMixed rng4
+    let (sufRefs, rng6) := pickRefsMixed rng5
+    let whole := mkSliceWithBitsRefs wholeBits (refsByCount wholeRefs)
+    let suf := mkSliceWithBitsRefs sufBits (refsByCount sufRefs)
+    (mkSdsfxrevCase "fuzz/ok/suffix" #[.slice whole, .slice suf], rng6)
+  else if shape = 1 then
+    let (wholeLen0, rng2) := pickBitsMixed rng1
+    let wholeLen : Nat := if wholeLen0 = 0 then 1 else wholeLen0
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let (sufLen, rng4) := randNat rng3 1 wholeLen
+    let sufBits := flipHeadBit (wholeBits.extract (wholeLen - sufLen) wholeLen)
+    let whole := mkSliceWithBitsRefs wholeBits
+    let suf := mkSliceWithBitsRefs sufBits
+    (mkSdsfxrevCase "fuzz/false/mismatch" #[.slice whole, .slice suf], rng4)
+  else if shape = 2 then
+    let (wholeLen, rng2) := randNat rng1 0 128
+    let (wholeBits, rng3) := randBitString wholeLen rng2
+    let sufBits := wholeBits ++ #[true]
+    (mkSdsfxrevCase "fuzz/false/longer" #[.slice (mkSliceWithBits wholeBits), .slice (mkSliceWithBits sufBits)], rng3)
+  else if shape = 3 then
+    (mkSdsfxrevCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 4 then
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdsfxrevCase "fuzz/underflow/one" #[noise], rng2)
+  else if shape = 5 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdsfxrevCase "fuzz/type/top" #[.slice wholeA, bad], rng2)
+  else if shape = 6 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdsfxrevCase "fuzz/type/second" #[bad, .slice suffixA], rng2)
+  else
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdsfxrevCase "fuzz/ok/deep" #[noise, .slice wholeA, .slice suffixA], rng2)
+
 def suite : InstrSuite where
   id := sdsfxrevId
   unit := #[
@@ -290,7 +374,11 @@ def suite : InstrSuite where
           #[.slice wholeA, .slice suffixA, intV dispatchSentinel] }
   ]
   oracle := oracleSuccessCases ++ oracleFalseCases ++ oracleErrorCases ++ oracleGasCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021124
+      count := 500
+      gen := genSdsfxrevFuzzCase }
+  ]
 
 initialize registerSuite suite
 

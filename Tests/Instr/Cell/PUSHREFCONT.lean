@@ -429,6 +429,74 @@ private def genPushRefContFuzzInput (rng0 : StdGen) : (Cell × Array Value) × S
 private def pushRefContFuzzSeed : UInt64 := 2026021107
 private def pushRefContFuzzCount : Nat := 320
 
+private def mkOracleCaseFromCode (name : String) (code : Cell) (initStack : Array Value) : OracleCase :=
+  { name := name
+    instr := pushRefContId
+    codeCell? := some code
+    initStack := initStack }
+
+private def genPushRefContOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  if shape = 0 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8) #[c]
+    (mkOracleCaseFromCode "fuzz/ok/single" code st, rng2)
+  else if shape = 1 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8 ++ natToBits pushRefContOpcode 8) #[c, c]
+    (mkOracleCaseFromCode "fuzz/ok/two-same" code st, rng2)
+  else if shape = 2 then
+    let ((c1, st), rng2) := genPushRefContFuzzInput rng1
+    let (c2, rng3) := pickFromPool contCellPool rng2
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8 ++ natToBits pushRefContOpcode 8) #[c1, c2]
+    (mkOracleCaseFromCode "fuzz/ok/two-distinct" code st, rng3)
+  else if shape = 3 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefOpcode 8 ++ natToBits pushRefContOpcode 8) #[c, c]
+    (mkOracleCaseFromCode "fuzz/ok/pushref-then-pushrefcont" code st, rng2)
+  else if shape = 4 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefSliceOpcode 8 ++ natToBits pushRefContOpcode 8) #[c, c]
+    (mkOracleCaseFromCode "fuzz/ok/pushrefslice-then-pushrefcont" code st, rng2)
+  else if shape = 5 then
+    let ((_, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8) #[]
+    (mkOracleCaseFromCode "fuzz/decode-err/missing-ref" code st, rng2)
+  else if shape = 6 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8 ++ natToBits pushRefContOpcode 8) #[c]
+    (mkOracleCaseFromCode "fuzz/decode-err/missing-second-ref" code st, rng2)
+  else if shape = 7 then
+    let ((_, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushSliceConstOpcode 8) #[]
+    (mkOracleCaseFromCode "fuzz/decode-err/truncated-8b" code st, rng2)
+  else if shape = 8 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8 ++ natToBits pushSliceConstOpcode 8) #[c]
+    (mkOracleCaseFromCode "fuzz/decode-err/truncated-8b-after-pushrefcont" code st, rng2)
+  else if shape = 9 then
+    let ((_, st), rng2) := genPushRefContFuzzInput rng1
+    let code : Cell := Cell.mkOrdinary (natToBits pushRefContOpcode 8) #[specialLibraryCell]
+    (mkOracleCaseFromCode "fuzz/error/exec/special-library-ref" code st, rng2)
+  else if shape = 10 then
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let prelude : Array Instr := setGasPrefix gasExactSingleFresh
+    let raw : Except String Cell := mkRawProgramCell prelude #[pushRefContOpcode] #[] #[] #[c]
+    let code :=
+      match raw with
+      | .ok cell => cell
+      | .error _ => Cell.mkOrdinary (natToBits pushRefContOpcode 8) #[c]
+    (mkOracleCaseFromCode "fuzz/gas/exact/single-fresh" code st, rng2)
+  else
+    let ((c, st), rng2) := genPushRefContFuzzInput rng1
+    let prelude : Array Instr := setGasPrefix gasExactSingleFreshMinusOne
+    let raw : Except String Cell := mkRawProgramCell prelude #[pushRefContOpcode] #[] #[] #[c]
+    let code :=
+      match raw with
+      | .ok cell => cell
+      | .error _ => Cell.mkOrdinary (natToBits pushRefContOpcode 8) #[c]
+    (mkOracleCaseFromCode "fuzz/gas/exact-minus-one/single-fresh" code st, rng2)
+
 def suite : InstrSuite where
   id := pushRefContId
   unit := #[
@@ -597,7 +665,11 @@ def suite : InstrSuite where
                 s!"fuzz/direct/{i}: unexpected error {e}\ncell={reprStr c}\nstack={reprStr stack}") }
   ]
   oracle := pushRefContRawOracleCases.map rawOracleToOracleCase
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021112
+      count := 500
+      gen := genPushRefContOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 

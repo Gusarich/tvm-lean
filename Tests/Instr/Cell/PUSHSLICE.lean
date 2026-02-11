@@ -616,6 +616,157 @@ private def oracleCases : Array OracleCase :=
         #[] 4 0 #[oracleRefA, oracleRefB, oracleRefC, oracleRefD] #[.null, .cell oracleRefE])
   ]
 
+private def fuzzRefPool : Array Cell :=
+  #[oracleRefA, oracleRefB, oracleRefC, oracleRefD, oracleRefE]
+
+private def fuzzNoisePool : Array Value :=
+  #[
+    .null,
+    intV 0,
+    intV 7,
+    .cell oracleRefC,
+    .slice (Slice.ofCell oracleRefB),
+    .builder Builder.empty,
+    .tuple #[],
+    .cont (.quit 0)
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def pickPayloadLen (maxPayload : Nat) (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 6
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (Nat.min 1 maxPayload, rng1)
+  else if mode = 2 then
+    (maxPayload, rng1)
+  else if mode = 3 then
+    (if maxPayload > 0 then maxPayload - 1 else 0, rng1)
+  else if mode = 4 then
+    (Nat.min 7 maxPayload, rng1)
+  else if mode = 5 then
+    (Nat.min 31 maxPayload, rng1)
+  else
+    randNat rng1 0 maxPayload
+
+private def fuzzInitStack (rng0 : StdGen) : Array Value × StdGen :=
+  let (mode, rng1) := randNat rng0 0 2
+  if mode = 0 then
+    (#[], rng1)
+  else if mode = 1 then
+    let (v, rng2) := pickFromPool fuzzNoisePool rng1
+    (#[v], rng2)
+  else
+    let (x, rng2) := pickFromPool fuzzNoisePool rng1
+    let (y, rng3) := pickFromPool fuzzNoisePool rng2
+    (#[(.null : Value), x, y], rng3)
+
+private def mkFromCode (name : String) (code : Cell) (initStack : Array Value) : OracleCase :=
+  rawOracleToOracleCase { name := name, code := code, initStack := initStack }
+
+private def genPushSliceFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (initStack, rng1) := fuzzInitStack rng0
+  let (shape, rng2) := randNat rng1 0 11
+  if shape = 0 then
+    let (len4, rng3) := randNat rng2 0 15
+    let maxPayload : Nat := pushSliceDataBits8 len4 - 1
+    let (plen, rng4) := pickPayloadLen maxPayload rng3
+    let (payload, rng5) := randBitString plen rng4
+    (unwrapRawOracleCase "fuzz/8b" (mkRawCase8 "fuzz/ok/8b" payload len4 initStack), rng5)
+  else if shape = 1 then
+    let (r2, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let maxPayload : Nat := pushSliceDataBits15 bits5 - 1
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let (refs, rng7) := genRefs (r2 + 1) rng6
+    (unwrapRawOracleCase "fuzz/8c" (mkRawCase15 "fuzz/ok/8c" payload r2 bits5 refs initStack), rng7)
+  else if shape = 2 then
+    let (refs3, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let maxPayload : Nat := pushSliceDataBits18 len7 - 1
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let (refs, rng7) := genRefs refs3 rng6
+    (unwrapRawOracleCase "fuzz/8d" (mkRawCase18 "fuzz/ok/8d" payload refs3 len7 refs initStack), rng7)
+  else if shape = 3 then
+    let (len4, rng3) := randNat rng2 0 15
+    let code :=
+      match mkTruncated8Code len4 with
+      | .ok c => c
+      | .error _ => Cell.mkOrdinary (natToBits (pushSliceOpcode8 <<< 4) 12) #[]
+    (mkFromCode "fuzz/decode-err/trunc-8b" code initStack, rng3)
+  else if shape = 4 then
+    let (r2, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let code :=
+      match mkTruncated15Code r2 bits5 with
+      | .ok c => c
+      | .error _ => Cell.mkOrdinary (natToBits pushSliceOpcode15 8) #[]
+    (mkFromCode "fuzz/decode-err/trunc-8c" code initStack, rng4)
+  else if shape = 5 then
+    let (refs3, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let code :=
+      match mkTruncated18Code refs3 len7 with
+      | .ok c => c
+      | .error _ => Cell.mkOrdinary (natToBits pushSliceOpcode18 8) #[]
+    (mkFromCode "fuzz/decode-err/trunc-8d" code initStack, rng4)
+  else if shape = 6 then
+    let (r2, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let code :=
+      match mkMissingRefs15Code r2 bits5 with
+      | .ok c => c
+      | .error _ => Cell.mkOrdinary (natToBits pushSliceOpcode15 8) #[]
+    (mkFromCode "fuzz/decode-err/missing-refs-8c" code initStack, rng4)
+  else if shape = 7 then
+    let (refs3, rng3) := randNat rng2 1 4
+    let (len7, rng4) := randNat rng3 0 124
+    let code :=
+      match mkMissingRefs18Code refs3 len7 with
+      | .ok c => c
+      | .error _ => Cell.mkOrdinary (natToBits pushSliceOpcode18 8) #[]
+    (mkFromCode "fuzz/decode-err/missing-refs-8d" code initStack, rng4)
+  else if shape = 8 then
+    let (refs3, rng3) := randNat rng2 5 7
+    let code :=
+      match mkPushSlice18CodeFromRaw refs3 0 #[] #[] with
+      | .ok c => c
+      | .error _ => Cell.mkOrdinary (natToBits pushSliceOpcode18 8) #[]
+    (mkFromCode s!"fuzz/decode-err/invalid-refs{refs3}" code initStack, rng3)
+  else if shape = 9 then
+    let (idx, rng3) := randNat rng2 0 (oracleCases.size - 1)
+    (oracleCases[idx]!, rng3)
+  else if shape = 10 then
+    let (len4, rng3) := randNat rng2 0 15
+    let maxPayload : Nat := pushSliceDataBits8 len4 - 1
+    let (plen, rng4) := pickPayloadLen maxPayload rng3
+    let (payload, rng5) := randBitString plen rng4
+    (unwrapRawOracleCase "fuzz/8b-prelude-tail"
+      (mkRawCase8 "fuzz/ok/8b/prelude-tail" payload len4 initStack #[.pushNull] #[.nop]), rng5)
+  else
+    let (r2, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let maxPayload : Nat := pushSliceDataBits15 bits5 - 1
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let (refs, rng7) := genRefs (r2 + 1) rng6
+    (unwrapRawOracleCase "fuzz/8c-prelude-tail"
+      (mkRawCase15 "fuzz/ok/8c/prelude-tail" payload r2 bits5 refs initStack #[.pushNull] #[.nop]), rng7)
+
 def suite : InstrSuite where
   id := pushsliceId
   unit := ( #[
@@ -787,7 +938,11 @@ def suite : InstrSuite where
         runRawOracleBatchCompare "oracle/handcrafted" cases }
   ] ++ handcraftedOracleUnitCases)
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021113
+      count := 500
+      gen := genPushSliceFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -236,6 +236,172 @@ private def decodeOnce
   | .ok out => pure out
   | .error e => throw (IO.userError s!"{label}: decode failed with {e}")
 
+private def fuzzRefPool : Array Cell :=
+  #[refCellA, refCellB, refCellC, refCellD]
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refCellB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private instance : Inhabited Cell := ⟨Cell.empty⟩
+
+private instance : Inhabited Value := ⟨.null⟩
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def pickPayloadLen (maxPayload : Nat) (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 6
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (Nat.min 1 maxPayload, rng1)
+  else if mode = 2 then
+    (maxPayload, rng1)
+  else if mode = 3 then
+    (if maxPayload > 0 then maxPayload - 1 else 0, rng1)
+  else
+    randNat rng1 0 maxPayload
+
+private def fuzzInitStack (rng0 : StdGen) : Array Value × StdGen :=
+  let (mode, rng1) := randNat rng0 0 2
+  if mode = 0 then
+    (#[], rng1)
+  else if mode = 1 then
+    let (v, rng2) := pickFromPool fuzzNoisePool rng1
+    (#[v], rng2)
+  else
+    let (x, rng2) := pickFromPool fuzzNoisePool rng1
+    let (y, rng3) := pickFromPool fuzzNoisePool rng2
+    (#[(.null : Value), x, y], rng3)
+
+private def genPushsliceRefsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (initStack, rng1) := fuzzInitStack rng0
+  let (shape, rng2) := randNat rng1 0 6
+  if shape = 0 then
+    let (r, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let maxPayload : Nat := bits5 * 8
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let (refs, rng7) := genRefs (r + 1) rng6
+    let codeBits :=
+      match mkPushsliceRefsCodeBits r bits5 payload with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let code : Cell := Cell.mkOrdinary codeBits refs
+    ({ name := "fuzz/ok/random-valid"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng7)
+  else if shape = 1 then
+    let (r0, rng3) := randNat rng2 1 3
+    let r : Nat := r0
+    let (bits5, rng4) := randNat rng3 0 31
+    let codeBits :=
+      match mkPushsliceRefsCodeBits r bits5 #[] with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let (refs, rng5) := genRefs r rng4
+    let code : Cell := Cell.mkOrdinary codeBits refs
+    ({ name := "fuzz/decode-err/missing-inline-refs"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng5)
+  else if shape = 2 then
+    let (r, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let hdr :=
+      match mkPushsliceRefsHeaderBits r bits5 with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let (refs, rng5) := genRefs (r + 1) rng4
+    let code : Cell := Cell.mkOrdinary hdr refs
+    ({ name := "fuzz/decode-err/header-only"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng5)
+  else if shape = 3 then
+    let (r, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let maxPayload : Nat := bits5 * 8
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let hdr :=
+      match mkPushsliceRefsHeaderBits r bits5 with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let raw :=
+      match mkRawWithMarker payload bits5 with
+      | .ok b => b
+      | .error _ => #[true]
+    let (refs, rng7) := genRefs (r + 1) rng6
+    let code : Cell := Cell.mkOrdinary (hdr ++ raw.take (raw.size - 1)) refs
+    ({ name := "fuzz/decode-err/truncated-inline-data"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng7)
+  else if shape = 4 then
+    let (r, rng3) := randNat rng2 0 3
+    let (bits5, rng4) := randNat rng3 0 31
+    let codeBits :=
+      match mkPushsliceRefsCodeBits r bits5 (patternBits (Nat.min 31 (bits5 * 8)) 1) with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let (refs, rng5) := genRefs (r + 1) rng4
+    let stack : Array Value := #[.null, intV (-17)]
+    let code : Cell := Cell.mkOrdinary codeBits refs
+    ({ name := "fuzz/ok/deep-fixed"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := stack
+       fuel := 1_000_000 }, rng5)
+  else if shape = 5 then
+    let (idx, rng3) := randNat rng2 0 2
+    let (r, bits5) := if idx = 0 then (0, 0) else if idx = 1 then (1, 5) else (3, 31)
+    let maxPayload : Nat := bits5 * 8
+    let (plen, rng4) := pickPayloadLen maxPayload rng3
+    let (payload, rng5) := randBitString plen rng4
+    let (refs, rng6) := genRefs (r + 1) rng5
+    let codeBits :=
+      match mkPushsliceRefsCodeBits r bits5 payload with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let code : Cell := Cell.mkOrdinary codeBits refs
+    ({ name := "fuzz/ok/boundary"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng6)
+  else
+    let (r, rng3) := randNat rng2 0 3
+    let bits5 : Nat := 31
+    let hdr :=
+      match mkPushsliceRefsHeaderBits r bits5 with
+      | .ok b => b
+      | .error _ => natToBits 0 15
+    let raw : BitString := Array.replicate (bits5 * 8 + 1) false
+    let (refs, rng4) := genRefs (r + 1) rng3
+    let code : Cell := Cell.mkOrdinary (hdr ++ raw) refs
+    ({ name := "fuzz/ok/all-zero-raw"
+       instr := pushsliceRefsId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng4)
+
 def suite : InstrSuite where
   id := pushsliceRefsId
   unit := #[
@@ -535,7 +701,11 @@ def suite : InstrSuite where
       -- Decode error: truncated inline data (raw missing final bit).
       mkTruncatedRaw "oracle/err/decode/truncated-inline-data" 0 1 (patternBits 4 1) refs1
     ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021115
+      count := 500
+      gen := genPushsliceRefsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

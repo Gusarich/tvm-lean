@@ -111,6 +111,102 @@ private def sdpfxSetGasExact : Int :=
 private def sdpfxSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdpfxInstr
 
+private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
+
+private def refsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell Cell.empty, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def flipHeadBit (bs : BitString) : BitString :=
+  if bs.isEmpty then
+    bs
+  else
+    let b0 := (bs[0]?).getD false
+    #[!b0] ++ bs.extract 1 bs.size
+
+private def genSdpfxFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (targetLen, rng2) := pickBitsMixed rng1
+    let (targetBits, rng3) := randBitString targetLen rng2
+    let (prefLen, rng4) := randNat rng3 0 targetLen
+    let prefBits := targetBits.extract 0 prefLen
+    let (prefRefs, rng5) := pickRefsMixed rng4
+    let (targetRefs, rng6) := pickRefsMixed rng5
+    let pref := mkSliceWithBitsRefs prefBits (refsByCount prefRefs)
+    let target := mkSliceWithBitsRefs targetBits (refsByCount targetRefs)
+    (mkSdpfxCase "fuzz/ok/prefix" #[.slice pref, .slice target], rng6)
+  else if shape = 1 then
+    let (targetLen, rng2) := pickBitsMixed rng1
+    let (targetBits, rng3) := randBitString targetLen rng2
+    if targetLen = 0 then
+      (mkSdpfxCase "fuzz/fail/empty-target-nonempty-pref"
+        #[.slice (mkSliceWithBitsRefs #[true]), .slice (mkSliceWithBitsRefs #[])], rng3)
+    else
+      let (prefLen, rng4) := randNat rng3 1 targetLen
+      let prefBits := flipHeadBit (targetBits.extract 0 prefLen)
+      let (prefRefs, rng5) := pickRefsMixed rng4
+      let (targetRefs, rng6) := pickRefsMixed rng5
+      let pref := mkSliceWithBitsRefs prefBits (refsByCount prefRefs)
+      let target := mkSliceWithBitsRefs targetBits (refsByCount targetRefs)
+      (mkSdpfxCase "fuzz/fail/mismatch" #[.slice pref, .slice target], rng6)
+  else if shape = 2 then
+    let (targetLen, rng2) := randNat rng1 0 128
+    let (targetBits, rng3) := randBitString targetLen rng2
+    let (prefExtra, rng4) := randNat rng3 1 16
+    let prefBits := targetBits ++ #[true] ++ stripeBits (prefExtra - 1) 0
+    let pref := mkSliceWithBitsRefs prefBits
+    let target := mkSliceWithBitsRefs targetBits
+    (mkSdpfxCase "fuzz/fail/pref-longer" #[.slice pref, .slice target], rng4)
+  else if shape = 3 then
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdpfxCase "fuzz/underflow/one" #[noise], rng2)
+  else if shape = 4 then
+    (mkSdpfxCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 5 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdpfxCase "fuzz/type/top" #[.slice equal8A5, bad], rng2)
+  else if shape = 6 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdpfxCase "fuzz/type/second" #[bad, .slice equal8A5], rng2)
+  else
+    let (noise, rng2) := pickNoiseValue rng1
+    let (targetBits, rng3) := randBitString 16 rng2
+    let prefBits := targetBits.extract 0 5
+    let pref := mkSliceWithBitsRefs prefBits
+    let target := mkSliceWithBitsRefs targetBits
+    (mkSdpfxCase "fuzz/ok/deep" #[noise, .slice pref, .slice target], rng3)
+
 def suite : InstrSuite where
   id := { name := "SDPFX" }
   unit := #[
@@ -299,7 +395,11 @@ def suite : InstrSuite where
       #[.slice pref5, .slice target8FromPref5]
       #[.pushInt (.num sdpfxSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdpfxInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021120
+      count := 500
+      gen := genSdpfxFuzzCase }
+  ]
 
 initialize registerSuite suite
 

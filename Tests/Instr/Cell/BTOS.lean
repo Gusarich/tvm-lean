@@ -55,6 +55,72 @@ private def btosSetGasExact : Int :=
 private def btosSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne btosInstr
 
+private def fuzzBitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsLenMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 5 then
+    let (idx, rng2) := randNat rng1 0 (fuzzBitsBoundaryPool.size - 1)
+    (fuzzBitsBoundaryPool[idx]!, rng2)
+  else
+    randNat rng1 0 1023
+
+private def fuzzRefPool : Array Cell :=
+  #[Cell.empty, refLeafA, refLeafB]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def genBuilderMixed (rng0 : StdGen) : Builder × StdGen := Id.run do
+  let (bitsLen, rng1) := pickBitsLenMixed rng0
+  let (refCount, rng2) := randNat rng1 0 4
+  let (bits, rng3) := randBitString bitsLen rng2
+  let (refs, rng4) := genRefs refCount rng3
+  return (({ bits := bits, refs := refs } : Builder), rng4)
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell Cell.empty, .slice (Slice.ofCell Cell.empty), .tuple #[], .cont (.quit 0)]
+
+private def genBtosFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  if shape = 0 then
+    (mkCase "fuzz/underflow" #[], rng1)
+  else if shape = 1 then
+    (mkCase "fuzz/type-null" #[.null], rng1)
+  else if shape = 2 then
+    (mkCase "fuzz/type-int" #[intV 9], rng1)
+  else if shape = 3 then
+    (mkCase "fuzz/type-cell" #[.cell Cell.empty], rng1)
+  else if shape = 4 then
+    (mkCase "fuzz/type-slice" #[.slice (Slice.ofCell Cell.empty)], rng1)
+  else if shape = 5 then
+    (mkCase "fuzz/ok/empty-builder" #[.builder Builder.empty], rng1)
+  else if shape = 6 then
+    let (b, rng2) := genBuilderMixed rng1
+    (mkCase "fuzz/ok/random-builder" #[.builder b], rng2)
+  else if shape = 7 then
+    let (b, rng2) := genBuilderMixed rng1
+    let (noise, rng3) := pickFromPool fuzzNoisePool rng2
+    (mkCase "fuzz/ok/deep-noise" #[noise, .builder b], rng3)
+  else if shape = 8 then
+    let (b, rng2) := genBuilderMixed rng1
+    let stack : Array Value := #[.null, intV (-3), .tuple #[], .builder b]
+    (mkCase "fuzz/ok/deep-fixed" stack, rng2)
+  else
+    let (b, rng2) := genBuilderMixed rng1
+    (mkCase "fuzz/ok/deep-with-slice" #[.slice (Slice.ofCell Cell.empty), .builder b], rng2)
+
 def suite : InstrSuite where
   id := btosId
   unit := #[]
@@ -76,7 +142,11 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[.builder Builder.empty]
       #[.pushInt (.num btosSetGasExactMinusOne), .tonEnvOp .setGasLimit, btosInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021101
+      count := 500
+      gen := genBtosFuzzCase }
+  ]
 
 initialize registerSuite suite
 

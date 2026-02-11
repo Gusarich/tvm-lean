@@ -19,7 +19,7 @@ def execInstrDictDictGetExec (i : Instr) (next : VM Unit) : VM Unit := do
       | some keyBits =>
           -- Match C++ `Dictionary` lookup path: entering dictionary traversal loads root once.
           match dictCell? with
-          | some c => modify fun st => st.registerCellLoad c
+          | some c => VM.registerCellLoad c
           | none => pure ()
           match dictLookupWithCells dictCell? keyBits with
           | .error e =>
@@ -29,7 +29,7 @@ def execInstrDictDictGetExec (i : Instr) (next : VM Unit) : VM Unit := do
                 | none => loadedAll
                 | some root => loadedAll.filter (fun c => c != root)
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               throw e
           | .ok (res?, loaded0) =>
               let loaded :=
@@ -37,7 +37,7 @@ def execInstrDictDictGetExec (i : Instr) (next : VM Unit) : VM Unit := do
                 | none => loaded0
                 | some root => loaded0.filter (fun c => c != root)
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               match res? with
               | none =>
                   if pushZ then

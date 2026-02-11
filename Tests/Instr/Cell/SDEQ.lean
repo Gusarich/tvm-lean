@@ -129,6 +129,129 @@ private structure EqCheck where
   right : Slice
   expected : Int
 
+private def sdeqLenPool : Array Nat :=
+  #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023]
+
+private def pickSdeqBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 3 then
+    let (idx, rng2) := randNat rng1 0 (sdeqLenPool.size - 1)
+    (sdeqLenPool[idx]!, rng2)
+  else if mode ≤ 6 then
+    randNat rng1 0 96
+  else
+    randNat rng1 97 1023
+
+private def pickSdeqRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def mkRefsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, Cell.empty]
+
+private def mkFuzzSlice (bits refs : Nat) (phase : Nat := 0) : Slice :=
+  mkSliceWithBitsRefs (stripeBits bits phase) (mkRefsByCount refs)
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (pick, rng1) := randNat rng0 0 2
+  if pick = 0 then
+    (.null, rng1)
+  else if pick = 1 then
+    (intV 41, rng1)
+  else
+    (.cell refLeafB, rng1)
+
+private def pickBadNonSliceValue (rng0 : StdGen) : Value × String × StdGen :=
+  let (pick, rng1) := randNat rng0 0 5
+  if pick = 0 then
+    (.null, "null", rng1)
+  else if pick = 1 then
+    (intV 7, "int", rng1)
+  else if pick = 2 then
+    (.cell refLeafC, "cell", rng1)
+  else if pick = 3 then
+    (.builder Builder.empty, "builder", rng1)
+  else if pick = 4 then
+    (.tuple #[], "tuple", rng1)
+  else
+    (.cont (.quit 0), "cont", rng1)
+
+private def genSdeqFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  if shape = 0 then
+    let (bits, rng2) := pickSdeqBitsMixed rng1
+    let (refs, rng3) := pickSdeqRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let s := mkFuzzSlice bits refs phase
+    (mkSdeqCase s!"fuzz/ok/equal/bits-{bits}/refs-{refs}" (mkSdeqStack s s), rng4)
+  else if shape = 1 then
+    let (bits, rng2) := pickSdeqBitsMixed rng1
+    let (refsA, rng3) := pickSdeqRefsMixed rng2
+    let (refsB, rng4) := pickSdeqRefsMixed rng3
+    let (phase, rng5) := randNat rng4 0 3
+    let sBits := stripeBits bits phase
+    let s1 := mkSliceWithBitsRefs sBits (mkRefsByCount refsA)
+    let s2 := mkSliceWithBitsRefs sBits (mkRefsByCount refsB)
+    (mkSdeqCase s!"fuzz/ok/equal-bits-diff-refs/bits-{bits}/ra-{refsA}/rb-{refsB}" (mkSdeqStack s1 s2), rng5)
+  else if shape = 2 then
+    let (bits, rng2) := pickSdeqBitsMixed rng1
+    let (refs, rng3) := pickSdeqRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let s1 := mkFuzzSlice bits refs phase
+    let s2 := mkFuzzSlice bits refs (phase + 1)
+    (mkSdeqCase s!"fuzz/ok/not-equal/bits-{bits}/refs-{refs}" (mkSdeqStack s1 s2), rng4)
+  else if shape = 3 then
+    let (bits, rng2) := pickSdeqBitsMixed rng1
+    let bits' := if bits = 1023 then 1022 else bits
+    let (refs, rng3) := pickSdeqRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let s1 := mkFuzzSlice bits' refs phase
+    let s2 := mkFuzzSlice (bits' + 1) refs phase
+    (mkSdeqCase s!"fuzz/ok/len-mismatch/b1-{bits'}/b2-{bits' + 1}/refs-{refs}" (mkSdeqStack s1 s2), rng4)
+  else if shape = 4 then
+    let (bits, rng2) := pickSdeqBitsMixed rng1
+    let (refs, rng3) := pickSdeqRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let (noise, rng5) := pickNoiseValue rng4
+    let s1 := mkFuzzSlice bits refs phase
+    let s2 := mkFuzzSlice bits refs phase
+    (mkSdeqCase s!"fuzz/ok/deep/bits-{bits}/refs-{refs}" #[noise, .slice s1, .slice s2], rng5)
+  else if shape = 5 then
+    (mkSdeqCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 6 then
+    let (bits, rng2) := pickSdeqBitsMixed rng1
+    let s := mkFuzzSlice bits 0 0
+    (mkSdeqCase s!"fuzz/underflow/one-slice/bits-{bits}" #[.slice s], rng2)
+  else if shape = 7 then
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    (mkSdeqCase s!"fuzz/type/top-{tag}" #[.slice sliceEmpty, bad], rng2)
+  else if shape = 8 then
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    (mkSdeqCase s!"fuzz/type/second-{tag}" #[bad, .slice sliceBit1], rng2)
+  else if shape = 9 then
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    (mkSdeqCase s!"fuzz/type/one-{tag}" #[bad], rng2)
+  else if shape = 10 then
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    let s1 := mkFuzzSlice 8 1 0
+    let s2 := mkFuzzSlice 8 1 1
+    (mkSdeqCase s!"fuzz/type/deep-top-{tag}" #[.slice s1, .slice s2, bad], rng2)
+  else
+    let bits : Nat := 64
+    let sBits := stripeBits bits 1
+    let s1 := mkSliceWithBitsRefs sBits #[refLeafA]
+    let s2 := mkSliceWithBitsRefs sBits #[refLeafB, refLeafC]
+    (mkSdeqCase "fuzz/ok/equal-bits-heavy-refs" (mkSdeqStack s1 s2), rng1)
+
 def suite : InstrSuite where
   id := sdeqId
   unit := #[
@@ -273,7 +396,11 @@ def suite : InstrSuite where
       (mkSdeqStack sliceBits8A sliceBits8LastDiff)
       #[.pushInt (.num sdeqSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdeqInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021115
+      count := 500
+      gen := genSdeqFuzzCase }
+  ]
 
 initialize registerSuite suite
 

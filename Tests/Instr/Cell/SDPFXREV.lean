@@ -135,6 +135,97 @@ private def sdPfxRevSetGasExact : Int :=
 private def sdPfxRevSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdPfxRevInstr
 
+private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
+
+private def refsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell Cell.empty, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def flipHeadBit (bs : BitString) : BitString :=
+  if bs.isEmpty then
+    bs
+  else
+    let b0 := (bs[0]?).getD false
+    #[!b0] ++ bs.extract 1 bs.size
+
+private def genSdPfxRevFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (sLen, rng2) := pickBitsMixed rng1
+    let (sBits, rng3) := randBitString sLen rng2
+    let (prefLen, rng4) := randNat rng3 0 sLen
+    let prefBits := sBits.extract 0 prefLen
+    let (sRefs, rng5) := pickRefsMixed rng4
+    let (prefRefs, rng6) := pickRefsMixed rng5
+    let s := mkFullSlice sBits (refsByCount sRefs)
+    let pref := mkFullSlice prefBits (refsByCount prefRefs)
+    (mkSdPfxRevCase "fuzz/ok/prefix" #[.slice s, .slice pref], rng6)
+  else if shape = 1 then
+    let (sLen, rng2) := pickBitsMixed rng1
+    let (sBits, rng3) := randBitString sLen rng2
+    if sLen = 0 then
+      (mkSdPfxRevCase "fuzz/fail/empty-s-nonempty-pref"
+        #[.slice (mkFullSlice #[]), .slice (mkFullSlice #[true])], rng3)
+    else
+      let (prefLen, rng4) := randNat rng3 1 sLen
+      let prefBits := flipHeadBit (sBits.extract 0 prefLen)
+      let (sRefs, rng5) := pickRefsMixed rng4
+      let (prefRefs, rng6) := pickRefsMixed rng5
+      let s := mkFullSlice sBits (refsByCount sRefs)
+      let pref := mkFullSlice prefBits (refsByCount prefRefs)
+      (mkSdPfxRevCase "fuzz/fail/mismatch" #[.slice s, .slice pref], rng6)
+  else if shape = 2 then
+    let (sLen, rng2) := randNat rng1 0 128
+    let (sBits, rng3) := randBitString sLen rng2
+    let (extra, rng4) := randNat rng3 1 16
+    let prefBits := sBits ++ #[true] ++ stripeBits (extra - 1) 1
+    (mkSdPfxRevCase "fuzz/fail/pref-longer"
+      #[.slice (mkFullSlice sBits), .slice (mkFullSlice prefBits)], rng4)
+  else if shape = 3 then
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdPfxRevCase "fuzz/underflow/one" #[noise], rng2)
+  else if shape = 4 then
+    (mkSdPfxRevCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 5 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdPfxRevCase "fuzz/type/top" #[.slice sliceS6, bad], rng2)
+  else if shape = 6 then
+    let (bad, rng2) := pickNoiseValue rng1
+    (mkSdPfxRevCase "fuzz/type/second" #[bad, .slice slicePref3], rng2)
+  else
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkSdPfxRevCase "fuzz/ok/deep" #[noise, .slice sliceS6, .slice slicePref3], rng2)
+
 def suite : InstrSuite where
   id := sdPfxRevId
   unit := #[
@@ -310,7 +401,11 @@ def suite : InstrSuite where
       #[.slice sliceS6, .slice slicePref3]
       #[.pushInt (.num sdPfxRevSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdPfxRevInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021121
+      count := 500
+      gen := genSdPfxRevFuzzCase }
+  ]
 
 initialize registerSuite suite
 

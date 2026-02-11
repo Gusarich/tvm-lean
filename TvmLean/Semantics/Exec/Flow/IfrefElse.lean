@@ -9,7 +9,7 @@ def execInstrFlowIfrefElse (i : Instr) (next : VM Unit) : VM Unit := do
       VM.checkUnderflow 2
       let cont ← VM.popCont
       if (← VM.popBool) then
-        modify fun st => st.registerCellLoad code.cell
+        VM.registerCellLoad code.cell
         modify fun st => st.callTo (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
       else
         modify fun st => st.callTo cont

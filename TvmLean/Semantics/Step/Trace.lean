@@ -201,7 +201,7 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
           let st0 := st.consumeGas implicitRetGasPrice
           let res :=
             if decide (st0.gas.gasRemaining < 0) then
-              st0.gasCheckFailed
+              st0.outOfGasHalt
             else
               let (res0, st1) := (VM.ret).run st0
               match res0 with
@@ -223,12 +223,12 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
           let st0 := st.consumeGas implicitJmpRefGasPrice
           let res :=
             if decide (st0.gas.gasRemaining < 0) then
-              st0.gasCheckFailed
+              st0.outOfGasHalt
             else if code.refPos < code.cell.refs.size then
               let refCell := code.cell.refs[code.refPos]!
               let st1 := st0.registerCellLoad refCell
               if decide (st1.gas.gasRemaining < 0) then
-                st1.gasCheckFailed
+                st1.outOfGasHalt
               else
                 .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
             else
@@ -276,22 +276,25 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
             let stGas := st0.consumeGas (instrGas instr totBits)
             let (event, res) :=
               if decide (stGas.gas.gasRemaining < 0) then
-                (s!"exec({instr.pretty}) out_of_gas", stGas.gasCheckFailed)
+                (s!"exec({instr.pretty}) out_of_gas", stGas.outOfGasHalt)
               else
                 let (res1, st1) := (execInstr host instr).run stGas
                 match res1 with
                 | .ok _ =>
                     if decide (st1.gas.gasRemaining < 0) then
-                      (s!"exec({instr.pretty}) out_of_gas", st1.gasCheckFailed)
+                      (s!"exec({instr.pretty}) out_of_gas", st1.outOfGasHalt)
                     else
                       (s!"exec({instr.pretty})", .continue st1)
                 | .error e =>
-                    let stExc := st1.throwException e.toInt
-                    let stExcGas := stExc.consumeGas exceptionGasPrice
-                    if decide (stExcGas.gas.gasRemaining < 0) then
-                      (s!"exec_error({instr.pretty},{reprStr e}) out_of_gas", stExcGas.outOfGasHalt)
+                    if e = .outOfGas then
+                      (s!"exec({instr.pretty}) out_of_gas", st1.outOfGasHalt)
                     else
-                      (s!"exec_error({instr.pretty},{reprStr e})", .continue stExcGas)
+                      let stExc := st1.throwException e.toInt
+                      let stExcGas := stExc.consumeGas exceptionGasPrice
+                      if decide (stExcGas.gas.gasRemaining < 0) then
+                        (s!"exec_error({instr.pretty},{reprStr e}) out_of_gas", stExcGas.outOfGasHalt)
+                      else
+                        (s!"exec_error({instr.pretty},{reprStr e})", .continue stExcGas)
             let stAfter :=
               match res with
               | .continue st' => st'

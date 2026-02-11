@@ -331,6 +331,84 @@ private def oracleCases : Array OracleCase :=
     mkOracleCase "oracle/err/nonquiet/library-no-ref-value" xloadCode1 #[.cell specialLibraryRefA] #[libCollectionNoRefA]
   ]
 
+private def fuzzRefPool : Array Cell :=
+  #[Cell.empty, refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def pickFromPool {α : Type} (pool : Array α) (fallback : α) (rng0 : StdGen) : α × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (pool.size - 1)
+  (((pool[idx]?).getD fallback), rng1)
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool Cell.empty rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsLenMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def genOrdinaryCell (rng0 : StdGen) : Cell × StdGen :=
+  let (bitLen, rng1) := pickBitsLenMixed rng0
+  let (refCount, rng2) := randNat rng1 0 4
+  let (bits, rng3) := randBitString bitLen rng2
+  let (refs, rng4) := genRefs refCount rng3
+  (Cell.mkOrdinary bits refs, rng4)
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  pickFromPool fuzzNoisePool .null rng0
+
+private def fuzzLibChoices : Array (Array Cell) :=
+  #[#[], #[libCollectionHitA], #[libCollectionMismatchA], #[libCollectionNoRefA]]
+
+private def genXloadFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (c, rng2) := genOrdinaryCell rng1
+    (mkOracleCase "fuzz/ok/ordinary" xloadCode1 #[.cell c], rng2)
+  else if shape = 1 then
+    let (c, rng2) := genOrdinaryCell rng1
+    let (noise, rng3) := pickNoiseValue rng2
+    (mkOracleCase "fuzz/ok/deep-ordinary" xloadCode1 #[noise, .cell c], rng3)
+  else if shape = 2 then
+    let (c, rng2) := genOrdinaryCell rng1
+    (mkOracleCase "fuzz/ok/reload" xloadCode2 #[.cell c], rng2)
+  else if shape = 3 then
+    let (mode, rng2) := randNat rng1 0 2
+    let special : Cell :=
+      if mode = 0 then specialPrunedMask1
+      else if mode = 1 then mkMerkleProofCell cOrdBits8
+      else mkMerkleUpdateCell cOrdEmpty cOrdBits8
+    (mkOracleCase "fuzz/err/special-nonlib" xloadCode1 #[.cell special], rng2)
+  else if shape = 4 then
+    let (libs, rng2) := pickFromPool fuzzLibChoices #[] rng1
+    (mkOracleCase "fuzz/library/lookup" xloadCode1 #[.cell specialLibraryRefA] libs, rng2)
+  else if shape = 5 then
+    (mkOracleCase "fuzz/err/underflow" xloadCode1 #[], rng1)
+  else if shape = 6 then
+    let (mode, rng2) := randNat rng1 0 2
+    let bad : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then intV 7
+      else .slice (Slice.ofCell cOrdBits8)
+    (mkOracleCase "fuzz/err/type" xloadCode1 #[bad], rng2)
+  else
+    let (noise, rng2) := pickNoiseValue rng1
+    (mkOracleCase "fuzz/underflow/one" xloadCode1 #[noise], rng2)
+
 def suite : InstrSuite where
   id := xloadId
   unit := #[
@@ -568,7 +646,11 @@ def suite : InstrSuite where
           #[.null, intV dispatchSentinel] }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021128
+      count := 500
+      gen := genXloadFuzzCase }
+  ]
 
 initialize registerSuite suite
 

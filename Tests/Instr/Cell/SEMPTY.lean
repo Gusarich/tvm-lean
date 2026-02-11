@@ -117,6 +117,97 @@ private def semptySetGasExact : Int :=
 private def semptySetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne semptyInstr
 
+private def semptyLenPool : Array Nat :=
+  #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023]
+
+private def pickSemptyBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 3 then
+    let (idx, rng2) := randNat rng1 0 (semptyLenPool.size - 1)
+    (semptyLenPool[idx]!, rng2)
+  else if mode ≤ 6 then
+    randNat rng1 0 96
+  else
+    randNat rng1 97 1023
+
+private def pickSemptyRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def mkRefsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, Cell.empty]
+
+private def mkFuzzSlice (bits refs : Nat) : Slice :=
+  mkSliceWithBitsRefs (stripeBits bits (bits % 3)) (mkRefsByCount refs)
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (pick, rng1) := randNat rng0 0 3
+  let v : Value :=
+    if pick = 0 then .null
+    else if pick = 1 then intV 41
+    else if pick = 2 then .cell refLeafC
+    else .builder Builder.empty
+  (v, rng1)
+
+private def pickBadTopValue (rng0 : StdGen) : Value × String × StdGen :=
+  let (pick, rng1) := randNat rng0 0 5
+  if pick = 0 then
+    (.null, "null", rng1)
+  else if pick = 1 then
+    (intV 99, "int", rng1)
+  else if pick = 2 then
+    (.cell refLeafA, "cell", rng1)
+  else if pick = 3 then
+    (.builder Builder.empty, "builder", rng1)
+  else if pick = 4 then
+    (.tuple #[], "tuple", rng1)
+  else
+    (.cont (.quit 0), "cont", rng1)
+
+private def sskipfirstInstr : Instr := .cellOp .sskipfirst
+
+private def genSemptyFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    (mkSemptyCase "fuzz/ok/empty" #[.slice (mkFuzzSlice 0 0)], rng1)
+  else if shape = 1 then
+    let (bits, rng2) := pickSemptyBitsMixed rng1
+    let (refs, rng3) := pickSemptyRefsMixed rng2
+    (mkSemptyCase s!"fuzz/ok/full/bits-{bits}/refs-{refs}"
+      #[.slice (mkFuzzSlice bits refs)], rng3)
+  else if shape = 2 then
+    let (bits, rng2) := pickSemptyBitsMixed rng1
+    let (refs, rng3) := pickSemptyRefsMixed rng2
+    (mkSemptyCase s!"fuzz/ok/cursor/consume-all/bits-{bits}/refs-{refs}"
+      #[.slice (mkFuzzSlice bits refs), intV (Int.ofNat bits), intV (Int.ofNat refs)]
+      #[sskipfirstInstr, semptyInstr], rng3)
+  else if shape = 3 then
+    let (bits, rng2) := pickSemptyBitsMixed rng1
+    let (refs, rng3) := pickSemptyRefsMixed rng2
+    let (noise, rng4) := pickNoiseValue rng3
+    (mkSemptyCase s!"fuzz/ok/deep/bits-{bits}/refs-{refs}"
+      #[noise, .slice (mkFuzzSlice bits refs)], rng4)
+  else if shape = 4 then
+    (mkSemptyCase "fuzz/underflow/empty" #[], rng1)
+  else
+    let (bad, tag, rng2) := pickBadTopValue rng1
+    if shape = 5 then
+      (mkSemptyCase s!"fuzz/type/top-{tag}" #[bad], rng2)
+    else
+      let (bits, rng3) := pickSemptyBitsMixed rng2
+      let (refs, rng4) := pickSemptyRefsMixed rng3
+      (mkSemptyCase s!"fuzz/type/deep-top-{tag}"
+        #[.slice (mkFuzzSlice bits refs), bad], rng4)
+
 def suite : InstrSuite where
   id := { name := "SEMPTY" }
   unit := #[
@@ -286,7 +377,11 @@ def suite : InstrSuite where
     mkSemptyCase "gas/exact-minus-one-out-of-gas" #[.slice sliceBits1]
       #[.pushInt (.num semptySetGasExactMinusOne), .tonEnvOp .setGasLimit, .sempty]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021112
+      count := 500
+      gen := genSemptyFuzzCase }
+  ]
 
 initialize registerSuite suite
 

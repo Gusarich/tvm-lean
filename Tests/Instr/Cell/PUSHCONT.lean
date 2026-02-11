@@ -172,6 +172,80 @@ private def mkOracleGeneralCase
     initStack := initStack
     fuel := fuel }
 
+private def noisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def refPool : Array Cell :=
+  #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool refPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def genPushContFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (kind, rng1) := randNat rng0 0 1
+  let (shape, rng2) := randNat rng1 0 7
+  let (stackMode, rng3) := randNat rng2 0 2
+  let (noise, rng4) := pickFromPool noisePool rng3
+  let initStack : Array Value :=
+    if stackMode = 0 then
+      #[]
+    else if stackMode = 1 then
+      #[noise]
+    else
+      #[.null, intV (-9), noise]
+
+  if kind = 0 then
+    -- General encoding (16-bit header + refs + payload bytes).
+    let (refsN, rng5) := randNat rng4 0 3
+    let maxLenBytes : Nat := 125
+    let (lenBytes, rng6) := randNat rng5 0 maxLenBytes
+    let wantBits : Nat := lenBytes * 8
+    let (payloadLenBits, rng7) :=
+      if shape = 0 then
+        (wantBits, rng6)
+      else if shape = 1 then
+        if wantBits = 0 then (0, rng6) else randNat rng6 0 (wantBits - 1)
+      else
+        (wantBits, rng6)
+    let (payload, rng8) := randBitString payloadLenBits rng7
+    let (codeRefs, rng9) :=
+      if shape = 2 then
+        -- Missing refs: provide strictly fewer than requested.
+        let haveRefs := if refsN = 0 then 0 else refsN - 1
+        genRefs haveRefs rng8
+      else
+        genRefs refsN rng8
+    let stack0 := initStack
+    (mkOracleGeneralCase s!"fuzz/general/shape-{shape}" refsN lenBytes payload codeRefs stack0, rng9)
+  else
+    -- Short encoding (8-bit header + payload bytes; no refs).
+    let (lenBytes, rng5) := randNat rng4 0 15
+    let wantBits : Nat := lenBytes * 8
+    let (payloadLenBits, rng6) :=
+      if shape = 0 then
+        (wantBits, rng5)
+      else if shape = 1 then
+        if wantBits = 0 then (0, rng5) else randNat rng5 0 (wantBits - 1)
+      else
+        (wantBits, rng5)
+    let (payload, rng7) := randBitString payloadLenBits rng6
+    let codeCell : Cell := Cell.mkOrdinary (mkShortBits lenBytes payload) #[]
+    ({ name := s!"fuzz/short/shape-{shape}"
+       instr := pushContId
+       codeCell? := some codeCell
+       initStack := initStack
+       fuel := 1_000_000 }, rng7)
+
 def suite : InstrSuite where
   id := pushContId
   unit := #[
@@ -495,7 +569,11 @@ def suite : InstrSuite where
     mkOracleGeneralCase "decode/err/missing-refs" 2 0 #[] #[],
     mkOracleGeneralCase "decode/err/missing-refs-with-payload" 3 1 (stripeBits 8 0) #[refLeafA]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021109
+      count := 500
+      gen := genPushContFuzzCase }
+  ]
 
 initialize registerSuite suite
 

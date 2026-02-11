@@ -71,6 +71,101 @@ private def sdemptySetGasExact : Int :=
 private def sdemptySetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdemptyInstr
 
+private def sdemptyLenPool : Array Nat :=
+  #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023]
+
+private def pickSdemptyBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 3 then
+    let (idx, rng2) := randNat rng1 0 (sdemptyLenPool.size - 1)
+    (sdemptyLenPool[idx]!, rng2)
+  else if mode ≤ 6 then
+    randNat rng1 0 96
+  else
+    randNat rng1 97 1023
+
+private def pickSdemptyRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (pick, rng1) := randNat rng0 0 2
+  if pick = 0 then
+    (.null, rng1)
+  else if pick = 1 then
+    (intV 41, rng1)
+  else
+    (.cell Cell.empty, rng1)
+
+private def pickBadTopValue (rng0 : StdGen) : Value × String × StdGen :=
+  let (pick, rng1) := randNat rng0 0 5
+  if pick = 0 then
+    (.null, "null", rng1)
+  else if pick = 1 then
+    (intV 0, "int", rng1)
+  else if pick = 2 then
+    (.cell Cell.empty, "cell", rng1)
+  else if pick = 3 then
+    (.builder Builder.empty, "builder", rng1)
+  else if pick = 4 then
+    (.tuple #[], "tuple", rng1)
+  else
+    (.cont (.quit 0), "cont", rng1)
+
+private def sskipfirstInstr : Instr := .cellOp .sskipfirst
+
+private def genSdemptyFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (bits, rng2) := pickSdemptyBitsMixed rng1
+    let (refs, rng3) := pickSdemptyRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    (mkSdemptyCase s!"fuzz/ok/full/bits-{bits}/refs-{refs}"
+      #[.slice (mkSliceWithSize bits refs phase)], rng4)
+  else if shape = 1 then
+    let (bits, rng2) := pickSdemptyBitsMixed rng1
+    let (refs, rng3) := pickSdemptyRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let (noise, rng5) := pickNoiseValue rng4
+    (mkSdemptyCase s!"fuzz/ok/deep/bits-{bits}/refs-{refs}"
+      #[noise, .slice (mkSliceWithSize bits refs phase)], rng5)
+  else if shape = 2 then
+    let (bits, rng2) := pickSdemptyBitsMixed rng1
+    let (refs, rng3) := pickSdemptyRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let (skipBits, rng5) := randNat rng4 0 bits
+    let (skipRefs, rng6) := randNat rng5 0 refs
+    (mkSdemptyCase s!"fuzz/ok/cursor/skipb-{skipBits}/skipr-{skipRefs}/bits-{bits}/refs-{refs}"
+      #[.slice (mkSliceWithSize bits refs phase), intV (Int.ofNat skipBits), intV (Int.ofNat skipRefs)]
+      #[sskipfirstInstr, sdemptyInstr], rng6)
+  else if shape = 3 then
+    let (refs, rng2) := pickSdemptyRefsMixed rng1
+    let (phase, rng3) := randNat rng2 0 3
+    (mkSdemptyCase s!"fuzz/ok/refs-only/refs-{refs}"
+      #[.slice (mkSliceWithSize 0 refs phase)], rng3)
+  else if shape = 4 then
+    let (bits, rng2) := pickSdemptyBitsMixed rng1
+    let (phase, rng3) := randNat rng2 0 3
+    (mkSdemptyCase s!"fuzz/ok/bits-only/bits-{bits}"
+      #[.slice (mkSliceWithSize bits 0 phase)], rng3)
+  else if shape = 5 then
+    (mkSdemptyCase "fuzz/underflow/empty" #[], rng1)
+  else
+    let (bad, tag, rng2) := pickBadTopValue rng1
+    let (bits, rng3) := pickSdemptyBitsMixed rng2
+    let (refs, rng4) := pickSdemptyRefsMixed rng3
+    let (phase, rng5) := randNat rng4 0 3
+    if shape = 6 then
+      (mkSdemptyCase s!"fuzz/type/top-{tag}" #[bad], rng5)
+    else
+      (mkSdemptyCase s!"fuzz/type/deep-top-{tag}"
+        #[.slice (mkSliceWithSize bits refs phase), bad], rng5)
+
 def suite : InstrSuite where
   id := sdemptyId
   unit := #[
@@ -232,7 +327,11 @@ def suite : InstrSuite where
       #[.slice (mkSliceWithSize 1 0)]
       #[.pushInt (.num sdemptySetGasExactMinusOne), .tonEnvOp .setGasLimit, sdemptyInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021111
+      count := 500
+      gen := genSdemptyFuzzCase }
+  ]
 
 initialize registerSuite suite
 

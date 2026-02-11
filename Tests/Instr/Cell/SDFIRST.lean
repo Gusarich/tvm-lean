@@ -131,6 +131,101 @@ private def sdFirstSetGasExact : Int :=
 private def sdFirstSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdFirstInstr
 
+private def sdFirstLenPool : Array Nat :=
+  #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023]
+
+private def pickSdFirstBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 3 then
+    let (idx, rng2) := randNat rng1 0 (sdFirstLenPool.size - 1)
+    (sdFirstLenPool[idx]!, rng2)
+  else if mode ≤ 6 then
+    randNat rng1 0 96
+  else
+    randNat rng1 97 1023
+
+private def pickSdFirstRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def mkRefsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, Cell.empty]
+
+private def mkFuzzSlice (bits refs : Nat) (phase : Nat := 0) : Slice :=
+  mkSliceWithBitsRefs (stripeBits bits phase) (mkRefsByCount refs)
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (pick, rng1) := randNat rng0 0 2
+  if pick = 0 then
+    (.null, rng1)
+  else if pick = 1 then
+    (intV (-3), rng1)
+  else
+    (.cell refLeafB, rng1)
+
+private def pickBadTopValue (rng0 : StdGen) : Value × String × StdGen :=
+  let (pick, rng1) := randNat rng0 0 4
+  if pick = 0 then
+    (.null, "null", rng1)
+  else if pick = 1 then
+    (intV 11, "int", rng1)
+  else if pick = 2 then
+    (.cell refLeafA, "cell", rng1)
+  else if pick = 3 then
+    (.builder Builder.empty, "builder", rng1)
+  else
+    (.tuple #[], "tuple", rng1)
+
+private def sskipfirstInstr : Instr := .cellOp .sskipfirst
+
+private def genSdFirstFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 6
+  if shape = 0 then
+    (mkSdFirstCase "fuzz/ok/empty" #[.slice (mkFuzzSlice 0 0)], rng1)
+  else if shape = 1 then
+    let (bits, rng2) := pickSdFirstBitsMixed rng1
+    let (refs, rng3) := pickSdFirstRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 1
+    (mkSdFirstCase s!"fuzz/ok/full/bits-{bits}/refs-{refs}/phase-{phase}"
+      #[.slice (mkFuzzSlice bits refs phase)], rng4)
+  else if shape = 2 then
+    let (bits, rng2) := pickSdFirstBitsMixed rng1
+    let (refs, rng3) := pickSdFirstRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 1
+    let (noise, rng5) := pickNoiseValue rng4
+    (mkSdFirstCase s!"fuzz/ok/deep/bits-{bits}/refs-{refs}"
+      #[noise, .slice (mkFuzzSlice bits refs phase)], rng5)
+  else if shape = 3 then
+    let (bits, rng2) := pickSdFirstBitsMixed rng1
+    let (refs, rng3) := pickSdFirstRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 1
+    let (skipBits, rng5) := randNat rng4 0 bits
+    let (skipRefs, rng6) := randNat rng5 0 refs
+    (mkSdFirstCase s!"fuzz/ok/cursor/skipb-{skipBits}/skipr-{skipRefs}/bits-{bits}/refs-{refs}"
+      #[.slice (mkFuzzSlice bits refs phase), intV (Int.ofNat skipBits), intV (Int.ofNat skipRefs)]
+      #[sskipfirstInstr, sdFirstInstr], rng6)
+  else if shape = 4 then
+    (mkSdFirstCase "fuzz/underflow/empty" #[], rng1)
+  else
+    let (bad, tag, rng2) := pickBadTopValue rng1
+    if shape = 5 then
+      (mkSdFirstCase s!"fuzz/type/top-{tag}" #[bad], rng2)
+    else
+      let (bits, rng3) := pickSdFirstBitsMixed rng2
+      let (refs, rng4) := pickSdFirstRefsMixed rng3
+      let (phase, rng5) := randNat rng4 0 1
+      (mkSdFirstCase s!"fuzz/type/deep-top-{tag}"
+        #[.slice (mkFuzzSlice bits refs phase), bad], rng5)
+
 def suite : InstrSuite where
   id := { name := "SDFIRST" }
   unit := #[
@@ -313,7 +408,11 @@ def suite : InstrSuite where
       #[.slice sliceSingleTrue]
       #[.pushInt (.num sdFirstSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdFirstInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021114
+      count := 500
+      gen := genSdFirstFuzzCase }
+  ]
 
 initialize registerSuite suite
 

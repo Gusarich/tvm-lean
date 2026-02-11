@@ -134,6 +134,77 @@ private def mkOracleMissingRefCase
     initStack := initStack
     fuel := fuel }
 
+private def okRefPool : Array Cell :=
+  #[
+    pushCellEmpty,
+    pushCellBitsOnly,
+    pushCellOneRef,
+    pushCellFourRefsMaxBits,
+    pushCellNested
+  ]
+
+private def noisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refLeaf2, .slice noiseSlice, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genPushRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let (stackMode, rng2) := randNat rng1 0 2
+  let (noise, rng3) := pickFromPool noisePool rng2
+  let initStack : Array Value :=
+    if stackMode = 0 then
+      #[]
+    else if stackMode = 1 then
+      #[noise]
+    else
+      #[.null, intV (-9), noise]
+
+  if shape = 0 then
+    let (c, rng4) := pickFromPool okRefPool rng3
+    (mkOracleCase "fuzz/ok/pushref" c initStack, rng4)
+  else if shape = 1 then
+    let (c, rng4) := pickFromPool okRefPool rng3
+    let stack : Array Value := #[.null, intV 7, .builder Builder.empty, .tuple #[]]
+    (mkOracleCase "fuzz/ok/deep-fixed" c stack, rng4)
+  else if shape = 2 then
+    (mkOracleMissingRefCase "fuzz/decode-err/missing-ref" initStack, rng3)
+  else if shape = 3 then
+    let codeCell : Cell := Cell.mkOrdinary (natToBits 0x11 7) #[]
+    ({ name := "fuzz/decode-err/truncated-prefix-7bits"
+       instr := pushRefId
+       codeCell? := some codeCell
+       initStack := initStack
+       fuel := 1_000_000 }, rng3)
+  else if shape = 4 then
+    let (c, rng4) := pickFromPool okRefPool rng3
+    let bits : BitString := natToBits pushRefOpcode 8 ++ natToBits pushRefOpcode 8
+    let code : Cell := Cell.mkOrdinary bits #[c, c]
+    ({ name := "fuzz/ok/double-opcode"
+       instr := pushRefId
+       codeCell? := some code
+       initStack := initStack
+       fuel := 1_000_000 }, rng4)
+  else if shape = 5 then
+    let (c, rng4) := pickFromPool okRefPool rng3
+    (mkOracleCase "fuzz/ok/pushref-alt" c initStack, rng4)
+  else if shape = 6 then
+    let codeCell : Cell := Cell.mkOrdinary #[] #[]
+    ({ name := "fuzz/decode-err/empty-code"
+       instr := pushRefId
+       codeCell? := some codeCell
+       initStack := initStack
+       fuel := 1_000_000 }, rng3)
+  else if shape = 7 then
+    let (c, rng4) := pickFromPool okRefPool rng3
+    let (noise2, rng5) := pickFromPool noisePool rng4
+    (mkOracleCase "fuzz/ok/two-noise" c #[noise, noise2], rng5)
+  else
+    let (c, rng4) := pickFromPool okRefPool rng3
+    (mkOracleCase "fuzz/ok/pushref-deep" c #[.cell refLeaf1, noise], rng4)
+
 def suite : InstrSuite where
   id := pushRefId
   unit := #[
@@ -459,7 +530,11 @@ def suite : InstrSuite where
     mkOracleMissingRefCase "decode/err/missing-ref-with-deep-stack"
       #[.null, intV (-9)]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021111
+      count := 500
+      gen := genPushRefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

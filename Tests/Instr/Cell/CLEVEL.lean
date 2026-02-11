@@ -167,6 +167,77 @@ private def cWeirdMask9 : Cell :=
 private def expectedClevelOut (below : Array Value) (c : Cell) : Array Value :=
   below ++ #[intV (Int.ofNat (LevelMask.getLevel c.levelMask))]
 
+private def okCellPool : Array Cell :=
+  #[
+    cOrd0,
+    cOrdBits,
+    cLibrary0,
+    cPruned1,
+    cPruned2,
+    cPruned3,
+    cPruned4,
+    cPruned5,
+    cPruned7,
+    cOrdRefMask1,
+    cOrdRefMask2,
+    cOrdRefMask4,
+    cOrdRefs12,
+    cOrdRefs24,
+    cOrdRefsMixed7,
+    cOrdNested7,
+    cWeirdMask9
+  ]
+
+private def noisePool : Array Value :=
+  #[
+    .null,
+    intV 0,
+    intV 7,
+    .builder Builder.empty,
+    .slice (Slice.ofCell cOrd0),
+    .tuple #[],
+    .cont (.quit 0)
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genClevelFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  if shape = 0 then
+    (mkClevelCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 1 then
+    (mkClevelCase "fuzz/type/top-null" #[.null], rng1)
+  else if shape = 2 then
+    (mkClevelCase "fuzz/type/top-int" #[intV 1], rng1)
+  else if shape = 3 then
+    (mkClevelCase "fuzz/type/top-builder" #[.builder Builder.empty], rng1)
+  else if shape = 4 then
+    (mkClevelCase "fuzz/type/top-slice" #[.slice (Slice.ofCell cOrd0)], rng1)
+  else if shape = 5 then
+    (mkClevelCase "fuzz/type/top-tuple" #[.tuple #[]], rng1)
+  else if shape = 6 then
+    (mkClevelCase "fuzz/type/top-cont" #[.cont (.quit 0)], rng1)
+  else if shape = 7 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    (mkClevelCase "fuzz/ok/top-only" #[.cell c], rng2)
+  else if shape = 8 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (noise, rng3) := pickFromPool noisePool rng2
+    (mkClevelCase "fuzz/ok/deep-noise" #[noise, .cell c], rng3)
+  else if shape = 9 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let stack : Array Value := #[intV (-11), .cell cOrd0, .cell c]
+    (mkClevelCase "fuzz/ok/deep-fixed" stack, rng2)
+  else if shape = 10 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    (mkClevelCase "fuzz/type/order-top-null-over-valid-cell" #[.cell c, .null], rng2)
+  else
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let code : Array Instr := #[clevelInstr, clevelInstr]
+    (mkClevelCase "fuzz/ok/repeat-twice" #[.cell c] code, rng2)
+
 def suite : InstrSuite where
   id := clevelId
   unit := #[
@@ -344,7 +415,11 @@ def suite : InstrSuite where
       #[.cell cPruned4]
       #[.pushInt (.num clevelSetGasExactMinusOne), .tonEnvOp .setGasLimit, clevelInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021104
+      count := 500
+      gen := genClevelFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -225,6 +225,85 @@ private def oracleGasCases : Array OracleCase :=
       #[.pushInt (.num cdepthIxSetGasExactMinusOne), .tonEnvOp .setGasLimit, cdepthIxInstr]
   ]
 
+private def okCellPool : Array Cell :=
+  #[
+    cellDepth0,
+    cellDepth1,
+    cellDepth2,
+    cellDepth3,
+    cellDepth4,
+    cellDepth5,
+    cellDepth7,
+    cellBranchDepth4,
+    cellBranchDepth6,
+    prunedMask1Depth9,
+    prunedMask7Depths
+  ]
+
+private def noisePool : Array Value :=
+  #[
+    .null,
+    intV 0,
+    intV 7,
+    .cell cellDepth1,
+    .slice (Slice.ofCell cellDepth2),
+    .builder Builder.empty,
+    .tuple #[]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCdepthIxFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  if shape = 0 then
+    (mkCdepthIxCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 1 then
+    (mkCdepthIxCase "fuzz/underflow/index-only" #[intV 0], rng1)
+  else if shape = 2 then
+    (mkCdepthIxCase "fuzz/type/top-null" #[.null], rng1)
+  else if shape = 3 then
+    (mkCdepthIxCase "fuzz/type/top-cell" #[.cell cellDepth2], rng1)
+  else if shape = 4 then
+    (mkCdepthIxCase "fuzz/type/top-builder" #[.builder Builder.empty], rng1)
+  else if shape = 5 then
+    (mkCdepthIxCase "fuzz/type/top-slice" #[.slice (Slice.ofCell cellDepth1)], rng1)
+  else if shape = 6 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    (mkCdepthIxCase "fuzz/ok/top-only" #[.cell c, intV (Int.ofNat idx)], rng3)
+  else if shape = 7 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    let (noise, rng4) := pickFromPool noisePool rng3
+    (mkCdepthIxCase "fuzz/ok/deep-noise" #[noise, .cell c, intV (Int.ofNat idx)], rng4)
+  else if shape = 8 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let badCellPos : Array Value := #[.null, intV 77, .builder Builder.empty, .tuple #[]]
+    let (idx, rng3) := randNat rng2 0 3
+    (mkCdepthIxCase "fuzz/type/cell-position" (badCellPos ++ #[intV (Int.ofNat idx)]), rng3)
+  else if shape = 9 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idxBad, rng3) := pickFromPool (#[-1, 4, 9] : Array Int) rng2
+    (mkCdepthIxCase "fuzz/range/index-oob" #[.cell c, intV idxBad], rng3)
+  else if shape = 10 then
+    let (idxBad, rng2) := pickFromPool (#[-1, 4, 9] : Array Int) rng1
+    (mkCdepthIxCase "fuzz/range/order-before-cell-type" #[.null, intV idxBad], rng2)
+  else if shape = 11 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    (mkCdepthIxCase "fuzz/range/index-nan-program" #[.cell c] #[.pushInt .nan, cdepthIxInstr], rng2)
+  else if shape = 12 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    let code : Array Instr := #[cdepthIxInstr, cdepthIxInstr]
+    (mkCdepthIxCase "fuzz/ok/reload-same-cell-twice" #[.cell c, intV (Int.ofNat idx)] code, rng3)
+  else
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    let stack : Array Value := #[.cell cellDepth1, .null, .cell c, intV (Int.ofNat idx)]
+    (mkCdepthIxCase "fuzz/ok/deep-fixed" stack, rng3)
+
 def suite : InstrSuite where
   id := cdepthIxId
   unit := #[
@@ -351,7 +430,11 @@ def suite : InstrSuite where
           #[.cell cellDepth1, intV 0, intV dispatchSentinel] }
   ]
   oracle := oracleSuccessCases ++ oracleErrorCases ++ oracleGasCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021102
+      count := 500
+      gen := genCdepthIxFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -8,7 +8,7 @@ def execInstrCellCtos (i : Instr) (next : VM Unit) : VM Unit := do
   | .ctos =>
       let c ← VM.popCell
       -- C++ `CTOS` uses `load_cell_slice_ref`, which charges a cell load/reload.
-      modify fun st => st.registerCellLoad c
+      VM.registerCellLoad c
       -- `load_cell_slice_ref` charges before it rejects exotic/special cells.
       if c.special then
         throw .cellUnd

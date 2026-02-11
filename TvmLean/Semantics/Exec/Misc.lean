@@ -39,7 +39,7 @@ partial def VM.visitDataSizeCell (limit : Nat) (c : Cell) (acc : DataSizeAcc) : 
   if acc.cells ≥ limit then
     throw .cellOv
   -- Match C++ `VmStorageStat::add_storage`: loading a newly visited cell charges cell-load gas.
-  modify fun st => st.registerCellLoad c
+  VM.registerCellLoad c
   let acc :=
     { visited := acc.visited.insert h
       cells := acc.cells + 1

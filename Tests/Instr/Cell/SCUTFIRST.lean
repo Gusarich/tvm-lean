@@ -167,6 +167,117 @@ private def scutfirstSetGasExact : Int :=
 private def scutfirstSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne scutfirstInstr
 
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def genScutfirstFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (totalRefs, rng3) := pickRefsMixed rng2
+    let (wantBits, rng4) := randNat rng3 0 totalBits
+    let (wantRefs, rng5) := randNat rng4 0 totalRefs
+    let (phase, rng6) := randNat rng5 0 3
+    let s := mkFullSlice totalBits totalRefs phase
+    (mkScutfirstCase s!"fuzz/ok/full/bits{wantBits}/refs{wantRefs}/tot{totalBits}-{totalRefs}"
+      (mkScutfirstStackNat s wantBits wantRefs), rng6)
+  else if shape = 1 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (totalRefs, rng3) := pickRefsMixed rng2
+    let (wantBits, rng4) := randNat rng3 0 totalBits
+    let (wantRefs, rng5) := randNat rng4 0 totalRefs
+    let (phase, rng6) := randNat rng5 0 3
+    let (noise, rng7) := pickNoiseValue rng6
+    let s := mkFullSlice totalBits totalRefs phase
+    (mkScutfirstCase s!"fuzz/ok/deep/bits{wantBits}/refs{wantRefs}"
+      (mkScutfirstStackNat s wantBits wantRefs #[noise]), rng7)
+  else if shape = 2 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (totalRefs, rng3) := pickRefsMixed rng2
+    let (skipBits, rng4) := randNat rng3 0 totalBits
+    let (skipRefs, rng5) := randNat rng4 0 totalRefs
+    let remBits := totalBits - skipBits
+    let remRefs := totalRefs - skipRefs
+    let (wantBits, rng6) := randNat rng5 0 remBits
+    let (wantRefs, rng7) := randNat rng6 0 remRefs
+    let (phase, rng8) := randNat rng7 0 3
+    let s := mkFullSlice totalBits totalRefs phase
+    let stack : Array Value := #[.slice s, intV (Int.ofNat skipBits), intV (Int.ofNat skipRefs)]
+    let program : Array Instr :=
+      #[sskipfirstInstr, .pushInt (.num wantBits), .pushInt (.num wantRefs), scutfirstInstr]
+    (mkScutfirstCase s!"fuzz/ok/cursor/skip{skipBits}-{skipRefs}/want{wantBits}-{wantRefs}" stack program, rng8)
+  else if shape = 3 then
+    let (mode, rng2) := randNat rng1 0 1
+    if mode = 0 then
+      let (totalBits0, rng3) := randNat rng2 0 1022
+      let (totalRefs, rng4) := pickRefsMixed rng3
+      let (wantRefs, rng5) := randNat rng4 0 totalRefs
+      let (phase, rng6) := randNat rng5 0 3
+      let s := mkFullSlice totalBits0 totalRefs phase
+      (mkScutfirstCase "fuzz/cellund/bits+1"
+        (mkScutfirstStackNat s (totalBits0 + 1) wantRefs), rng6)
+    else
+      let (totalBits, rng3) := pickBitsMixed rng2
+      let (totalRefs0, rng4) := randNat rng3 0 3
+      let (wantBits, rng5) := randNat rng4 0 totalBits
+      let (phase, rng6) := randNat rng5 0 3
+      let s := mkFullSlice totalBits totalRefs0 phase
+      (mkScutfirstCase "fuzz/cellund/refs+1"
+        (mkScutfirstStackNat s wantBits (totalRefs0 + 1)), rng6)
+  else if shape = 4 then
+    let (n, rng2) := randNat rng1 0 2
+    if n = 0 then
+      (mkScutfirstCase "fuzz/underflow/empty" #[], rng2)
+    else if n = 1 then
+      (mkScutfirstCase "fuzz/underflow/one" #[.slice sliceBits8Refs0], rng2)
+    else
+      (mkScutfirstCase "fuzz/underflow/two" #[.slice sliceBits8Refs0, intV 1], rng2)
+  else if shape = 5 then
+    let (mode, rng2) := randNat rng1 0 3
+    let badRefs : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then intV (-1)
+      else if mode = 2 then intV 5
+      else .int .nan
+    (mkScutfirstCase "fuzz/bad-refs"
+      #[.slice sliceBits8Refs0, intV 1, badRefs], rng2)
+  else if shape = 6 then
+    let (mode, rng2) := randNat rng1 0 3
+    let badBits : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then intV (-1)
+      else if mode = 2 then intV 1024
+      else .int .nan
+    (mkScutfirstCase "fuzz/bad-bits"
+      #[.slice sliceBits8Refs0, badBits, intV 0], rng2)
+  else
+    (mkScutfirstCase "fuzz/bad-slice"
+      #[.null, intV 1, intV 0], rng1)
+
 def suite : InstrSuite where
   id := { name := "SCUTFIRST" }
   unit := #[
@@ -381,7 +492,11 @@ def suite : InstrSuite where
       (mkScutfirstStackNat sliceBits16Refs2 8 2)
       #[.pushInt (.num scutfirstSetGasExactMinusOne), .tonEnvOp .setGasLimit, scutfirstInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021111
+      count := 500
+      gen := genScutfirstFuzzCase }
+  ]
 
 initialize registerSuite suite
 

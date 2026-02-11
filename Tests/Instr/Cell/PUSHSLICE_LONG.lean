@@ -195,6 +195,123 @@ private def oracleCases : Array OracleCase :=
       #[.null]
   ]
 
+private def fuzzRefPool : Array Cell :=
+  #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def pickPayloadLen (maxPayload : Nat) (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 6
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (Nat.min 1 maxPayload, rng1)
+  else if mode = 2 then
+    (maxPayload, rng1)
+  else if mode = 3 then
+    (if maxPayload > 0 then maxPayload - 1 else 0, rng1)
+  else
+    randNat rng1 0 maxPayload
+
+private def fuzzInitStack (rng0 : StdGen) : Array Value × StdGen :=
+  let (mode, rng1) := randNat rng0 0 2
+  if mode = 0 then
+    (#[], rng1)
+  else if mode = 1 then
+    let (v, rng2) := pickFromPool fuzzNoisePool rng1
+    (#[v], rng2)
+  else
+    let (x, rng2) := pickFromPool fuzzNoisePool rng1
+    let (y, rng3) := pickFromPool fuzzNoisePool rng2
+    (#[(.null : Value), x, y], rng3)
+
+private def genPushSliceLongFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (initStack, rng1) := fuzzInitStack rng0
+  let (shape, rng2) := randNat rng1 0 8
+  if shape = 0 then
+    let (refs, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let maxPayload : Nat := longDataBits len7 - 1
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let raw := mkLongRawMarkedP "fuzz/ok" payload len7
+    let (codeRefs, rng7) := genRefs refs rng6
+    let code := mkLongCodeCellP "fuzz/ok" refs len7 raw codeRefs
+    (mkOracleCase "fuzz/ok/random-valid" code initStack, rng7)
+  else if shape = 1 then
+    let (refs, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let maxPayload : Nat := longDataBits len7 - 1
+    let (plen, rng5) := pickPayloadLen maxPayload rng4
+    let (payload, rng6) := randBitString plen rng5
+    let raw := mkLongRawMarkedP "fuzz/ok-deep" payload len7
+    let (codeRefs, rng7) := genRefs refs rng6
+    let code := mkLongCodeCellP "fuzz/ok-deep" refs len7 raw codeRefs
+    let stack : Array Value := #[.null, intV 7, .cell refLeafB]
+    (mkOracleCase "fuzz/ok/deep-fixed" code stack, rng7)
+  else if shape = 2 then
+    let (refs0, rng3) := randNat rng2 1 4
+    let refs : Nat := refs0
+    let (len7, rng4) := randNat rng3 0 124
+    let raw := mkLongRawMarkedP "fuzz/missing-refs" #[] len7
+    let (haveRefs, rng5) := randNat rng4 0 (refs - 1)
+    let (codeRefs, rng6) := genRefs haveRefs rng5
+    let code := mkLongCodeCellP "fuzz/missing-refs" refs len7 raw codeRefs
+    (mkOracleCase "fuzz/decode-err/missing-inline-refs" code initStack, rng6)
+  else if shape = 3 then
+    let (refs, rng3) := randNat rng2 5 7
+    let raw := mkLongRawMarkedP "fuzz/reserved-refs" #[] 0
+    let code := mkLongCodeCellP "fuzz/reserved-refs" refs 0 raw #[]
+    (mkOracleCase s!"fuzz/decode-err/reserved-refs{refs}" code initStack, rng3)
+  else if shape = 4 then
+    let (refs, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let rawFull := mkLongRawMarkedP "fuzz/trunc" (stripeBits 3 1) len7
+    let rawShort := rawFull.take (longDataBits len7 - 1)
+    let bits := natToBits (longWord refs len7) 18 ++ rawShort
+    let (codeRefs, rng5) := genRefs (Nat.min refs 4) rng4
+    let code : Cell := Cell.mkOrdinary bits codeRefs
+    (mkOracleCase "fuzz/decode-err/truncated-inline-data" code initStack, rng5)
+  else if shape = 5 then
+    let (refs, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let bits := natToBits (longWord refs len7) 18
+    let code : Cell := Cell.mkOrdinary bits #[]
+    (mkOracleCase "fuzz/decode-err/header-only" code initStack, rng4)
+  else if shape = 6 then
+    let len7 : Nat := 0
+    let raw : BitString := Array.replicate (longDataBits len7) false
+    let code := mkLongCodeCellP "fuzz/zero-raw" 0 len7 raw #[]
+    (mkOracleCase "fuzz/ok/all-zero-raw-len0" code initStack, rng2)
+  else if shape = 7 then
+    let (idx, rng3) := randNat rng2 0 (oracleCases.size - 1)
+    let raw := mkLongRawMarkedP "fuzz/fallback" #[] 0
+    let fallbackCode := mkLongCodeCellP "fuzz/fallback" 0 0 raw #[]
+    let fallback := mkOracleCase "fuzz/fallback" fallbackCode initStack
+    let picked := (oracleCases[idx]?).getD fallback
+    (picked, rng3)
+  else
+    let (refs, rng3) := randNat rng2 0 4
+    let (len7, rng4) := randNat rng3 0 124
+    let raw := mkLongRawMarkedP "fuzz/alt" (stripeBits 5 0) len7
+    let (codeRefs, rng5) := genRefs refs rng4
+    let code := mkLongCodeCellP "fuzz/alt" refs len7 raw codeRefs
+    (mkOracleCase "fuzz/ok/striped-fixed" code initStack, rng5)
+
 def suite : InstrSuite where
   id := pushsliceLongId
   unit := #[
@@ -454,7 +571,11 @@ def suite : InstrSuite where
         expectDecodeErr "decode/error/empty" (mkSliceFromBits #[]) .invOpcode }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021114
+      count := 500
+      gen := genPushSliceLongFuzzCase }
+  ]
 
 initialize registerSuite suite
 

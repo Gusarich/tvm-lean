@@ -363,6 +363,50 @@ private def plduzFuzzSeed : UInt64 := 2026021049
 
 private def plduzFuzzCount : Nat := 320
 
+private def genPlduzOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (c, rng1) := randNat rng0 0 7
+  let bits : Nat := plduzWidth c
+  let (shape, rng2) := randNat rng1 0 13
+  if shape = 0 then
+    (mkOracleCase "fuzz/ok/exact" c #[.slice (mkPlduzSlice bits (c % 2))], rng2)
+  else if shape = 1 then
+    (mkOracleCase "fuzz/ok/short-minus-one" c #[.slice (mkPlduzSlice (bits - 1) ((c + 1) % 2))], rng2)
+  else if shape = 2 then
+    let maxDelta : Nat := Nat.min bits 16
+    let (delta, rng3) := randNat rng2 1 maxDelta
+    (mkOracleCase "fuzz/ok/short-delta" c #[.slice (mkPlduzSlice (bits - delta) 1)], rng3)
+  else if shape = 3 then
+    let maxExtra : Nat := Nat.min 160 (1023 - bits)
+    let (extra, rng3) := randNat rng2 1 maxExtra
+    (mkOracleCase "fuzz/ok/long-extra" c #[.slice (mkPlduzSlice (bits + extra) 0)], rng3)
+  else if shape = 4 then
+    let (avail, rng3) := pickAvailMixed bits rng2
+    let (refs, rng4) := pickRefPack rng3
+    (mkOracleCase "fuzz/ok/with-refs" c #[.slice (mkSliceWithBitsRefs (stripeBits avail (c % 2)) refs)], rng4)
+  else if shape = 5 then
+    let (avail, rng3) := pickAvailMixed bits rng2
+    let (noise, rng4) := pickNoise rng3
+    (mkOracleCase "fuzz/ok/deep-noise" c #[noise, .slice (mkPlduzSlice avail 1)], rng4)
+  else if shape = 6 then
+    let (avail, rng3) := pickAvailMixed bits rng2
+    let (noise1, rng4) := pickNoise rng3
+    let (noise2, rng5) := pickNoise rng4
+    (mkOracleCase "fuzz/ok/deep-two-noise" c #[noise1, noise2, .slice (mkPlduzSlice avail 0)], rng5)
+  else if shape = 7 then
+    (mkOracleCase "fuzz/err/underflow-empty" c #[], rng2)
+  else if shape = 8 then
+    (mkOracleCase "fuzz/err/type-null" c #[.null], rng2)
+  else if shape = 9 then
+    (mkOracleCase "fuzz/err/type-int" c #[intV 17], rng2)
+  else if shape = 10 then
+    (mkOracleCase "fuzz/err/type-cell" c #[.cell refLeafB], rng2)
+  else if shape = 11 then
+    (mkOracleCase "fuzz/err/type-builder" c #[.builder Builder.empty], rng2)
+  else if shape = 12 then
+    (mkOracleCase "fuzz/err/type-deep-top-not-slice" c #[.slice (mkPlduzSlice bits 0), .null], rng2)
+  else
+    (mkOracleCase "fuzz/ok/zero-bits-slice" c #[.slice (mkPlduzSlice 0 0)], rng2)
+
 private def plduzBaseUnitCases : Array UnitCase :=
   #[
     { name := "unit/direct/width-min-zeroext-order-and-deep-stack"
@@ -529,7 +573,11 @@ def suite : InstrSuite where
     mkOracleCase "err/type/top-int" 5 #[intV 77],
     mkOracleCase "err/type/deep-top-not-slice" 7 #[.slice (mkPlduzSlice 256 0), .null]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021107
+      count := 500
+      gen := genPlduzOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 

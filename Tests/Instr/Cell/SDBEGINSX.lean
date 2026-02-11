@@ -246,6 +246,120 @@ private def expectedQSuccess (below : Array Value) (s pref : Slice) : Array Valu
 private def expectedQFail (below : Array Value) (s : Slice) : Array Value :=
   below ++ #[.slice s, intV 0]
 
+private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
+
+private def refsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell Cell.empty, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def flipHeadBit (bs : BitString) : BitString :=
+  if bs.isEmpty then
+    bs
+  else
+    let b0 := (bs[0]?).getD false
+    #[!b0] ++ bs.extract 1 bs.size
+
+private def genSdbeginsxFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (quiet, rng2) := randBool rng1
+  if shape = 0 then
+    let (sLen, rng3) := pickBitsMixed rng2
+    let (sBits, rng4) := randBitString sLen rng3
+    let (prefLen, rng5) := randNat rng4 0 sLen
+    let prefBits := sBits.extract 0 prefLen
+    let (sRefs, rng6) := pickRefsMixed rng5
+    let (prefRefs, rng7) := pickRefsMixed rng6
+    let s := mkSliceWithBitsRefs sBits (refsByCount sRefs)
+    let pref := mkSliceWithBitsRefs prefBits (refsByCount prefRefs)
+    let mk := if quiet then mkSdbeginsxQuietCase else mkSdbeginsxCase
+    (mk "fuzz/ok/prefix" #[.slice s, .slice pref], rng7)
+  else if shape = 1 then
+    let (sLen0, rng3) := pickBitsMixed rng2
+    let sLen : Nat := if sLen0 = 0 then 1 else sLen0
+    let (sBits, rng4) := randBitString sLen rng3
+    let (prefLen, rng5) := randNat rng4 1 sLen
+    let prefBits := flipHeadBit (sBits.extract 0 prefLen)
+    let s := mkSliceWithBitsRefs sBits
+    let pref := mkSliceWithBitsRefs prefBits
+    let mk := if quiet then mkSdbeginsxQuietCase else mkSdbeginsxCase
+    (mk "fuzz/fail/mismatch" #[.slice s, .slice pref], rng5)
+  else if shape = 2 then
+    let (sLen, rng3) := randNat rng2 0 128
+    let (sBits, rng4) := randBitString sLen rng3
+    let prefBits := sBits ++ #[true]
+    let s := mkSliceWithBitsRefs sBits
+    let pref := mkSliceWithBitsRefs prefBits
+    let mk := if quiet then mkSdbeginsxQuietCase else mkSdbeginsxCase
+    (mk "fuzz/fail/pref-longer" #[.slice s, .slice pref], rng4)
+  else if shape = 3 then
+    let (noise, rng3) := pickNoiseValue rng2
+    let (sLen, rng4) := pickBitsMixed rng3
+    let (sBits, rng5) := randBitString sLen rng4
+    let (prefLen, rng6) := randNat rng5 0 sLen
+    let prefBits := sBits.extract 0 prefLen
+    let s := mkSliceWithBitsRefs sBits
+    let pref := mkSliceWithBitsRefs prefBits
+    let mk := if quiet then mkSdbeginsxQuietCase else mkSdbeginsxCase
+    (mk "fuzz/ok/deep" #[noise, .slice s, .slice pref], rng6)
+  else if shape = 4 then
+    (mkSdbeginsxCase "fuzz/underflow/empty" #[], rng2)
+  else if shape = 5 then
+    let (noise, rng3) := pickNoiseValue rng2
+    (mkSdbeginsxCase "fuzz/underflow/one" #[noise], rng3)
+  else if shape = 6 then
+    let (bad, rng3) := pickNoiseValue rng2
+    (mkSdbeginsxCase "fuzz/type/top-pref" #[.slice s8FromPref5, bad], rng3)
+  else if shape = 7 then
+    let (bad, rng3) := pickNoiseValue rng2
+    (mkSdbeginsxCase "fuzz/type/second-s" #[bad, .slice pref5], rng3)
+  else if shape = 8 then
+    -- Exercise both opcodes by choosing the program explicitly.
+    let (sLen, rng3) := pickBitsMixed rng2
+    let (sBits, rng4) := randBitString sLen rng3
+    let (prefLen, rng5) := randNat rng4 0 sLen
+    let prefBits := sBits.extract 0 prefLen
+    let s := mkSliceWithBitsRefs sBits
+    let pref := mkSliceWithBitsRefs prefBits
+    let program : Array Instr := #[if quiet then sdbeginsxqInstr else sdbeginsxInstr]
+    (mkSdbeginsxCase "fuzz/ok/explicit-opcode" #[.slice s, .slice pref] program, rng5)
+  else
+    let (sLen, rng3) := pickBitsMixed rng2
+    let (sBits, rng4) := randBitString sLen rng3
+    let s := mkSliceWithBitsRefs sBits
+    let pref := mkSliceWithBitsRefs #[]
+    let mk := if quiet then mkSdbeginsxQuietCase else mkSdbeginsxCase
+    (mk "fuzz/ok/empty-pref" #[.slice s, .slice pref], rng4)
+
 def suite : InstrSuite where
   id := sdbeginsxId
   unit := #[
@@ -562,7 +676,11 @@ def suite : InstrSuite where
       #[.slice s8FromPref5, .slice pref5]
       #[.pushInt (.num sdbeginsxSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdbeginsxInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021126
+      count := 500
+      gen := genSdbeginsxFuzzCase }
+  ]
 
 initialize registerSuite suite
 

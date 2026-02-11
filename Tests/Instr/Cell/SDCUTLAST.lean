@@ -136,6 +136,105 @@ private def sdcutlastSetGasExact : Int :=
 private def sdcutlastSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdcutlastInstr
 
+private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
+
+private def refsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def mkFullSlice (bits refs : Nat) (phase : Nat := 0) : Slice :=
+  mkSliceWithBitsRefs (stripeBits bits phase) (refsByCount refs)
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def genSdcutlastFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (refs, rng3) := pickRefsMixed rng2
+    let (wantBits, rng4) := randNat rng3 0 totalBits
+    let (phase, rng5) := randNat rng4 0 3
+    let s := mkFullSlice totalBits refs phase
+    (mkSdcutlastCase s!"fuzz/ok/full/len{totalBits}/keep{wantBits}/refs{refs}"
+      #[.slice s, intV (Int.ofNat wantBits)], rng5)
+  else if shape = 1 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (refs, rng3) := pickRefsMixed rng2
+    let (wantBits, rng4) := randNat rng3 0 totalBits
+    let (phase, rng5) := randNat rng4 0 3
+    let (noise, rng6) := pickNoiseValue rng5
+    let s := mkFullSlice totalBits refs phase
+    (mkSdcutlastCase "fuzz/ok/deep"
+      #[noise, .slice s, intV (Int.ofNat wantBits)], rng6)
+  else if shape = 2 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (refs, rng3) := pickRefsMixed rng2
+    let (skipBits, rng4) := randNat rng3 0 totalBits
+    let remBits := totalBits - skipBits
+    let (wantBits, rng5) := randNat rng4 0 remBits
+    let (phase, rng6) := randNat rng5 0 3
+    let s := mkFullSlice totalBits refs phase
+    let stack : Array Value := #[.slice s, intV (Int.ofNat skipBits)]
+    let program : Array Instr := #[sdskipfirstInstr, .pushInt (.num wantBits), sdcutlastInstr]
+    (mkSdcutlastCase s!"fuzz/ok/cursor/skip{skipBits}/keep{wantBits}" stack program, rng6)
+  else if shape = 3 then
+    let (totalBits0, rng2) := randNat rng1 0 1022
+    let (refs, rng3) := pickRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let s := mkFullSlice totalBits0 refs phase
+    (mkSdcutlastCase s!"fuzz/cellund/len{totalBits0}/keep{totalBits0 + 1}"
+      #[.slice s, intV (Int.ofNat (totalBits0 + 1))], rng4)
+  else if shape = 4 then
+    let (n, rng2) := randNat rng1 0 1
+    if n = 0 then
+      (mkSdcutlastCase "fuzz/underflow/empty" #[], rng2)
+    else
+      (mkSdcutlastCase "fuzz/underflow/one" #[.slice s6_110101], rng2)
+  else if shape = 5 then
+    let (mode, rng2) := randNat rng1 0 2
+    let badBits : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then .slice sEmpty
+      else .cell Cell.empty
+    (mkSdcutlastCase "fuzz/type/bits" #[.slice s6_110101, badBits], rng2)
+  else if shape = 6 then
+    let (mode, rng2) := randNat rng1 0 2
+    let badBits : Value :=
+      if mode = 0 then intV (-1)
+      else if mode = 1 then intV 1024
+      else .int .nan
+    (mkSdcutlastCase "fuzz/range/bits" #[.slice s6_110101, badBits], rng2)
+  else
+    (mkSdcutlastCase "fuzz/type/slice" #[.null, intV 1], rng1)
+
 def suite : InstrSuite where
   id := { name := "SDCUTLAST" }
   unit := #[
@@ -364,7 +463,11 @@ def suite : InstrSuite where
       #[.slice s6_110101, intV 3]
       #[.pushInt (.num sdcutlastSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdcutlastInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021112
+      count := 500
+      gen := genSdcutlastFuzzCase }
+  ]
 
 initialize registerSuite suite
 

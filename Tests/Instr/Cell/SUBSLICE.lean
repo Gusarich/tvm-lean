@@ -166,6 +166,132 @@ private def subsliceSetGasExact : Int :=
 private def subsliceSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne subsliceInstr
 
+private def bitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    let (idx, rng2) := randNat rng1 0 (bitsBoundaryPool.size - 1)
+    (((bitsBoundaryPool[idx]?).getD 0), rng2)
+  else
+    randNat rng1 0 1023
+
+private def pickRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 3
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def fuzzNoisePool : Array Value :=
+  #[.null, intV 0, intV 7, intV (-9), .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (idx, rng1) := randNat rng0 0 (fuzzNoisePool.size - 1)
+  (((fuzzNoisePool[idx]?).getD .null), rng1)
+
+private def genSubsliceFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (totalRefs, rng3) := pickRefsMixed rng2
+    let (l1, rng4) := randNat rng3 0 totalBits
+    let (r1, rng5) := randNat rng4 0 totalRefs
+    let remBits := totalBits - l1
+    let remRefs := totalRefs - r1
+    let (l2, rng6) := randNat rng5 0 remBits
+    let (r2, rng7) := randNat rng6 0 remRefs
+    let (phase, rng8) := randNat rng7 0 3
+    let s := mkPatternSlice totalBits totalRefs phase
+    (mkSubsliceNatCase s!"fuzz/ok/len{totalBits}-{totalRefs}/skip{l1}-{r1}/take{l2}-{r2}"
+      s l1 r1 l2 r2, rng8)
+  else if shape = 1 then
+    let (totalBits, rng2) := pickBitsMixed rng1
+    let (totalRefs, rng3) := pickRefsMixed rng2
+    let (l1, rng4) := randNat rng3 0 totalBits
+    let (r1, rng5) := randNat rng4 0 totalRefs
+    let remBits := totalBits - l1
+    let remRefs := totalRefs - r1
+    let (l2, rng6) := randNat rng5 0 remBits
+    let (r2, rng7) := randNat rng6 0 remRefs
+    let (phase, rng8) := randNat rng7 0 3
+    let (noise, rng9) := pickNoiseValue rng8
+    let s := mkPatternSlice totalBits totalRefs phase
+    (mkSubsliceNatCase "fuzz/ok/deep" s l1 r1 l2 r2 #[noise], rng9)
+  else if shape = 2 then
+    let (mode, rng2) := randNat rng1 0 1
+    if mode = 0 then
+      let (totalBits0, rng3) := randNat rng2 0 1022
+      let (totalRefs, rng4) := pickRefsMixed rng3
+      let s := mkPatternSlice totalBits0 totalRefs
+      (mkSubsliceNatCase "fuzz/cellund/stage1/bits+1" s (totalBits0 + 1) 0 0 0, rng4)
+    else
+      let (totalBits, rng3) := pickBitsMixed rng2
+      let (totalRefs0, rng4) := randNat rng3 0 3
+      let (l1, rng5) := randNat rng4 0 totalBits
+      let s := mkPatternSlice totalBits totalRefs0
+      (mkSubsliceNatCase "fuzz/cellund/stage1/refs+1" s l1 (totalRefs0 + 1) 0 0, rng5)
+  else if shape = 3 then
+    let (mode, rng2) := randNat rng1 0 1
+    if mode = 0 then
+      let (totalBits0, rng3) := randNat rng2 0 1022
+      let (totalRefs, rng4) := pickRefsMixed rng3
+      let (l1, rng5) := randNat rng4 0 totalBits0
+      let (r1, rng6) := randNat rng5 0 totalRefs
+      let remBits := totalBits0 - l1
+      let (r2, rng7) := randNat rng6 0 (totalRefs - r1)
+      let s := mkPatternSlice totalBits0 totalRefs
+      (mkSubsliceNatCase "fuzz/cellund/stage2/bits+1" s l1 r1 (remBits + 1) r2, rng7)
+    else
+      let (totalBits, rng3) := pickBitsMixed rng2
+      let (totalRefs0, rng4) := randNat rng3 0 3
+      let (l1, rng5) := randNat rng4 0 totalBits
+      let (r1, rng6) := randNat rng5 0 totalRefs0
+      let remRefs := totalRefs0 - r1
+      let (l2, rng7) := randNat rng6 0 (totalBits - l1)
+      let s := mkPatternSlice totalBits totalRefs0
+      (mkSubsliceNatCase "fuzz/cellund/stage2/refs+1" s l1 r1 l2 (remRefs + 1), rng7)
+  else if shape = 4 then
+    let (n, rng2) := randNat rng1 0 4
+    let s := sliceBits16Refs1
+    if n = 0 then
+      (mkSubsliceCase "fuzz/underflow/empty" #[], rng2)
+    else if n = 1 then
+      (mkSubsliceCase "fuzz/underflow/one" #[.slice s], rng2)
+    else if n = 2 then
+      (mkSubsliceCase "fuzz/underflow/two" #[.slice s, natV 0], rng2)
+    else if n = 3 then
+      (mkSubsliceCase "fuzz/underflow/three" #[.slice s, natV 0, natV 0], rng2)
+    else
+      (mkSubsliceCase "fuzz/underflow/four" #[.slice s, natV 0, natV 0, natV 0], rng2)
+  else if shape = 5 then
+    let (mode, rng2) := randNat rng1 0 2
+    let badR2 : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then .slice sliceEmpty
+      else .cell Cell.empty
+    (mkSubsliceCase "fuzz/type/r2" #[.slice sliceBits16Refs1, natV 0, natV 0, natV 0, badR2], rng2)
+  else if shape = 6 then
+    let (mode, rng2) := randNat rng1 0 3
+    if mode = 0 then
+      (mkSubsliceCase "fuzz/range/r2"
+        #[.slice sliceBits16Refs1, natV 0, natV 0, natV 0, intV 5], rng2)
+    else if mode = 1 then
+      (mkSubsliceCase "fuzz/range/l2"
+        #[.slice sliceBits16Refs1, natV 0, natV 0, intV 1024, natV 0], rng2)
+    else if mode = 2 then
+      (mkSubsliceCase "fuzz/range/r1"
+        #[.slice sliceBits16Refs1, natV 0, intV 5, natV 0, natV 0], rng2)
+    else
+      (mkSubsliceCase "fuzz/range/l1"
+        #[.slice sliceBits16Refs1, intV 1024, natV 0, natV 0, natV 0], rng2)
+  else
+    (mkSubsliceCase "fuzz/type/slice"
+      #[.null, natV 0, natV 0, natV 0, natV 0], rng1)
+
 def suite : InstrSuite where
   id := { name := "SUBSLICE" }
   unit := #[
@@ -362,7 +488,11 @@ def suite : InstrSuite where
       (mkSubsliceNatStack #[] sliceBits24Refs2 3 1 8 1)
       #[.pushInt (.num subsliceSetGasExactMinusOne), .tonEnvOp .setGasLimit, subsliceInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021113
+      count := 500
+      gen := genSubsliceFuzzCase }
+  ]
 
 initialize registerSuite suite
 

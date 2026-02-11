@@ -31,14 +31,14 @@ def execInstrTonEnvConfigParam (i : Instr) (next : VM Unit) : VM Unit := do
               throw e
           | .ok (none, loaded) =>
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               if opt then
                 VM.push .null
               else
                 VM.pushSmallInt 0
           | .ok (some valueSlice, loaded) =>
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               if valueSlice.bitsRemaining == 0 && valueSlice.refsRemaining == 1 then
                 let c := valueSlice.cell.refs[valueSlice.refPos]!
                 if opt then

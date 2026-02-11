@@ -125,6 +125,105 @@ private def sPartialOneRefLeft : Slice :=
 private def sPartialNoRefsShifted : Slice :=
   { cell := Cell.mkOrdinary (natToBits 0x4F 7) #[], bitPos := 4, refPos := 0 }
 
+private def sremptyLenPool : Array Nat :=
+  #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023]
+
+private def pickSremptyBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 3 then
+    let (idx, rng2) := randNat rng1 0 (sremptyLenPool.size - 1)
+    (sremptyLenPool[idx]!, rng2)
+  else if mode ≤ 6 then
+    randNat rng1 0 96
+  else
+    randNat rng1 97 1023
+
+private def pickSremptyRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def mkRefsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, refLeafD]
+
+private def mkFuzzSlice (bits refs : Nat) (phase : Nat := 0) : Slice :=
+  mkSliceWithBitsRefs (stripeBits bits phase) (mkRefsByCount refs)
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (pick, rng1) := randNat rng0 0 2
+  if pick = 0 then
+    (.null, rng1)
+  else if pick = 1 then
+    (intV (-7), rng1)
+  else
+    (.cell refLeafC, rng1)
+
+private def pickBadTopValue (rng0 : StdGen) : Value × String × StdGen :=
+  let (pick, rng1) := randNat rng0 0 5
+  if pick = 0 then
+    (.null, "null", rng1)
+  else if pick = 1 then
+    (intV 42, "int", rng1)
+  else if pick = 2 then
+    (.cell Cell.empty, "cell", rng1)
+  else if pick = 3 then
+    (.builder Builder.empty, "builder", rng1)
+  else if pick = 4 then
+    (.tuple #[], "tuple", rng1)
+  else
+    (.cont (.quit 0), "cont", rng1)
+
+private def sskipfirstInstr : Instr := .cellOp .sskipfirst
+
+private def genSremptyFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (bits, rng2) := pickSremptyBitsMixed rng1
+    let (phase, rng3) := randNat rng2 0 3
+    (mkSremptyCase s!"fuzz/ok/refs0/bits-{bits}"
+      #[.slice (mkFuzzSlice bits 0 phase)], rng3)
+  else if shape = 1 then
+    let (bits, rng2) := pickSremptyBitsMixed rng1
+    let (refs, rng3) := randNat rng2 1 4
+    let (phase, rng4) := randNat rng3 0 3
+    (mkSremptyCase s!"fuzz/ok/refspos/bits-{bits}/refs-{refs}"
+      #[.slice (mkFuzzSlice bits refs phase)], rng4)
+  else if shape = 2 then
+    let (bits, rng2) := pickSremptyBitsMixed rng1
+    let (refs, rng3) := pickSremptyRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    -- Make sure the predicate is exercised on a non-trivial cursor state.
+    (mkSremptyCase s!"fuzz/ok/cursor/consume-refs/bits-{bits}/refs-{refs}"
+      #[.slice (mkFuzzSlice bits refs phase), intV 0, intV (Int.ofNat refs)]
+      #[sskipfirstInstr, sremptyInstr], rng4)
+  else if shape = 3 then
+    let (bits, rng2) := pickSremptyBitsMixed rng1
+    let (refs, rng3) := pickSremptyRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let (noise, rng5) := pickNoiseValue rng4
+    (mkSremptyCase s!"fuzz/ok/deep/bits-{bits}/refs-{refs}"
+      #[noise, .slice (mkFuzzSlice bits refs phase)], rng5)
+  else if shape = 4 then
+    (mkSremptyCase "fuzz/underflow/empty" #[], rng1)
+  else
+    let (bad, tag, rng2) := pickBadTopValue rng1
+    if shape = 5 then
+      (mkSremptyCase s!"fuzz/type/top-{tag}" #[bad], rng2)
+    else
+      let (bits, rng3) := pickSremptyBitsMixed rng2
+      let (refs, rng4) := pickSremptyRefsMixed rng3
+      let (phase, rng5) := randNat rng4 0 3
+      (mkSremptyCase s!"fuzz/type/deep-top-{tag}"
+        #[.slice (mkFuzzSlice bits refs phase), bad], rng5)
+
 def suite : InstrSuite where
   id := sremptyId
   unit := #[
@@ -282,7 +381,11 @@ def suite : InstrSuite where
       #[.slice sRefsOnly1]
       #[.pushInt (.num sremptySetGasExactMinusOne), .tonEnvOp .setGasLimit, sremptyInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021113
+      count := 500
+      gen := genSremptyFuzzCase }
+  ]
 
 initialize registerSuite suite
 

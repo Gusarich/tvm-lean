@@ -120,6 +120,76 @@ private def endsSetGasExact : Int :=
 private def endsSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne endsInstr
 
+private def fuzzRefPool : Array Cell :=
+  #[Cell.empty, refLeafA, refLeafB, refLeafC]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def genNonEmptySlice (rng0 : StdGen) : Slice × StdGen := Id.run do
+  let (mode, rng1) := randNat rng0 0 2
+  let (bitLen, rng2) :=
+    if mode = 0 then
+      randNat rng1 1 1023
+    else if mode = 1 then
+      randNat rng1 0 1023
+    else
+      randNat rng1 1 1023
+  let (refCount, rng3) :=
+    if mode = 0 then
+      (0, rng2)
+    else if mode = 1 then
+      randNat rng2 1 4
+    else
+      randNat rng2 0 4
+  let (bits, rng4) := randBitString bitLen rng3
+  let (refs, rng5) := genRefs refCount rng4
+  return (mkSliceWithBitsRefs bits refs, rng5)
+
+private def noisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refLeafA, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def genEndsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  if shape = 0 then
+    (mkEndsCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 1 then
+    (mkEndsCase "fuzz/type/top-null" #[.null], rng1)
+  else if shape = 2 then
+    (mkEndsCase "fuzz/type/top-int" #[intV 1], rng1)
+  else if shape = 3 then
+    (mkEndsCase "fuzz/type/top-cell" #[.cell refLeafA], rng1)
+  else if shape = 4 then
+    (mkEndsCase "fuzz/type/top-builder" #[.builder Builder.empty], rng1)
+  else if shape = 5 then
+    (mkEndsCase "fuzz/type/top-tuple" #[.tuple #[]], rng1)
+  else if shape = 6 then
+    (mkEndsCase "fuzz/type/top-cont" #[.cont (.quit 0)], rng1)
+  else if shape = 7 then
+    (mkEndsCase "fuzz/ok/empty-slice" #[.slice sliceEmpty], rng1)
+  else if shape = 8 then
+    let (noise, rng2) := pickFromPool noisePool rng1
+    (mkEndsCase "fuzz/ok/deep-empty" #[noise, .slice sliceEmpty], rng2)
+  else if shape = 9 then
+    let (s, rng2) := genNonEmptySlice rng1
+    (mkEndsCase "fuzz/cellund/nonempty" #[.slice s], rng2)
+  else if shape = 10 then
+    let (s, rng2) := genNonEmptySlice rng1
+    let (noise, rng3) := pickFromPool noisePool rng2
+    (mkEndsCase "fuzz/cellund/deep-nonempty" #[noise, .slice s], rng3)
+  else
+    (mkEndsCase "fuzz/error-order/top-null-before-below-slice" #[.slice sliceEmpty, .null], rng1)
+
 def suite : InstrSuite where
   id := { name := "ENDS" }
   unit := #[
@@ -296,7 +366,11 @@ def suite : InstrSuite where
     mkEndsCase "gas/exact-minus-one-out-of-gas" #[.slice sliceEmpty]
       #[.pushInt (.num endsSetGasExactMinusOne), .tonEnvOp .setGasLimit, endsInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021105
+      count := 500
+      gen := genEndsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

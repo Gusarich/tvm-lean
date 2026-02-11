@@ -531,6 +531,89 @@ private def oracleCases : Array OracleCase :=
   | .ok cases => cases.map rawOracleToOracleCase
   | .error e => panic! s!"SDBEGINS oracle case build failed: {e}"
 
+private def genRandomFullSlice (rng0 : StdGen) : Slice × StdGen :=
+  let (totalBits, rng1) := pickFuzzBitsMixed rng0
+  let (totalRefs, rng2) := randNat rng1 0 3
+  let (bits, rng3) := randBitString totalBits rng2
+  let (refs, rng4) := genRefs totalRefs rng3
+  (Slice.ofCell (Cell.mkOrdinary bits refs), rng4)
+
+private def payloadMismatchFlipHead (payload : BitString) : BitString :=
+  if payload.isEmpty then
+    #[true]
+  else
+    let b0 := (payload[0]?).getD false
+    #[!b0] ++ payload.extract 1 payload.size
+
+private def mkOracleFuzzCase
+    (name : String)
+    (payload : BitString)
+    (quiet : Bool)
+    (stack : Array Value)
+    (rng : StdGen) : OracleCase × StdGen :=
+  match mkRawCaseAuto name payload quiet stack with
+  | .ok c => (rawOracleToOracleCase c, rng)
+  | .error e =>
+      let fallback : OracleCase :=
+        match oracleCases[0]? with
+        | some c => c
+        | none =>
+            { name := "fuzz/fallback/empty"
+              instr := sdbeginsId
+              codeCell? := some Cell.empty
+              initStack := #[]
+              fuel := 1 }
+      ({ fallback with name := s!"fuzz/build-error/{e}" }, rng)
+
+private def genSdbeginsOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  if shape = 0 then
+    let (s, rng2) := genRandomFullSlice rng1
+    let (plen, rng3) := randNat rng2 0 s.cell.bits.size
+    let payload := s.cell.bits.extract 0 plen
+    mkOracleFuzzCase s!"fuzz/ok/nonquiet/len{plen}" payload false #[.slice s] rng3
+  else if shape = 1 then
+    let (s, rng2) := genRandomFullSlice rng1
+    let (plen, rng3) := randNat rng2 0 s.cell.bits.size
+    let payload := s.cell.bits.extract 0 plen
+    mkOracleFuzzCase s!"fuzz/ok/quiet/len{plen}" payload true #[.slice s] rng3
+  else if shape = 2 then
+    let (s, rng2) := genRandomFullSlice rng1
+    if s.cell.bits.isEmpty then
+      mkOracleFuzzCase "fuzz/err/nonquiet/short" #[true] false #[.slice s] rng2
+    else
+      let (plen, rng3) := randNat rng2 1 s.cell.bits.size
+      let payload := payloadMismatchFlipHead (s.cell.bits.extract 0 plen)
+      mkOracleFuzzCase s!"fuzz/err/nonquiet/mismatch/len{plen}" payload false #[.slice s] rng3
+  else if shape = 3 then
+    let (s, rng2) := genRandomFullSlice rng1
+    if s.cell.bits.isEmpty then
+      mkOracleFuzzCase "fuzz/ok/quiet/short" #[true] true #[.slice s] rng2
+    else
+      let (plen, rng3) := randNat rng2 1 s.cell.bits.size
+      let payload := payloadMismatchFlipHead (s.cell.bits.extract 0 plen)
+      mkOracleFuzzCase s!"fuzz/ok/quiet/mismatch/len{plen}" payload true #[.slice s] rng3
+  else if shape = 4 then
+    let (s, rng2) := genRandomFullSlice rng1
+    let payload := s.cell.bits ++ #[true]
+    mkOracleFuzzCase s!"fuzz/err/nonquiet/short/len{s.cell.bits.size}" payload false #[.slice s] rng2
+  else if shape = 5 then
+    mkOracleFuzzCase "fuzz/err/underflow/empty" #[] false #[] rng1
+  else if shape = 6 then
+    let (mode, rng2) := randNat rng1 0 3
+    let bad : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then intV 7
+      else if mode = 2 then .cell Cell.empty
+      else .builder Builder.empty
+    mkOracleFuzzCase "fuzz/err/type/top" #[] false #[bad] rng2
+  else
+    let (s, rng2) := genRandomFullSlice rng1
+    let (plen, rng3) := randNat rng2 0 s.cell.bits.size
+    let payload := s.cell.bits.extract 0 plen
+    let (noise, rng4) := pickNoiseValue rng3
+    mkOracleFuzzCase "fuzz/ok/deep" payload false #[noise, .slice s] rng4
+
 def suite : InstrSuite where
   id := sdbeginsId
   unit := #[
@@ -755,7 +838,11 @@ def suite : InstrSuite where
                 s!"fuzz/{i}/kind-mismatch\nquiet={quiet}\npref={reprStr pref}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}" }
   ] ++ rawOracleUnitCases
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021115
+      count := 500
+      gen := genSdbeginsOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 

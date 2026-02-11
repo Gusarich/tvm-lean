@@ -245,6 +245,103 @@ private def endxcProgramTrueLibraryWithRef : Array Instr :=
 private def endxcProgramTrueMerkleProofBadHash : Array Instr :=
   withEndxcFlag (mkMerkleProofBuilderProgram wrongHashNat emptyRefDepthNat 1) (.num (-1))
 
+private def fuzzBitsBoundaryPool : Array Nat :=
+  #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1022, 1023]
+
+private def pickBitsLenMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 5 then
+    let (idx, rng2) := randNat rng1 0 (fuzzBitsBoundaryPool.size - 1)
+    (fuzzBitsBoundaryPool[idx]!, rng2)
+  else
+    randNat rng1 0 1023
+
+private def fuzzRefPool : Array Cell :=
+  #[Cell.empty, leafA, leafB]
+
+private instance : Inhabited Builder := ⟨Builder.empty⟩
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRefs (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
+  let mut out : Array Cell := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (c, rng') := pickFromPool fuzzRefPool rng
+    out := out.push c
+    rng := rng'
+  return (out, rng)
+
+private def genOrdinaryBuilderMixed (rng0 : StdGen) : Builder × StdGen := Id.run do
+  let (bitsLen, rng1) := pickBitsLenMixed rng0
+  let (refCount, rng2) := randNat rng1 0 4
+  let (bits, rng3) := randBitString bitsLen rng2
+  let (refs, rng4) := genRefs refCount rng3
+  return (({ bits := bits, refs := refs } : Builder), rng4)
+
+private def okSpecialBuilderPool : Array Builder :=
+  #[libraryBuilder0, libraryBuilderA5, merkleProofBuilderValid]
+
+private def badSpecialBuilderPool : Array Builder :=
+  #[
+    Builder.empty,
+    invalidSpecialType0Builder,
+    invalidSpecialShortBuilder,
+    invalidLibraryLenBuilder,
+    invalidLibraryWithRefBuilder,
+    invalidMerkleHashBuilder,
+    invalidMerkleDepthBuilder
+  ]
+
+private def noisePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell Cell.empty, .builder ordinaryBuilderSample, .tuple #[], .cont (.quit 0)]
+
+private def genEndxcFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 15
+  if shape = 0 then
+    (mkEndxcCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 1 then
+    (mkEndxcCase "fuzz/underflow/one-builder" #[.builder Builder.empty], rng1)
+  else if shape = 2 then
+    (mkEndxcCase "fuzz/type/top-not-int-null" #[.builder Builder.empty, .null], rng1)
+  else if shape = 3 then
+    (mkEndxcCase "fuzz/type/top-not-int-cell" #[.builder Builder.empty, .cell Cell.empty], rng1)
+  else if shape = 4 then
+    (mkEndxcCase "fuzz/type/second-not-builder-null" #[.null, intV 0], rng1)
+  else if shape = 5 then
+    (mkEndxcCase "fuzz/type/second-not-builder-cell" #[.cell Cell.empty, intV 0], rng1)
+  else if shape = 6 then
+    let (b, rng2) := genOrdinaryBuilderMixed rng1
+    (mkEndxcCase "fuzz/ok/false-random-builder" #[.builder b, intV 0], rng2)
+  else if shape = 7 then
+    let (b, rng2) := pickFromPool okSpecialBuilderPool rng1
+    (mkEndxcCase "fuzz/ok/true-valid-special" #[.builder b, intV (-1)], rng2)
+  else if shape = 8 then
+    let (b, rng2) := pickFromPool okSpecialBuilderPool rng1
+    (mkEndxcCase "fuzz/ok/true-nonneg-flag" #[.builder b, intV 7], rng2)
+  else if shape = 9 then
+    let (b, rng2) := pickFromPool badSpecialBuilderPool rng1
+    (mkEndxcCase "fuzz/cellov/true-invalid-special" #[.builder b, intV (-1)], rng2)
+  else if shape = 10 then
+    let (b, rng2) := genOrdinaryBuilderMixed rng1
+    (mkEndxcCase "fuzz/cellov/true-random-ordinary-payload" #[.builder b, intV (-1)], rng2)
+  else if shape = 11 then
+    let (b, rng2) := genOrdinaryBuilderMixed rng1
+    let (noise, rng3) := pickFromPool noisePool rng2
+    (mkEndxcCase "fuzz/ok/deep-noise-false" #[noise, .builder b, intV 0], rng3)
+  else if shape = 12 then
+    let (b, rng2) := pickFromPool okSpecialBuilderPool rng1
+    let (noise, rng3) := pickFromPool noisePool rng2
+    (mkEndxcCase "fuzz/ok/deep-noise-true" #[noise, .builder b, intV (-1)], rng3)
+  else if shape = 13 then
+    (mkEndxcProgramCase "fuzz/program/false-bits256" #[] endxcProgramFalseBits256, rng1)
+  else if shape = 14 then
+    (mkEndxcProgramCase "fuzz/program/true-library-hash0" #[] endxcProgramTrueLibrary0, rng1)
+  else
+    (mkEndxcProgramCase "fuzz/program/true-merkle-proof-valid" #[] endxcProgramTrueMerkleProofValid, rng1)
+
 def suite : InstrSuite where
   id := endxcId
   unit := #[
@@ -517,7 +614,11 @@ def suite : InstrSuite where
       #[.builder Builder.empty, intV 0]
       #[.pushInt (.num endxcSetGasExactMinusOne), .tonEnvOp .setGasLimit, endxcInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021106
+      count := 500
+      gen := genEndxcFuzzCase }
+  ]
 
 initialize registerSuite suite
 

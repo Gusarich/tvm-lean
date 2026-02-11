@@ -196,6 +196,80 @@ private def chashIXSetGasExact : Int :=
 private def chashIXSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne chashIXInstr
 
+private def okCellPool : Array Cell :=
+  #[
+    Cell.empty,
+    cellDepth1,
+    cellDepth2,
+    cellDepth4,
+    specialLibraryCell,
+    specialPrunedL7,
+    specialPrunedL1
+  ]
+
+private def noisePool : Array Value :=
+  #[
+    .null,
+    intV 0,
+    intV 7,
+    .cell Cell.empty,
+    .slice (mkFullSlice 9 0),
+    .builder Builder.empty,
+    .tuple #[]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genChashIXFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  if shape = 0 then
+    (mkChashIXCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 1 then
+    (mkChashIXCase "fuzz/underflow/index-only" #[intV 0], rng1)
+  else if shape = 2 then
+    (mkChashIXCase "fuzz/type/top-null" #[.null], rng1)
+  else if shape = 3 then
+    (mkChashIXCase "fuzz/type/top-cell" #[.cell Cell.empty], rng1)
+  else if shape = 4 then
+    (mkChashIXCase "fuzz/type/top-builder" #[.builder Builder.empty], rng1)
+  else if shape = 5 then
+    (mkChashIXCase "fuzz/type/top-slice" #[.slice (mkFullSlice 7 1)], rng1)
+  else if shape = 6 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    (mkChashIXCase "fuzz/ok/top-only" #[.cell c, intV (Int.ofNat idx)], rng3)
+  else if shape = 7 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    let (noise, rng4) := pickFromPool noisePool rng3
+    (mkChashIXCase "fuzz/ok/deep-noise" #[noise, .cell c, intV (Int.ofNat idx)], rng4)
+  else if shape = 8 then
+    let (idxBad, rng2) := pickFromPool (#[-1, 4, 9] : Array Int) rng1
+    (mkChashIXCase "fuzz/range/order-before-cell-type" #[.null, intV idxBad], rng2)
+  else if shape = 9 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idxBad, rng3) := pickFromPool (#[-1, 4, 9] : Array Int) rng2
+    (mkChashIXCase "fuzz/range/index-oob" #[.cell c, intV idxBad], rng3)
+  else if shape = 10 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    (mkChashIXCase "fuzz/range/index-nan-program" #[.cell c] #[.pushInt .nan, chashIXInstr], rng2)
+  else if shape = 11 then
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    let stack : Array Value := #[.null, intV 77, .slice (mkFullSlice 9 1), .cell c, intV (Int.ofNat idx)]
+    (mkChashIXCase "fuzz/ok/deep-fixed" stack, rng3)
+  else if shape = 12 then
+    let badCellPos : Array Value := #[.null, intV 77, .builder Builder.empty, .tuple #[]]
+    let (idx, rng2) := randNat rng1 0 3
+    (mkChashIXCase "fuzz/type/cell-position" (badCellPos ++ #[intV (Int.ofNat idx)]), rng2)
+  else
+    let (c, rng2) := pickFromPool okCellPool rng1
+    let (idx, rng3) := randNat rng2 0 3
+    let code : Array Instr := #[chashIXInstr, chashIXInstr]
+    (mkChashIXCase "fuzz/ok/repeat-twice" #[.cell c, intV (Int.ofNat idx)] code, rng3)
+
 def suite : InstrSuite where
   id := { name := "CHASHIX" }
   unit := #[
@@ -438,7 +512,11 @@ def suite : InstrSuite where
       #[.cell cellDepth1, intV 0]
       #[.pushInt (.num chashIXSetGasExactMinusOne), .tonEnvOp .setGasLimit, chashIXInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021103
+      count := 500
+      gen := genChashIXFuzzCase }
+  ]
 
 initialize registerSuite suite
 

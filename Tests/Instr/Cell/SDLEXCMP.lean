@@ -147,6 +147,128 @@ private def sdLexCmpSetGasExact : Int :=
 private def sdLexCmpSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdLexCmpInstr
 
+private def sdLexCmpLenPool : Array Nat :=
+  #[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 1023]
+
+private def pickSdLexCmpBitsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode ≤ 3 then
+    let (idx, rng2) := randNat rng1 0 (sdLexCmpLenPool.size - 1)
+    (sdLexCmpLenPool[idx]!, rng2)
+  else if mode ≤ 6 then
+    randNat rng1 0 96
+  else
+    randNat rng1 97 1023
+
+private def pickSdLexCmpRefsMixed (rng0 : StdGen) : Nat × StdGen :=
+  let (mode, rng1) := randNat rng0 0 9
+  if mode = 0 then
+    (0, rng1)
+  else if mode = 1 then
+    (4, rng1)
+  else
+    randNat rng1 0 4
+
+private def mkRefsByCount (n : Nat) : Array Cell :=
+  if n = 0 then #[]
+  else if n = 1 then #[refLeafA]
+  else if n = 2 then #[refLeafA, refLeafB]
+  else if n = 3 then #[refLeafA, refLeafB, refLeafC]
+  else #[refLeafA, refLeafB, refLeafC, Cell.empty]
+
+private def mkFuzzSlice (bits refs : Nat) (phase : Nat := 0) : Slice :=
+  mkSliceWithBitsRefs (stripeBits bits phase) (mkRefsByCount refs)
+
+private def pickNoiseValue (rng0 : StdGen) : Value × StdGen :=
+  let (pick, rng1) := randNat rng0 0 2
+  if pick = 0 then
+    (.null, rng1)
+  else if pick = 1 then
+    (intV (-17), rng1)
+  else
+    (.cell refLeafA, rng1)
+
+private def pickBadNonSliceValue (rng0 : StdGen) : Value × String × StdGen :=
+  let (pick, rng1) := randNat rng0 0 5
+  if pick = 0 then
+    (.null, "null", rng1)
+  else if pick = 1 then
+    (intV 1, "int", rng1)
+  else if pick = 2 then
+    (.cell refLeafB, "cell", rng1)
+  else if pick = 3 then
+    (.builder Builder.empty, "builder", rng1)
+  else if pick = 4 then
+    (.tuple #[], "tuple", rng1)
+  else
+    (.cont (.quit 0), "cont", rng1)
+
+private def genSdLexCmpFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 10
+  if shape = 0 then
+    let (bits, rng2) := pickSdLexCmpBitsMixed rng1
+    let (refs, rng3) := pickSdLexCmpRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let s := mkFuzzSlice bits refs phase
+    (mkSdLexCmpCase s!"fuzz/ok/equal/bits-{bits}/refs-{refs}" #[.slice s, .slice s], rng4)
+  else if shape = 1 then
+    let (bits, rng2) := pickSdLexCmpBitsMixed rng1
+    let (phase, rng3) := randNat rng2 0 3
+    let bitsStr := stripeBits bits phase
+    let s1 := mkSliceWithBitsRefs bitsStr #[refLeafA]
+    let s2 := mkSliceWithBitsRefs bitsStr #[refLeafB, refLeafC]
+    (mkSdLexCmpCase s!"fuzz/ok/equal-bits-diff-refs/bits-{bits}" #[.slice s1, .slice s2], rng3)
+  else if shape = 2 then
+    let (bits1, rng2) := pickSdLexCmpBitsMixed rng1
+    let (bits2, rng3) := pickSdLexCmpBitsMixed rng2
+    let (refs1, rng4) := pickSdLexCmpRefsMixed rng3
+    let (refs2, rng5) := pickSdLexCmpRefsMixed rng4
+    let (phase1, rng6) := randNat rng5 0 3
+    let (phase2, rng7) := randNat rng6 0 3
+    let s1 := mkFuzzSlice bits1 refs1 phase1
+    let s2 := mkFuzzSlice bits2 refs2 phase2
+    (mkSdLexCmpCase s!"fuzz/ok/random/b1-{bits1}/b2-{bits2}" #[.slice s1, .slice s2], rng7)
+  else if shape = 3 then
+    let (prefixBits, rng2) := randNat rng1 0 64
+    let (tailBits, rng3) := randNat rng2 1 64
+    let (phase, rng4) := randNat rng3 0 3
+    let base := stripeBits prefixBits phase
+    let sShort := mkSliceWithBitsRefs base #[]
+    let sLong := mkSliceWithBitsRefs (base ++ stripeBits tailBits (phase + 1)) #[refLeafA]
+    (mkSdLexCmpCase s!"fuzz/ok/prefix/short-{prefixBits}/tail-{tailBits}" #[.slice sShort, .slice sLong], rng4)
+  else if shape = 4 then
+    let (prefixBits, rng2) := randNat rng1 0 64
+    let (tailBits, rng3) := randNat rng2 1 64
+    let (phase, rng4) := randNat rng3 0 3
+    let base := stripeBits prefixBits phase
+    let sShort := mkSliceWithBitsRefs base #[refLeafB]
+    let sLong := mkSliceWithBitsRefs (base ++ stripeBits tailBits (phase + 1)) #[]
+    (mkSdLexCmpCase s!"fuzz/ok/prefix-rev/short-{prefixBits}/tail-{tailBits}" #[.slice sLong, .slice sShort], rng4)
+  else if shape = 5 then
+    let (bits, rng2) := pickSdLexCmpBitsMixed rng1
+    let (refs, rng3) := pickSdLexCmpRefsMixed rng2
+    let (phase, rng4) := randNat rng3 0 3
+    let (noise, rng5) := pickNoiseValue rng4
+    let s1 := mkFuzzSlice bits refs phase
+    let s2 := mkFuzzSlice bits refs (phase + 1)
+    (mkSdLexCmpCase s!"fuzz/ok/deep/bits-{bits}/refs-{refs}"
+      #[noise, .slice s1, .slice s2], rng5)
+  else if shape = 6 then
+    (mkSdLexCmpCase "fuzz/underflow/empty" #[], rng1)
+  else if shape = 7 then
+    let (bits, rng2) := pickSdLexCmpBitsMixed rng1
+    let s := mkFuzzSlice bits 0 0
+    (mkSdLexCmpCase s!"fuzz/underflow/one-slice/bits-{bits}" #[.slice s], rng2)
+  else if shape = 8 then
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    (mkSdLexCmpCase s!"fuzz/type/top-{tag}" #[.slice sWord8A5, bad], rng2)
+  else if shape = 9 then
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    (mkSdLexCmpCase s!"fuzz/type/second-{tag}" #[bad, .slice sWord8A5], rng2)
+  else
+    let (bad, tag, rng2) := pickBadNonSliceValue rng1
+    (mkSdLexCmpCase s!"fuzz/type/one-{tag}" #[bad], rng2)
+
 def suite : InstrSuite where
   id := sdLexCmpId
   unit := #[
@@ -320,7 +442,11 @@ def suite : InstrSuite where
     mkSdLexCmpCase "gas/exact-minus-one-out-of-gas" #[.slice sWord8A5, .slice sWord8A6]
       #[.pushInt (.num sdLexCmpSetGasExactMinusOne), .tonEnvOp .setGasLimit, sdLexCmpInstr]
   ]
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021116
+      count := 500
+      gen := genSdLexCmpFuzzCase }
+  ]
 
 initialize registerSuite suite
 

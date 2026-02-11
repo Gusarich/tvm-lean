@@ -8,16 +8,18 @@ inductive StepResult : Type
   deriving Repr
 
 def VmState.outOfGasHalt (st : VmState) : StepResult :=
-  -- Match C++ run_inner() return for out-of-gas during exception handling:
-  -- returns ~Excno::out_of_gas = ~13 = -14.  The outer run()/runner applies
-  -- ~~~ to recover the blockchain exit code (13).
+  -- Match `VmState::run()` behavior: unhandled out-of-gas returns the plain
+  -- exception number (13) and leaves `stack=[gas_consumed]`.  Note that the
+  -- Fift `runvmx` primitive applies `~` to this return value, so the oracle
+  -- observes `-14` for out-of-gas.
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
-  StepResult.halt (~~~ Excno.outOfGas.toInt) st'
+  StepResult.halt Excno.outOfGas.toInt st'
 
 /-- Mirror C++ gas.check() → VmNoGas → throw_exception(out_of_gas) path:
     treat gas exhaustion as an out-of-gas exception, charge exception_gas_price,
-    then halt with ~13.  Used for non-error paths where gas went negative. -/
+    then halt with 13 (Fift `runvmx` observes `~13 = -14`).
+    Used for non-error paths where gas went negative. -/
 def VmState.gasCheckFailed (st : VmState) : StepResult :=
   let stExc := st.throwException Excno.outOfGas.toInt
   let stExcGas := stExc.consumeGas exceptionGasPrice
@@ -189,7 +191,7 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
           -- Implicit RET.
           let st0 := st.consumeGas implicitRetGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            st0.gasCheckFailed
+            st0.outOfGasHalt
           else
             let (res, st1) := (VM.ret).run st0
             match res with
@@ -206,13 +208,13 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
           -- Implicit JMPREF to the first reference.
           let st0 := st.consumeGas implicitJmpRefGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            st0.gasCheckFailed
+            st0.outOfGasHalt
           else
             if code.refPos < code.cell.refs.size then
               let refCell := code.cell.refs[code.refPos]!
               let st1 := st0.registerCellLoad refCell
               if decide (st1.gas.gasRemaining < 0) then
-                st1.gasCheckFailed
+                st1.outOfGasHalt
               else
                 .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
             else
@@ -248,22 +250,29 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
             let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
             let stGas := st0.consumeGas (instrGas instr totBits)
             if decide (stGas.gas.gasRemaining < 0) then
-              stGas.gasCheckFailed
+              stGas.outOfGasHalt
             else
               let (res, st1) := (execInstr host instr).run stGas
               match res with
               | .ok _ =>
                   if decide (st1.gas.gasRemaining < 0) then
-                    st1.gasCheckFailed
+                    -- C++ gas.check() after step → VmNoGas → propagates to run(),
+                    -- bypassing throw_exception.  No exception_gas charged.
+                    st1.outOfGasHalt
                   else
                     .continue st1
               | .error e =>
-                  -- TVM behavior: convert VM errors into an exception jump to c2.
-                  let stExc := st1.throwException e.toInt
-                  let stExcGas := stExc.consumeGas exceptionGasPrice
-                  if decide (stExcGas.gas.gasRemaining < 0) then
-                    stExcGas.outOfGasHalt
+                  if e = .outOfGas then
+                    -- VmNoGas thrown mid-instruction (e.g. from consume_gas during
+                    -- cell load).  Propagates to run(), no exception_gas charged.
+                    st1.outOfGasHalt
                   else
-                    .continue stExcGas
+                    -- TVM behavior: convert VM errors into an exception jump to c2.
+                    let stExc := st1.throwException e.toInt
+                    let stExcGas := stExc.consumeGas exceptionGasPrice
+                    if decide (stExcGas.gas.gasRemaining < 0) then
+                      stExcGas.outOfGasHalt
+                    else
+                      .continue stExcGas
 
 end TvmLean

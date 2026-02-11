@@ -712,11 +712,106 @@ private def fuzzUnitCases : Array UnitCase :=
             (modelSdBeginsConst true prefBits stack) }
   ]
 
+private def minLenTagForPayloadLen (payloadLen : Nat) : Nat :=
+  if payloadLen ≤ 2 then
+    0
+  else
+    ((payloadLen - 2) + 7) / 8
+
+private def pickLenTagForPayload (payloadLen : Nat) (rng0 : StdGen) : Nat × StdGen :=
+  let minTag := minLenTagForPayloadLen payloadLen
+  let (extra, rng1) := randNat rng0 0 3
+  (Nat.min 124 (minTag + extra), rng1)
+
+private def mkOracleCase (name : String) (code : Cell) (stack : Array Value) : OracleCase :=
+  { name := name
+    instr := sdbeginsqId
+    codeCell? := some code
+    initStack := stack }
+
+private def genSdbeginsqOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  if shape = 0 then
+    let (prefLen, rng2) := pickPrefLenMixed rng1
+    let (prefBits, rng3) := randBitString prefLen rng2
+    let (lenTag, rng4) := pickLenTagForPayload prefBits.size rng3
+    let (tailLen, rng5) := randNat rng4 0 32
+    let (tailBits, rng6) := randBitString tailLen rng5
+    let (refs, rng7) := pickRefPack rng6
+    let source := mkFullSlice (prefBits ++ tailBits) refs
+    (mkOracleCase s!"fuzz/ok/quiet/match-len{prefLen}" (mkRawCode true prefBits lenTag) #[.slice source], rng7)
+  else if shape = 1 then
+    let (noise, rng2) := pickNoiseValue rng1
+    let (prefLen, rng3) := pickPrefLenMixed rng2
+    let (prefBits, rng4) := randBitString prefLen rng3
+    let (lenTag, rng5) := pickLenTagForPayload prefBits.size rng4
+    let (tailLen, rng6) := randNat rng5 0 32
+    let (tailBits, rng7) := randBitString tailLen rng6
+    let (refs, rng8) := pickRefPack rng7
+    let source := mkFullSlice (prefBits ++ tailBits) refs
+    (mkOracleCase s!"fuzz/ok/quiet/deep-len{prefLen}" (mkRawCode true prefBits lenTag) #[noise, .slice source], rng8)
+  else if shape = 2 then
+    let (prefLenRaw, rng2) := pickPrefLenMixed rng1
+    let prefLen := if prefLenRaw = 0 then 1 else prefLenRaw
+    let (prefBits, rng3) := randBitString prefLen rng2
+    let (lenTag, rng4) := pickLenTagForPayload prefBits.size rng3
+    let (tailLen, rng5) := randNat rng4 0 32
+    let (tailBits, rng6) := randBitString tailLen rng5
+    let (refs, rng7) := pickRefPack rng6
+    let source := mkFullSlice (flipFirstBit prefBits ++ tailBits) refs
+    (mkOracleCase s!"fuzz/fail/quiet/mismatch-len{prefLen}" (mkRawCode true prefBits lenTag) #[.slice source], rng7)
+  else if shape = 3 then
+    let (prefLenRaw, rng2) := pickPrefLenMixed rng1
+    let prefLen := if prefLenRaw = 0 then 1 else prefLenRaw
+    let (prefBits, rng3) := randBitString prefLen rng2
+    let (lenTag, rng4) := pickLenTagForPayload prefBits.size rng3
+    let (shortLen, rng5) := randNat rng4 0 (prefLen - 1)
+    let (shortBits, rng6) := randBitString shortLen rng5
+    let source := mkFullSlice shortBits
+    (mkOracleCase s!"fuzz/fail/quiet/short-pref{prefLen}-src{shortLen}" (mkRawCode true prefBits lenTag) #[.slice source], rng6)
+  else if shape = 4 then
+    (mkOracleCase "fuzz/err/underflow" (mkRawCode true bits3A 1) #[], rng1)
+  else if shape = 5 then
+    let (mode, rng2) := randNat rng1 0 3
+    let bad : Value :=
+      if mode = 0 then .null
+      else if mode = 1 then intV 7
+      else if mode = 2 then .cell refLeafA
+      else .builder Builder.empty
+    (mkOracleCase "fuzz/err/type" (mkRawCode true bits3A 1) #[bad], rng2)
+  else if shape = 6 then
+    let (prefLenRaw, rng2) := pickPrefLenMixed rng1
+    let prefLen := if prefLenRaw = 0 then 1 else prefLenRaw
+    let (prefBits, rng3) := randBitString prefLen rng2
+    let (lenTag, rng4) := pickLenTagForPayload prefBits.size rng3
+    let source := mkFullSlice (flipFirstBit prefBits)
+    (mkOracleCase s!"fuzz/err/nonquiet/mismatch-len{prefLen}" (mkRawCode false prefBits lenTag) #[.slice source], rng4)
+  else if shape = 7 then
+    let (prefLen, rng2) := pickPrefLenMixed rng1
+    let (prefBits, rng3) := randBitString prefLen rng2
+    let (lenTag, rng4) := pickLenTagForPayload prefBits.size rng3
+    let (tailLen, rng5) := randNat rng4 0 32
+    let (tailBits, rng6) := randBitString tailLen rng5
+    let source := mkFullSlice (prefBits ++ tailBits)
+    (mkOracleCase s!"fuzz/ok/nonquiet/match-len{prefLen}" (mkRawCode false prefBits lenTag) #[.slice source], rng6)
+  else
+    let (mode, rng2) := randNat rng1 0 2
+    if mode = 0 then
+      (mkOracleCase "fuzz/decode/markerless-len0" codeMarkerlessLen0 #[.slice slice8A], rng2)
+    else if mode = 1 then
+      (mkOracleCase "fuzz/decode/truncated-header" codeHeaderTooShort #[.slice slice8A], rng2)
+    else
+      (mkOracleCase "fuzz/decode/truncated-data" codeTruncatedPayload #[.slice slice8A], rng2)
+
 def suite : InstrSuite where
   id := sdbeginsqId
   unit := baseUnitCases ++ rawOracleUnitCases ++ fuzzUnitCases
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021116
+      count := 500
+      gen := genSdbeginsqOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 
