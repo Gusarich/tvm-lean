@@ -211,7 +211,13 @@ def execInstrChildNoRunvm (host : Host) (i : Instr) : VM Unit :=
 def outOfGasHalt (st : VmState) : ChildStepResult :=
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
-  ChildStepResult.halt Excno.outOfGas.toInt st'
+  ChildStepResult.halt (~~~ Excno.outOfGas.toInt) st'
+
+/-- Mirror C++ gas.check() → throw_exception(out_of_gas) for child VM. -/
+private def gasCheckFailed (st : VmState) : ChildStepResult :=
+  let stExc := st.throwException Excno.outOfGas.toInt
+  let stExcGas := stExc.consumeGas exceptionGasPrice
+  outOfGasHalt stExcGas
 
 def childStep (host : Host) (st : VmState) : ChildStepResult :=
   match st.cc with
@@ -306,7 +312,7 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
         if code.refsRemaining == 0 then
           let st0 := st.consumeGas implicitRetGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            outOfGasHalt st0
+            gasCheckFailed st0
           else
             let (res, st1) := (VM.ret).run st0
             match res with
@@ -321,12 +327,12 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
         else
           let st0 := st.consumeGas implicitJmpRefGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            outOfGasHalt st0
+            gasCheckFailed st0
           else if code.refPos < code.cell.refs.size then
             let refCell := code.cell.refs[code.refPos]!
             let st1 := st0.registerCellLoad refCell
             if decide (st1.gas.gasRemaining < 0) then
-              outOfGasHalt st1
+              gasCheckFailed st1
             else
               .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
           else
@@ -360,13 +366,13 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
             let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
             let stGas := st0.consumeGas (instrGas instr totBits)
             if decide (stGas.gas.gasRemaining < 0) then
-              outOfGasHalt stGas
+              gasCheckFailed stGas
             else
               let (res, st1) := (execInstrChildNoRunvm host instr).run stGas
               match res with
               | .ok _ =>
                   if decide (st1.gas.gasRemaining < 0) then
-                    outOfGasHalt st1
+                    gasCheckFailed st1
                   else
                     .continue st1
               | .error e =>

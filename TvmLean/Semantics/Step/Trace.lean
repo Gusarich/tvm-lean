@@ -201,7 +201,7 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
           let st0 := st.consumeGas implicitRetGasPrice
           let res :=
             if decide (st0.gas.gasRemaining < 0) then
-              st0.outOfGasHalt
+              st0.gasCheckFailed
             else
               let (res0, st1) := (VM.ret).run st0
               match res0 with
@@ -223,12 +223,12 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
           let st0 := st.consumeGas implicitJmpRefGasPrice
           let res :=
             if decide (st0.gas.gasRemaining < 0) then
-              st0.outOfGasHalt
+              st0.gasCheckFailed
             else if code.refPos < code.cell.refs.size then
               let refCell := code.cell.refs[code.refPos]!
               let st1 := st0.registerCellLoad refCell
               if decide (st1.gas.gasRemaining < 0) then
-                st1.outOfGasHalt
+                st1.gasCheckFailed
               else
                 .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
             else
@@ -276,13 +276,13 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
             let stGas := st0.consumeGas (instrGas instr totBits)
             let (event, res) :=
               if decide (stGas.gas.gasRemaining < 0) then
-                (s!"exec({instr.pretty}) out_of_gas", stGas.outOfGasHalt)
+                (s!"exec({instr.pretty}) out_of_gas", stGas.gasCheckFailed)
               else
                 let (res1, st1) := (execInstr host instr).run stGas
                 match res1 with
                 | .ok _ =>
                     if decide (st1.gas.gasRemaining < 0) then
-                      (s!"exec({instr.pretty}) out_of_gas", st1.outOfGasHalt)
+                      (s!"exec({instr.pretty}) out_of_gas", st1.gasCheckFailed)
                     else
                       (s!"exec({instr.pretty})", .continue st1)
                 | .error e =>

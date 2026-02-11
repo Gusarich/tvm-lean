@@ -8,11 +8,20 @@ inductive StepResult : Type
   deriving Repr
 
 def VmState.outOfGasHalt (st : VmState) : StepResult :=
-  -- Match C++ unhandled out-of-gas: clear stack and push `gas_consumed()`
-  -- (which may exceed the base/limit if `gas_remaining` went negative).
+  -- Match C++ run_inner() return for out-of-gas during exception handling:
+  -- returns ~Excno::out_of_gas = ~13 = -14.  The outer run()/runner applies
+  -- ~~~ to recover the blockchain exit code (13).
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
-  StepResult.halt Excno.outOfGas.toInt st'
+  StepResult.halt (~~~ Excno.outOfGas.toInt) st'
+
+/-- Mirror C++ gas.check() → VmNoGas → throw_exception(out_of_gas) path:
+    treat gas exhaustion as an out-of-gas exception, charge exception_gas_price,
+    then halt with ~13.  Used for non-error paths where gas went negative. -/
+def VmState.gasCheckFailed (st : VmState) : StepResult :=
+  let stExc := st.throwException Excno.outOfGas.toInt
+  let stExcGas := stExc.consumeGas exceptionGasPrice
+  stExcGas.outOfGasHalt
 
 def VmState.applyCregsCdata (st : VmState) (cregs : OrdCregs) (cdata : OrdCdata) : VmState :=
   -- Mirrors C++ `adjust_cr(save)` + `adjust_jump_cont` stack truncation/merge on jump/call.
@@ -180,7 +189,7 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
           -- Implicit RET.
           let st0 := st.consumeGas implicitRetGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            st0.outOfGasHalt
+            st0.gasCheckFailed
           else
             let (res, st1) := (VM.ret).run st0
             match res with
@@ -197,13 +206,13 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
           -- Implicit JMPREF to the first reference.
           let st0 := st.consumeGas implicitJmpRefGasPrice
           if decide (st0.gas.gasRemaining < 0) then
-            st0.outOfGasHalt
+            st0.gasCheckFailed
           else
             if code.refPos < code.cell.refs.size then
               let refCell := code.cell.refs[code.refPos]!
               let st1 := st0.registerCellLoad refCell
               if decide (st1.gas.gasRemaining < 0) then
-                st1.outOfGasHalt
+                st1.gasCheckFailed
               else
                 .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
             else
@@ -239,13 +248,13 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
             let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
             let stGas := st0.consumeGas (instrGas instr totBits)
             if decide (stGas.gas.gasRemaining < 0) then
-              stGas.outOfGasHalt
+              stGas.gasCheckFailed
             else
               let (res, st1) := (execInstr host instr).run stGas
               match res with
               | .ok _ =>
                   if decide (st1.gas.gasRemaining < 0) then
-                    st1.outOfGasHalt
+                    st1.gasCheckFailed
                   else
                     .continue st1
               | .error e =>
