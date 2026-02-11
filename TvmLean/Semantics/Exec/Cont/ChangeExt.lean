@@ -17,6 +17,8 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
       | .popCtrX =>
           VM.checkUnderflow 2
           let idx ← VM.popNatUpTo 16
+          if idx = 6 || idx > 7 then
+            throw .rangeChk
           let v ← VM.pop
           let st ← get
           match st.setCtr idx v with
