@@ -108,12 +108,16 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
                     set { st1 with regs := { st1.regs with c0 := c0' } }
       | .saveAltCtr idx =>
           let st ← get
-          match st.getCtr idx with
+          -- C++ `exec_savealt_ctr` maps invalid direct AST indices (e.g. c6/c8)
+          -- to `typeChk` via `define(idx, st->get(idx))`, not `rangeChk`.
+          let v : Value ←
+            match st.getCtr idx with
+            | .ok v => pure v
+            | .error .rangeChk => pure .null
+            | .error e => throw e
+          match st.regs.c1.defineCtr idx v with
+          | .ok c1' => set { st with regs := { st.regs with c1 := c1' } }
           | .error e => throw e
-          | .ok v =>
-              match st.regs.c1.defineCtr idx v with
-              | .ok c1' => set { st with regs := { st.regs with c1 := c1' } }
-              | .error e => throw e
       | .saveBothCtr idx =>
           let st ← get
           match st.getCtr idx with
