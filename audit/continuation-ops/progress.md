@@ -1,9 +1,9 @@
 # Continuation Audit Progress
 
 ## Stats
-- Completed: 77/98
+- Completed: 84/98
 - Running: 0
-- Bugs reported: 45 (good: 44, bad: 0, pending: 1)
+- Bugs reported: 49 (good: 48, bad: 0, pending: 1)
 
 ## Instances
 
@@ -86,6 +86,27 @@
 | A075 | INVERT | done | matched C++; 32 oracle |
 | A076 | BOOLEVAL | done | matched C++ after booleval c0/c1+jump ordering fix; 39 oracle |
 | A077 | SAMEALT | done | matched C++; 43 oracle |
+| A078 | SAMEALTSAVE | done | matched C++; 48 oracle |
+| A079 | SETCONTCTRMANY | done | matched C++; 52 oracle |
+| A080 | CALLCCARGS | done | matched C++; 50 oracle |
+| A081 | JMPDICT | done | matched C++ after idx canonicalization (`idx &&& 0x3fff`); 44 oracle |
+| A082 | PREPAREDICT | done | matched C++ after idx canonicalization (`idx &&& 0x3fff`); 42 oracle |
+| A083 | JMPXARGS | done | matched C++ after removing opcode-local truncation/gas and delegating stack shaping to `VM.jump`; 47 oracle |
+| A084 | RETARGS | done | matched C++ after params canonicalization (`args &&& 0x0f`); 41 oracle |
+| A085 | RETURNARGS | pending | queued |
+| A086 | SETCONTARGS | pending | queued |
+| A087 | BLESSARGS | pending | queued |
+| A088 | SETCONTCTR | pending | queued |
+| A089 | SETRETCTR | pending | queued |
+| A090 | SETALTCTR | pending | queued |
+| A091 | POPSAVE | pending | queued |
+| A092 | SAVECTR | pending | queued |
+| A093 | SAVEALTCTR | pending | queued |
+| A094 | SAVEBOTHCTR | pending | queued |
+| A095 | RUNVM | pending | queued |
+| A096 | POPCTR | pending | queued |
+| A097 | CALLXARGS | pending | queued |
+| A098 | CALLXARGS_1 | pending | queued |
 
 ## Bug Outcomes
 
@@ -135,3 +156,7 @@
 | B042 | `COMPOSBOTH` missed upfront C++ `check_underflow(2)` before continuation type checks | fixed | `TvmLean/Semantics/Exec/Cont/ComposBoth.lean` |
 | B043 | `BOOLAND` missed upfront C++ `check_underflow(2)` before continuation type checks | fixed | `TvmLean/Semantics/Exec/Cont/BoolAnd.lean` |
 | B044 | `BOOLEVAL` used C++-mismatched order for `extractCc` / `c0,c1` setup / jump | fixed | `TvmLean/Semantics/Exec/Cont/AtExit.lean` |
+| B045 | `JMPDICT` missed C++ immediate canonicalization (`args &= 0x3fff`) | fixed | `TvmLean/Semantics/Exec/Flow/LoopExt.lean` |
+| B046 | `PREPAREDICT` missed C++ immediate canonicalization (`args &= 0x3fff`) | fixed | `TvmLean/Semantics/Exec/Flow/PrepareDict.lean` |
+| B047 | `JMPXARGS` performed opcode-local stack truncation/gas instead of C++ `jump(..., pass_args)` path | fixed | `TvmLean/Semantics/Exec/Flow/JmpxArgs.lean` |
+| B048 | `RETARGS` missed C++ params canonicalization (`args &= 15`) before return | fixed | `TvmLean/Semantics/Exec/Flow/RetArgs.lean` |
