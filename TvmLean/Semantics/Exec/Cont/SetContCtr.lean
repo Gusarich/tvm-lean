@@ -5,9 +5,9 @@ namespace TvmLean
 set_option maxHeartbeats 1000000 in
 def execInstrContSetContCtr (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
-  | .setContCtr idx =>
-      -- Mirrors `SETCONTCTR c<idx>` from `crypto/vm/contops.cpp` (`exec_setcont_ctr`):
-      -- define `c<idx>` inside a continuation popped from the stack (wrapping with an envelope if needed).
+  | .setContCtr idxRaw =>
+      -- Mirrors `exec_setcont_ctr` (`idx = args & 15`) from `crypto/vm/contops.cpp`.
+      let idx := idxRaw &&& 0xf
       VM.checkUnderflow 2
       let cont ← VM.popCont
       let v ← VM.pop
