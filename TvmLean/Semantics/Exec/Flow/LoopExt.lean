@@ -124,7 +124,9 @@ def execInstrFlowLoopExt (i : Instr) (next : VM Unit) : VM Unit := do
           let body ← VM.extractCc 0
           modify fun st => { st with cc := .againBody body }
       | .jmpDict idx =>
-          VM.pushSmallInt (Int.ofNat idx)
+          -- C++ `exec_jmpdict` masks 14-bit immediate before push (`args &= 0x3fff`).
+          let idx' : Nat := idx &&& 0x3fff
+          VM.pushSmallInt (Int.ofNat idx')
           let st ← get
           VM.jump st.regs.c3
       | _ =>
