@@ -142,10 +142,10 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
               throw .invOpcode
           -- Stack: ... builder x -- ...
           let x ← VM.popInt
+          let b ← VM.popBuilder
           match x with
           | .nan => throw .rangeChk
           | .num n =>
-              let b ← VM.popBuilder
               if !signed && n < 0 then
                 -- Unsigned VarInt cannot encode negative numbers.
                 throw .rangeChk

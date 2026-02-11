@@ -30,7 +30,7 @@ Branch map used for this suite:
 Key risk areas:
 - stack order is `... builder x` (`x` on top);
 - len overflow (`lenBytes >= 32`) must throw `rangeChk` before capacity checks;
-- `NaN` throws `rangeChk` before builder pop;
+- builder pop/type happens before `NaN`/range checks (matches C++ operand pop order);
 - exact 31-byte signed boundary must pass; 32-byte requirement must fail.
 -/
 
@@ -203,9 +203,9 @@ def suite : InstrSuite where
         expectErr "range/nan"
           (runStvarint32Direct #[.builder Builder.empty, .int .nan]) .rangeChk
 
-        -- Branch map: `NaN` rejection happens before builder pop/type/capacity branches.
-        expectErr "error-order/range-nan-before-builder-type"
-          (runStvarint32Direct #[.null, .int .nan]) .rangeChk
+        -- Branch map: builder pop/type errors take precedence over `NaN`/range checks.
+        expectErr "error-order/type-builder-before-range-nan"
+          (runStvarint32Direct #[.null, .int .nan]) .typeChk
         expectErr "error-order/range-before-cellov-overflow"
           (runStvarint32Direct #[.builder fullBuilder1023, intV overflowPosSigned31Bytes]) .rangeChk
         expectErr "error-order/range-before-cellov-nan"
