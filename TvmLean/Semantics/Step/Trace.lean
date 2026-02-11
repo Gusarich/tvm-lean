@@ -105,13 +105,28 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
       let action : VM Bool := do
         let b ← VM.popBool
         if b then
-          modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
+          if body.hasC0 then
+            modify fun st => { st with cc := body }
+          else
+            modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
         else
-          match after with
-          | .ordinary code saved cregs cdata =>
-              modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-          | _ =>
-              modify fun st => { st with cc := after }
+          let st ← get
+          let afterNeedsMoreArgs : Bool :=
+            match after with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
+          if afterNeedsMoreArgs then
+            throw .stkUnd
+          else
+            match after with
+            | .ordinary code saved cregs cdata =>
+                modify fun st =>
+                  { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+            | _ =>
+                modify fun st => { st with cc := after }
         return b
       let (res0, st1) := (action.run st)
       let (event, res) :=
@@ -130,7 +145,11 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
         | .halt _ st' => st'
       mk event stAfter res
   | .whileBody cond body after =>
-      let st1 := { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
+      let st1 :=
+        if cond.hasC0 then
+          { st with cc := cond }
+        else
+          { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
       let res := StepResult.continue st1
       mk "while_body" st1 res
   | .untilBody body after =>

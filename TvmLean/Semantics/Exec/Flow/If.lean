@@ -9,7 +9,7 @@ def execInstrFlowIf (i : Instr) (next : VM Unit) : VM Unit := do
       VM.checkUnderflow 2
       let cont ← VM.popCont
       if (← VM.popBool) then
-        modify fun st => st.callTo cont
+        VM.call cont
       else
         pure ()
   | _ => next

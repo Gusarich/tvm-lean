@@ -9,12 +9,12 @@ def execInstrFlowUntil (i : Instr) (next : VM Unit) : VM Unit := do
       -- Stack effect: ... body -- ...
       -- Control flow: execute `body`; if it returns `true` then continue, otherwise repeat.
       let body ← VM.popCont
+      -- Match C++ `exec_until`: capture `after := extract_cc(1)` first.
+      -- This also resets current `c0 := quit0` as a side-effect of save_cr=1.
+      let after ← VM.extractCc 1
       let st ← get
-      let after :=
-        match st.cc with
-        | .ordinary rest _ _ _ => .ordinary rest st.regs.c0 OrdCregs.empty OrdCdata.empty
-        | _ => st.cc
-      -- C++ `VmState::until`: only installs the loop continuation into `c0` if `body` doesn't already have `c0`.
+      -- C++ `VmState::until`: only installs the loop continuation into `c0`
+      -- if `body` doesn't already have `c0`.
       if body.hasC0 then
         set { st with cc := body }
       else

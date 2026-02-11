@@ -115,13 +115,29 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
   | .whileCond cond body after =>
       let action : VM Unit := do
         if (← VM.popBool) then
-          modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
+          -- Match C++ `WhileCont::jump[_w]`: install while-body continuation in c0 only if `body` has no c0.
+          if body.hasC0 then
+            modify fun st => { st with cc := body }
+          else
+            modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
         else
-          match after with
-          | .ordinary code saved cregs cdata =>
-              modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-          | _ =>
-              modify fun st => { st with cc := after }
+          let st ← get
+          let afterNeedsMoreArgs : Bool :=
+            match after with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
+          if afterNeedsMoreArgs then
+            throw .stkUnd
+          else
+            match after with
+            | .ordinary code saved cregs cdata =>
+                modify fun st =>
+                  { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+            | _ =>
+                modify fun st => { st with cc := after }
       let (res, st') := (action.run st)
       match res with
       | .ok _ =>
@@ -134,22 +150,54 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
           else
             .continue stExcGas
   | .whileBody cond body after =>
-      .continue { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
+      -- Match C++ `WhileCont::jump[_w]`: install while-cond continuation in c0 only if `cond` has no c0.
+      if cond.hasC0 then
+        .continue { st with cc := cond }
+      else
+        .continue { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
   | .untilBody body after =>
       let action : VM Unit := do
         if (← VM.popBool) then
-          match after with
-          | .ordinary code saved cregs cdata =>
-              modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-          | _ =>
-              modify fun st => { st with cc := after }
+          let st ← get
+          let afterNeedsMoreArgs : Bool :=
+            match after with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
+          if afterNeedsMoreArgs then
+            throw .stkUnd
+          else
+            match after with
+            | .ordinary code saved cregs cdata =>
+                modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+            | _ =>
+                modify fun st => { st with cc := after }
         else
           -- C++ `UntilCont::jump`: if `body` doesn't have `c0`, re-install this until continuation into `c0`
           -- because `RET` swaps `c0 := quit0` when returning to `c0`.
+          let st ← get
+          let bodyNeedsMoreArgs : Bool :=
+            match body with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
           if body.hasC0 then
-            modify fun st => { st with cc := body }
+            if bodyNeedsMoreArgs then
+              throw .stkUnd
+            else
+              modify fun st => { st with cc := body }
           else
-            modify fun st => { st with regs := { st.regs with c0 := .untilBody body after }, cc := body }
+            -- Match C++ order in `UntilCont::jump`: install `c0` first, then jump to body
+            -- (which may throw `stk_und` in `adjust_jump_cont`).
+            modify fun st => { st with regs := { st.regs with c0 := .untilBody body after } }
+            if bodyNeedsMoreArgs then
+              throw .stkUnd
+            else
+              modify fun st => { st with cc := body }
       let (res, st') := (action.run st)
       match res with
       | .ok _ =>
@@ -163,21 +211,62 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
             .continue stExcGas
   | .repeatBody body after count =>
       if count = 0 then
-        match after with
-        | .ordinary code saved cregs cdata =>
-            .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-        | _ =>
-            .continue { st with cc := after }
+        let afterNeedsMoreArgs : Bool :=
+          match after with
+          | .ordinary _ _ _ cdata
+          | .envelope _ _ cdata =>
+              decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+          | _ =>
+              false
+        if afterNeedsMoreArgs then
+          let stExc := st.throwException Excno.stkUnd.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            stExcGas.outOfGasHalt
+          else
+            .continue stExcGas
+        else
+          match after with
+          | .ordinary code saved cregs cdata =>
+              .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+          | _ =>
+              .continue { st with cc := after }
       else if body.hasC0 then
         .continue { st with cc := body }
       else
         let count' := count - 1
         .continue { st with regs := { st.regs with c0 := .repeatBody body after count' }, cc := body }
   | .againBody body =>
+      let bodyNeedsMoreArgs : Bool :=
+        match body with
+        | .ordinary _ _ _ cdata
+        | .envelope _ _ cdata =>
+            decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+        | _ =>
+            false
       if body.hasC0 then
-        .continue { st with cc := body }
+        if bodyNeedsMoreArgs then
+          let stExc := st.throwException Excno.stkUnd.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            stExcGas.outOfGasHalt
+          else
+            .continue stExcGas
+        else
+          .continue { st with cc := body }
       else
-        .continue { st with regs := { st.regs with c0 := .againBody body }, cc := body }
+        -- Match C++ `AgainCont::jump[_w]`: install loop continuation in `c0` first,
+        -- then apply jump-time `nargs` checks (`adjust_jump_cont`).
+        let stLoop := { st with regs := { st.regs with c0 := .againBody body } }
+        if bodyNeedsMoreArgs then
+          let stExc := stLoop.throwException Excno.stkUnd.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            stExcGas.outOfGasHalt
+          else
+            .continue stExcGas
+        else
+          .continue { stLoop with cc := body }
   | .envelope ext cregs cdata =>
       -- Mirrors C++ `ArgContExt::jump`: apply saved control regs, closure stack and nargs, then jump to `ext`.
       let st := st.applyCregsCdata cregs cdata
