@@ -7,7 +7,9 @@ def execInstrFlowPrepareDict (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .prepareDict idx =>
       -- Matches C++ `exec_preparedict` (contops.cpp).
-      VM.pushSmallInt (Int.ofNat idx)
+      -- Keep direct raw handler execution consistent with C++ argument masking.
+      let idx' : Nat := idx &&& 0x3fff
+      VM.pushSmallInt (Int.ofNat idx')
       let st ← get
       VM.push (.cont st.regs.c3)
   | _ => next
