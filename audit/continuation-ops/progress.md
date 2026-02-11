@@ -1,9 +1,9 @@
 # Continuation Audit Progress
 
 ## Stats
-- Completed: 91/98
+- Completed: 98/98
 - Running: 0
-- Bugs reported: 52 (good: 51, bad: 0, pending: 1)
+- Bugs reported: 59 (good: 58, bad: 0, pending: 1)
 
 ## Instances
 
@@ -100,13 +100,13 @@
 | A089 | SETRETCTR | done | matched C++; 49 oracle |
 | A090 | SETALTCTR | done | matched C++; 47 oracle |
 | A091 | POPSAVE | done | matched C++ after duplicate-define tolerance in c0-save path; 55 oracle |
-| A092 | SAVECTR | pending | queued |
-| A093 | SAVEALTCTR | pending | queued |
-| A094 | SAVEBOTHCTR | pending | queued |
-| A095 | RUNVM | pending | queued |
-| A096 | POPCTR | pending | queued |
-| A097 | CALLXARGS | pending | queued |
-| A098 | CALLXARGS_1 | pending | queued |
+| A092 | SAVECTR | done | matched C++ after idx canonicalization + invalid-index typeChk mapping parity; 46 oracle |
+| A093 | SAVEALTCTR | done | matched C++ after invalid-index typeChk mapping parity; 46 oracle |
+| A094 | SAVEBOTHCTR | done | matched C++ after duplicate-define no-op parity in c0/c1 savelists; 42 oracle |
+| A095 | RUNVM | done | matched C++ after immediate canonicalization, restore-parent state parity, and invalid-opcode gas-bit parity fixes; 50 oracle |
+| A096 | POPCTR | done | matched C++ after `set`-failure→`typeChk` mapping parity; 53 oracle |
+| A097 | CALLXARGS | done | matched C++; 55 oracle |
+| A098 | CALLXARGS_1 | done | matched C++; 47 oracle |
 
 ## Bug Outcomes
 
@@ -163,3 +163,10 @@
 | B049 | `RETURNARGS` missed C++ params canonicalization (`count &= 15`) before return | fixed | `TvmLean/Semantics/Exec/Cont/ReturnArgs.lean` |
 | B050 | `SETCONTCTR` missed C++ idx canonicalization (`idx &= 15`) | fixed | `TvmLean/Semantics/Exec/Cont/SetContCtr.lean` |
 | B051 | `POPSAVE` propagated duplicate c0-save define failure (C++ treats as non-fatal no-op) | fixed | `TvmLean/Semantics/Exec/Cont/ChangeExt.lean` |
+| B052 | `SAVECTR` lacked C++ arg canonicalization (`idx &= 15`) and invalid-index typeChk path parity | fixed | `TvmLean/Semantics/Exec/Cont/SaveCtr.lean` |
+| B053 | `SAVEALTCTR` mapped invalid direct idx to `rangeChk` instead of C++ `typeChk` | fixed | `TvmLean/Semantics/Exec/Cont/ChangeExt.lean` |
+| B054 | `SAVEBOTHCTR` wrongly propagated duplicate-define failures (C++ ignores define failures) | fixed | `TvmLean/Semantics/Exec/Cont/ChangeExt.lean` |
+| B055 | `POPCTR` propagated invalid-index `rangeChk` instead of C++ `throw_typechk(st->set(...))` behavior | fixed | `TvmLean/Semantics/Exec/Cont/PopCtr.lean` |
+| B056 | `RUNVM` immediate path missed C++ canonicalization (`exec_runvm(..., args & 4095)`) | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
+| B057 | `RUNVM` restore-parent path missed C++ propagation of child `libraries`/`chksgnCounter`/`loadedCells` | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
+| B058 | `RUNVM` child invalid-opcode gas-bit charging diverged from C++ dummy-dispatch behavior | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
