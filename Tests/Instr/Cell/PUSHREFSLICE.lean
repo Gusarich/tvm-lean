@@ -103,6 +103,38 @@ private def expectRawSuccess
   | .error e =>
       throw (IO.userError s!"{label}: expected success, got {e}")
 
+private def expectRawErr
+    (label : String)
+    (out : Except Excno Unit × VmState)
+    (expectedErr : Excno)
+    (expectedStack : Array Value)
+    (expectedLoaded : Array (Array UInt8))
+    (expectedGasConsumed : Int) : IO Unit := do
+  let (res, st) := out
+  match res with
+  | .error e =>
+      if e = expectedErr then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected error {expectedErr}, got {e}")
+      if st.stack == expectedStack then
+        pure ()
+      else
+        throw (IO.userError
+          s!"{label}/stack: expected {reprStr expectedStack}, got {reprStr st.stack}")
+      if st.loadedCells == expectedLoaded then
+        pure ()
+      else
+        throw (IO.userError
+          s!"{label}/loaded: expected {reprStr expectedLoaded}, got {reprStr st.loadedCells}")
+      if st.gas.gasConsumed = expectedGasConsumed then
+        pure ()
+      else
+        throw (IO.userError
+          s!"{label}/gas: expected {expectedGasConsumed}, got {st.gas.gasConsumed}")
+  | .ok _ =>
+      throw (IO.userError s!"{label}: expected error {expectedErr}, got success")
+
 private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
   | .error .invOpcode =>
@@ -311,9 +343,10 @@ def suite : InstrSuite where
       run := do
         let c := specialLibraryCell
         let h : Array UInt8 := Cell.hashBytes c
-        expectRawSuccess "raw/special-fresh"
+        expectRawErr "raw/special-fresh"
           (runPushRefSliceRaw c)
-          (expectedPushRefSliceStack #[] c)
+          .cellUnd
+          #[]
           #[h]
           cellLoadGasPrice }
     ,
@@ -321,9 +354,10 @@ def suite : InstrSuite where
       run := do
         let c := specialLibraryCell
         let h : Array UInt8 := Cell.hashBytes c
-        expectRawSuccess "raw/special-reload"
+        expectRawErr "raw/special-reload"
           (runPushRefSliceRaw c #[] #[h])
-          (expectedPushRefSliceStack #[] c)
+          .cellUnd
+          #[]
           #[h]
           cellReloadGasPrice }
     ,
@@ -413,7 +447,8 @@ def suite : InstrSuite where
     mkOracleCase "ok/ordinary-empty" cOrdEmpty,
     mkOracleCase "ok/ordinary-bits255" cOrdBits255,
     mkOracleCase "ok/ordinary-refs4" cOrdRefs4,
-    mkOracleCase "ok/special-library" specialLibraryCell,
+    -- `load_cell_slice_ref` rejects special cells; library exotics error unless resolved via libraries.
+    mkOracleCase "cellund/special-library-missing-lib" specialLibraryCell,
     mkOracleCase "ok/deep-stack-preservation" cOrdNested
       #[.null, intV 7, .cell refLeafB],
 
