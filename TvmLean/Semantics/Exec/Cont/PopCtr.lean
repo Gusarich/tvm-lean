@@ -10,7 +10,9 @@ def execInstrContPopCtr (i : Instr) (next : VM Unit) : VM Unit := do
       let st ← get
       match st.setCtr idx v with
       | .ok st' => set st'
-      | .error e => throw e
+      -- C++ `exec_pop_ctr` wraps `st->set(...)` with `throw_typechk(...)`,
+      -- so any failure (bad type or invalid index if invoked directly) is `typeChk`.
+      | .error _ => throw .typeChk
   | _ => next
 
 end TvmLean
