@@ -8,7 +8,11 @@ def execInstrFlowJmpxVarArgs (i : Instr) (next : VM Unit) : VM Unit := do
   | .jmpxVarArgs =>
       -- Mirrors C++ `exec_jmpx_varargs`: pop `params ∈ [-1..254]`, then jump to continuation with `pass_args=params`.
       VM.checkUnderflow 2
-      let params ← VM.popIntFinite
+      let paramsVal ← VM.popInt
+      let params : Int ←
+        match paramsVal with
+        | .nan => throw .rangeChk
+        | .num n => pure n
       if decide (params < -1 ∨ params > 254) then
         throw .rangeChk
       let need : Nat := if decide (params ≥ 0) then params.toNat + 1 else 0
