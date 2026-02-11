@@ -148,13 +148,6 @@ private def exhaustedRefsSlice : Slice :=
 private def oracleNoiseSlice : Slice :=
   mkSliceFromBits (natToBits 0x15 5)
 
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkSliceProgramRefs (sliceRefs : Nat) : Array Instr :=
   #[.newc] ++ appendRefsToTopBuilder sliceRefs ++ #[.endc, .ctos]
 

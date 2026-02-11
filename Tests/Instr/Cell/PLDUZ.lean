@@ -64,9 +64,6 @@ private def runPlduzDispatchFallback (instr : Instr) (stack : Array Value) :
 private def stripeBits (n : Nat) (phase : Nat := 0) : BitString :=
   Array.ofFn (n := n) fun i => ((i.1 + phase) % 2 = 1)
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkPlduzSlice (bits : Nat) (phase : Nat := 0) : Slice :=
   mkSliceWithBitsRefs (stripeBits bits phase)
 

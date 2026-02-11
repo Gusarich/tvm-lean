@@ -98,13 +98,6 @@ private def mkStbqProgramBitsWithNoise
   #[.pushNull]
     ++ mkStbqProgramBits cb2Bits bBits cb2X bX
 
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkBuilderWithRefsProgram (refs : Nat) : Array Instr :=
   #[.newc] ++ appendRefsToTopBuilder refs
 

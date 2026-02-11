@@ -110,15 +110,6 @@ private def expectedSuccessStack
     (idx : Nat) : Array Value :=
   below ++ #[.cell source.cell.refs[source.refPos + idx]!]
 
-private def randBitString (count : Nat) (rng0 : StdGen) : BitString × StdGen := Id.run do
-  let mut bits : BitString := #[]
-  let mut rng := rng0
-  for _ in [0:count] do
-    let (bit, rng') := randBool rng
-    bits := bits.push bit
-    rng := rng'
-  return (bits, rng)
-
 private def genRefArray (count : Nat) (rng0 : StdGen) : Array Cell × StdGen := Id.run do
   let mut refs : Array Cell := #[]
   let mut rng := rng0

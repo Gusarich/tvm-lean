@@ -112,13 +112,6 @@ private def appendBitsToTopBuilder (bits : Nat) : Array Instr :=
   else
     #[.pushInt (.num 0), .xchg0 1, .stu bits]
 
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkBuilderProgram (bits refs : Nat) : Array Instr :=
   #[.newc] ++ appendBitsToTopBuilder bits ++ appendRefsToTopBuilder refs
 

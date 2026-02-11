@@ -96,9 +96,6 @@ private def schkBitRefsQSetGasExact : Int :=
 private def schkBitRefsQSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne schkBitRefsQInstr
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
 private def refCellA : Cell :=
   Cell.mkOrdinary (natToBits 1 1) #[]
 
@@ -145,13 +142,6 @@ private def oracleNoiseSliceA : Slice :=
 
 private def oracleNoiseSliceB : Slice :=
   mkFullSliceBitsRefs 9 1 1
-
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
 
 private def mkSliceProgramBitsRefs
     (sliceBits sliceRefs : Nat) : Array Instr :=

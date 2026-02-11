@@ -81,10 +81,6 @@ private def mkOptNoneSlice (tail : BitString := #[]) : Slice :=
 private def mkOptStdSlice (workchain : Nat) (addr : Nat) (tail : BitString := #[]) : Slice :=
   mkSliceFromBits (mkStdAddrBits workchain addr ++ tail)
 
-private def tailBits7 : BitString := natToBits 93 7
-
-private def tailBits11 : BitString := natToBits 1337 11
-
 private def validStdWc0Addr0 : Slice := mkStdAddrSlice 0 0
 
 private def validStdWc1Addr255 : Slice := mkStdAddrSlice 1 255

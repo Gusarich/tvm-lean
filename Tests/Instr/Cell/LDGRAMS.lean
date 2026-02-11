@@ -81,10 +81,6 @@ private def len14Min : Int := intPow2 104
 
 private def len15Min : Int := intPow2 112
 
-private def tailBits7 : BitString := natToBits 93 7
-
-private def tailBits11 : BitString := natToBits 1337 11
-
 private def ldgramsSetGasExact : Int :=
   computeExactGasBudget ldgramsInstr
 

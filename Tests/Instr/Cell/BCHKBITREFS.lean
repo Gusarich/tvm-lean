@@ -79,12 +79,6 @@ private def runBchkBitRefsDispatchFallback (instr : Instr) (stack : Array Value)
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellOpBchkOnly instr (VM.push (intV dispatchSentinel)) stack
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 
 private def refsByCount (n : Nat) : Array Cell :=

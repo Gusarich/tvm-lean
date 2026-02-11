@@ -117,8 +117,6 @@ private def tailBits6 : BitString := natToBits 37 6
 
 private def tailBits9 : BitString := natToBits 345 9
 
-private def tailBits11 : BitString := natToBits 1337 11
-
 private def sliceEmpty : Slice :=
   mkSliceFromBits #[]
 

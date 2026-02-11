@@ -97,8 +97,6 @@ private def expectedLoadOut (s : Slice) : Array Value :=
   let addr := Slice.ofCell (Slice.prefixCell s rem)
   #[.slice addr, .slice rem]
 
-private def tailBits7 : BitString := natToBits 93 7
-
 private def tailBits33 : BitString := natToBits 0x1ABCDE 33
 
 private def stdSliceZero : Slice := mkStdAddrSlice 0 0

@@ -77,13 +77,9 @@ private def ldslicexSetGasExact : Int :=
 private def ldslicexSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ldslicexInstr
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 13 4) #[]
 
 private def tailBits6 : BitString := natToBits 37 6
-
-private def tailBits11 : BitString := natToBits 1337 11
 
 private def tailBits17 : BitString := natToBits 99877 17
 

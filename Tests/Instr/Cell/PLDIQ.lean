@@ -113,12 +113,6 @@ private def mkPatternSliceWithRefs
     (refs : Array Cell := #[refLeafA]) : Slice :=
   mkSliceWithRefs (alternatingBits n phase) refs
 
-private def tailBits3 : BitString := natToBits 5 3
-private def tailBits5 : BitString := natToBits 21 5
-private def tailBits7 : BitString := natToBits 93 7
-private def tailBits11 : BitString := natToBits 1337 11
-private def tailBits13 : BitString := natToBits 4242 13
-
 private def sampleWidePos201 : Int := intPow2 199 + 654321
 private def sampleWideNeg201 : Int := -(intPow2 200) + 123456
 

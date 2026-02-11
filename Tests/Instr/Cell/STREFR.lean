@@ -97,13 +97,6 @@ private def cellWithRef : Cell :=
 private def appendRef (b : Builder) (c : Cell) : Builder :=
   { b with refs := b.refs.push c }
 
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkBuilderWithRefsProgram (refs : Nat) : Array Instr :=
   #[.newc] ++ appendRefsToTopBuilder refs
 

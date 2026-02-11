@@ -72,7 +72,6 @@ private def sdskipfirstSetGasExact : Int :=
 private def sdskipfirstSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdskipfirstInstr
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 private def refLeafC : Cell := Cell.mkOrdinary (natToBits 6 3) #[refLeafA]
 
@@ -119,20 +118,6 @@ private def runSdskipfirstModel (stack : Array Value) : Except Excno (Array Valu
       else
         throw .cellUnd
   | _ => throw .typeChk
-
-private def expectSameOutcome
-    (label : String)
-    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  let same :=
-    match lhs, rhs with
-    | .ok ls, .ok rs => ls == rs
-    | .error le, .error re => le == re
-    | _, _ => false
-  if same then
-    pure ()
-  else
-    throw (IO.userError
-      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
 
 private def widthBoundaryPool : Array Nat :=
   #[0, 1, 2, 3, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 511, 512, 768, 1022, 1023]

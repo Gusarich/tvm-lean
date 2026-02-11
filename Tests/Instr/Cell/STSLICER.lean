@@ -98,23 +98,6 @@ private def sliceCellPool : Array Cell :=
     Cell.mkOrdinary (natToBits 2 2) #[sliceCellBit1, sliceCellByteA5]
   ]
 
-private def appendBitsToTopBuilder (bits : Nat) (x : IntVal := .num 0) : Array Instr :=
-  Id.run do
-    let mut out : Array Instr := #[]
-    let mut rem := bits
-    while rem > 0 do
-      let chunk : Nat := Nat.min 256 rem
-      out := out ++ #[.pushInt x, .xchg0 1, .stu chunk]
-      rem := rem - chunk
-    return out
-
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkBuilderProgram (bits refs : Nat) (x : IntVal := .num 0) : Array Instr :=
   #[.newc] ++ appendBitsToTopBuilder bits x ++ appendRefsToTopBuilder refs
 

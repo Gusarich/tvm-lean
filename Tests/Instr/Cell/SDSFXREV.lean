@@ -85,9 +85,6 @@ private def expectDecodeErr
 private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
   Array.ofFn (n := count) fun i => ((i.1 + phase) % 2 = 1)
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSliceWithBits (bits : BitString) : Slice :=
   mkSliceWithBitsRefs bits #[]
 

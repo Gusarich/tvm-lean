@@ -95,10 +95,6 @@ private def expectDecodeErr
       throw (IO.userError
         s!"{label}: expected decode error {expected}, got instr={reprStr instr}, bits={bits}")
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 private def refLeafC : Cell := Cell.mkOrdinary (natToBits 2 2) #[]
 private def refLeafD : Cell := Cell.mkOrdinary (natToBits 9 4) #[]

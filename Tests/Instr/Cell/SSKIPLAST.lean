@@ -87,26 +87,9 @@ private def expectDecodeErr
       throw (IO.userError
         s!"{label}: expected decode error {expected}, got instr={reprStr instr}, bits={bits}")
 
-private def expectSameOutcome
-    (label : String)
-    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  let same :=
-    match lhs, rhs with
-    | .ok ls, .ok rs => ls == rs
-    | .error le, .error re => le == re
-    | _, _ => false
-  if same then
-    pure ()
-  else
-    throw (IO.userError
-      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
-
 private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
   Array.ofFn (n := count) fun i => ((i.1 + phase) % 2 = 1)
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 private def refLeafD : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 
 private def refsByCount (n : Nat) : Array Cell :=

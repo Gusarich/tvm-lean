@@ -102,12 +102,6 @@ private def expectSameOutcome
     throw (IO.userError
       s!"{label}: expected identical outcomes, got ldu={reprStr lduRes}, fixed2={reprStr fixed2Res}")
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkLduInput
     (bits : Nat)
     (tail : BitString := #[])
@@ -123,16 +117,6 @@ private def mkLduWordInput
 
 private def expectedUnsigned (slice : Slice) (bits : Nat) : Int :=
   Int.ofNat (bitsToNat (slice.readBits bits))
-
-private def tailBits3 : BitString := natToBits 5 3
-private def tailBits5 : BitString := natToBits 21 5
-private def tailBits7 : BitString := natToBits 93 7
-private def tailBits11 : BitString := natToBits 1337 11
-private def tailBits13 : BitString := natToBits 4242 13
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 
 private def partialCursorCell : Cell :=
   Cell.mkOrdinary (stripeBits 40 0) #[refLeafA, refLeafB]

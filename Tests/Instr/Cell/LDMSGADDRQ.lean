@@ -102,12 +102,6 @@ private def anycastPfx5 : BitString := patternedBits 5 2
 
 private def anycastPfx30 : BitString := patternedBits 30 3
 
-private def tailBits7 : BitString := natToBits 93 7
-
-private def tailBits11 : BitString := natToBits 1337 11
-
-private def tailBits13 : BitString := natToBits 4242 13
-
 private def refLeafA : Cell := Cell.empty
 
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 0b101 3) #[]

@@ -72,16 +72,9 @@ private def runSdeqDispatchFallback (instr : Instr) (stack : Array Value) :
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellSdEq instr (VM.push (intV dispatchSentinel)) stack
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSdeqStack (s1 s2 : Slice) : Array Value :=
   #[.slice s1, .slice s2]
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 private def refLeafC : Cell := Cell.mkOrdinary (natToBits 6 3) #[refLeafA]
 

@@ -44,20 +44,11 @@ private def sdCntTrail0Opcode : Nat := 0xc712
 private def sdCntTrail1Opcode : Nat := 0xc713
 private def sdPsfxRevOpcode : Nat := 0xc70f
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-
 private def zeros (n : Nat) : BitString :=
   Array.replicate n false
 
 private def ones (n : Nat) : BitString :=
   Array.replicate n true
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
 
 private def mkSuffixZeroSlice (suffixZeros total : Nat) (refs : Array Cell := #[]) : Slice :=
   if suffixZeros < total then

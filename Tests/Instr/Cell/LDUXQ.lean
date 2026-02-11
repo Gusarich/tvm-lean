@@ -96,16 +96,6 @@ private def refLeafA : Cell :=
 private def refLeafB : Cell :=
   Cell.mkOrdinary (natToBits 11 4) #[]
 
-private def tailBits3 : BitString := natToBits 5 3
-
-private def tailBits5 : BitString := natToBits 21 5
-
-private def tailBits7 : BitString := natToBits 93 7
-
-private def tailBits11 : BitString := natToBits 1337 11
-
-private def tailBits13 : BitString := natToBits 4242 13
-
 private def maxUInt255 : Int := intPow2 255 - 1
 
 private def maxUInt256 : Int := intPow2 256 - 1

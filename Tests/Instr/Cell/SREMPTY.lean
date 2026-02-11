@@ -68,9 +68,6 @@ private def sremptySetGasExact : Int :=
 private def sremptySetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sremptyInstr
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def refLeafA : Cell :=
   Cell.mkOrdinary (natToBits 0b101 3) #[]
 

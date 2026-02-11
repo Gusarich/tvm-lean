@@ -94,8 +94,6 @@ private def tailBits5 : BitString := natToBits 0b10101 5
 
 private def tailBits9 : BitString := natToBits 341 9
 
-private def tailBits13 : BitString := natToBits 4242 13
-
 private def validStdSlice0 : Slice :=
   mkStdAddrSlice 0 0
 

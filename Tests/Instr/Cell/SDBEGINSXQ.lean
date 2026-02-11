@@ -63,9 +63,6 @@ private def runSdbeginsxqDispatchFallback (instr : Instr) (stack : Array Value) 
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellSdBeginsX instr (VM.push (intV dispatchSentinel)) stack
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
 private def mkFullSlice (bits : BitString) (refs : Array Cell := #[]) : Slice :=
   Slice.ofCell (Cell.mkOrdinary bits refs)
 
@@ -100,7 +97,6 @@ private def prefix8A5 : Slice := slice8A5
 private def prefix32Phase1 : Slice := mkFullSlice prefBits32Phase1
 private def prefix255Phase0 : Slice := mkFullSlice prefBits255Phase0
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 private def refLeafC : Cell := Cell.mkOrdinary (natToBits 2 2) #[]
 

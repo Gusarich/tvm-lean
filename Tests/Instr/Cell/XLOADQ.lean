@@ -124,8 +124,6 @@ private def mkLibraryCollectionSlice (keyBits : BitString) (value : Slice) : Exc
   | some root => pure root
   | none => throw .dictErr
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[Cell.empty]
 
 private def ordinaryEmpty : Cell := Cell.empty

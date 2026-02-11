@@ -87,9 +87,6 @@ private def mkSlice (bits : BitString) (refs : Array Cell := #[]) : Slice :=
 private def zeroSlice (bits : Nat) : Slice :=
   mkSlice (Array.replicate bits false)
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
 private def natStack (s : Slice) (bits : Nat) : Array Value :=
   #[.slice s, intV (Int.ofNat bits)]
 

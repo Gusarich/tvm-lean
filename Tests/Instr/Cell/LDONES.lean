@@ -88,10 +88,6 @@ private def ldonesSetGasExact : Int :=
 private def ldonesSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ldonesInstr
 
-private def tailBits7 : BitString := natToBits 93 7
-
-private def tailBits11 : BitString := natToBits 1337 11
-
 private def mkSliceHeadZero (tail : BitString := #[]) : Slice :=
   mkSliceFromBits (#[false] ++ tail)
 

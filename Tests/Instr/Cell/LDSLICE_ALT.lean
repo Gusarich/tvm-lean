@@ -79,9 +79,6 @@ private def runLdsliceAltDispatchFallback (instr : Instr) (stack : Array Value) 
 private def stripeBits (n : Nat) (phase : Nat := 0) : BitString :=
   Array.ofFn (n := n) fun i => ((i.1 + phase) % 2 = 1)
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkLdsliceAltInput
     (bits : Nat)
     (tail : BitString := #[])
@@ -91,16 +88,6 @@ private def mkLdsliceAltInput
 
 private def expectedLoaded (s : Slice) (bits : Nat) : Slice :=
   mkSliceFromBits (s.readBits bits)
-
-private def tailBits3 : BitString := natToBits 5 3
-private def tailBits5 : BitString := natToBits 21 5
-private def tailBits7 : BitString := natToBits 93 7
-private def tailBits11 : BitString := natToBits 1337 11
-private def tailBits13 : BitString := natToBits 4242 13
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 
 private def ldsliceAltGasProbeBits : Nat := 8
 

@@ -70,9 +70,6 @@ private def srefsSetGasExact : Int :=
 private def srefsSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne srefsInstr
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def expectedSrefsInt (s : Slice) : Int :=
   Int.ofNat s.refsRemaining
 

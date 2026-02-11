@@ -96,11 +96,6 @@ private def endcSetGasExact : Int :=
 private def endcSetGasExactMinusOne : Int :=
   if endcSetGasExact > 0 then endcSetGasExact - 1 else 0
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 22 5) #[refLeafA]
 
 private def refLeafC : Cell := Cell.mkOrdinary (stripeBits 11 1) #[refLeafA, Cell.empty]
@@ -126,13 +121,6 @@ private def appendBitsToTopBuilder (bits : Nat) (x : IntVal := .num 0) : Array I
     #[]
   else
     #[.pushInt x, .xchg0 1, .stu bits]
-
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
 
 private def mkBuilderProgram
     (bits refs : Nat)

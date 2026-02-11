@@ -58,12 +58,6 @@ private def runSdLexCmpDispatchFallback (instr : Instr) (stack : Array Value) :
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellSdLexCmp instr (VM.push (intV dispatchSentinel)) stack
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkWordSlice
     (bits word : Nat)
     (tail : BitString := #[])
@@ -105,12 +99,6 @@ private def mkPairCase (name : String) (s1 s2 : Slice) : OracleCase :=
 
 private def mkDeepPairCase (name : String) (below : Array Value) (s1 s2 : Slice) : OracleCase :=
   mkSdLexCmpCase name (below ++ #[.slice s1, .slice s2])
-
-private def tailBits3 : BitString := natToBits 5 3
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 
 private def partialCellA : Cell :=
   Cell.mkOrdinary (stripeBits 40 0) #[refLeafA, refLeafB]

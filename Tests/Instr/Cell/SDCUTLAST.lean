@@ -45,16 +45,6 @@ private def sdsubstrOpcode : Nat := 0xd724
 
 private def dispatchSentinel : Int := 8123
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSliceWord (bits word : Nat) (refs : Array Cell := #[]) : Slice :=
   mkSliceWithBitsRefs (natToBits word bits) refs
 

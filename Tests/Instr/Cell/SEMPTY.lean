@@ -60,9 +60,6 @@ private def runSemptyDispatchFallback (instr : Instr) (stack : Array Value) :
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellSempty instr (VM.push (intV dispatchSentinel)) stack
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def semptyExpectedInt (s : Slice) : Int :=
   if s.bitsRemaining == 0 && s.refsRemaining == 0 then -1 else 0
 

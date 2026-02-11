@@ -98,10 +98,6 @@ private def mkLdzeroesSliceWithRefs
 
 private def tailBits6 : BitString := natToBits 37 6
 
-private def tailBits11 : BitString := natToBits 1337 11
-
-private def tailBits13 : BitString := natToBits 4242 13
-
 private def refsOnlySlice : Slice :=
   mkLdzeroesSliceWithRefs 0 #[] #[refLeafA, refLeafB]
 

@@ -78,9 +78,6 @@ private def runSplitQDirect (stack : Array Value) : Except Excno (Array Value) :
 private def runSplitDispatch (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execCellOpSplitInstr instr (VM.push (intV dispatchSentinel)) stack
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
 private def refLeafA : Cell :=
   Cell.mkOrdinary (natToBits 0b101 3) #[]
 

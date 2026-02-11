@@ -78,26 +78,6 @@ private def runSdFirstModel (stack : Array Value) : Except Excno (Array Value) :
   | _ =>
       throw .typeChk
 
-private def expectSameOutcome
-    (label : String)
-    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  let same :=
-    match lhs, rhs with
-    | .ok ls, .ok rs => ls == rs
-    | .error le, .error re => le == re
-    | _, _ => false
-  if same then
-    pure ()
-  else
-    throw (IO.userError
-      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def refLeafA : Cell :=
   Cell.mkOrdinary (natToBits 5 3) #[]
 

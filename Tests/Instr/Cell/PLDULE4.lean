@@ -88,29 +88,11 @@ private def boundaryBytesPool : Array (Array UInt8) :=
     bytesAltHi
   ]
 
-private def tailBits3 : BitString := natToBits 5 3
-private def tailBits5 : BitString := natToBits 21 5
-private def tailBits7 : BitString := natToBits 93 7
-private def tailBits11 : BitString := natToBits 1337 11
-private def tailBits13 : BitString := natToBits 4242 13
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-
-private def bytesToBitsBE (bs : Array UInt8) : BitString :=
-  bs.foldl (fun acc b => acc ++ natToBits b.toNat 8) #[]
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSliceFromLeBytes
     (bytes : Array UInt8)
     (tail : BitString := #[])
     (refs : Array Cell := #[]) : Slice :=
   mkSliceWithBitsRefs (bytesToBitsBE bytes ++ tail) refs
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
 
 private def expectedUnsignedFromBytes (bytes : Array UInt8) : Int :=
   Int.ofNat (bytesToNatLE bytes)
@@ -129,15 +111,6 @@ private def shortCursorCell : Cell :=
 
 private def shortCursorSlice : Slice :=
   { cell := shortCursorCell, bitPos := 10, refPos := 0 }
-
-private def randBitString (count : Nat) (rng0 : StdGen) : BitString × StdGen := Id.run do
-  let mut bits : BitString := #[]
-  let mut rng := rng0
-  for _ in [0:count] do
-    let (bit, rng') := randBool rng
-    bits := bits.push bit
-    rng := rng'
-  return (bits, rng)
 
 private def randBytes4 (rng0 : StdGen) : Array UInt8 × StdGen := Id.run do
   let mut out : Array UInt8 := #[]

@@ -41,20 +41,11 @@ private def sdCntTrail0Opcode : Nat := 0xc712
 private def sdCntTrail1Opcode : Nat := 0xc713
 private def sdPsfxRevOpcode : Nat := 0xc70f
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-
 private def zeros (n : Nat) : BitString :=
   Array.replicate n false
 
 private def ones (n : Nat) : BitString :=
   Array.replicate n true
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
 
 private def mkSuffixOneSlice (suffixOnes total : Nat) (refs : Array Cell := #[]) : Slice :=
   if suffixOnes < total then
@@ -100,20 +91,6 @@ private def runSdCntTrail1Model (stack : Array Value) : Except Excno (Array Valu
       pure (below.push (intV (expectedTrail1 s)))
   | _ =>
       throw .typeChk
-
-private def expectSameOutcome
-    (label : String)
-    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  let same :=
-    match lhs, rhs with
-    | .ok ls, .ok rs => ls == rs
-    | .error le, .error re => le == re
-    | _, _ => false
-  if same then
-    pure ()
-  else
-    throw (IO.userError
-      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
 
 private def mkSdCntTrail1Case
     (name : String)

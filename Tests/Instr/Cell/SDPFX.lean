@@ -61,12 +61,6 @@ private def runSdpfxDispatchFallback (instr : Instr) (stack : Array Value) :
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellSdPfx instr (VM.push (intV dispatchSentinel)) stack
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkWordSlice
     (bits : Nat)
     (word : Nat)
@@ -80,15 +74,6 @@ private def mkStripedSlice
     (tail : BitString := #[])
     (refs : Array Cell := #[]) : Slice :=
   mkSliceWithBitsRefs (stripeBits bits phase ++ tail) refs
-
-private def tailBits3 : BitString := natToBits 5 3
-private def tailBits5 : BitString := natToBits 21 5
-private def tailBits7 : BitString := natToBits 93 7
-private def tailBits11 : BitString := natToBits 1337 11
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 
 private def emptySlice : Slice := mkSliceWithBitsRefs #[]
 private def pref5 : Slice := mkWordSlice 5 0x15

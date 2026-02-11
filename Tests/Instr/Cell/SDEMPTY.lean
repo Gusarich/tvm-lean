@@ -55,12 +55,6 @@ private def runSdemptyDispatchFallback (instr : Instr) (stack : Array Value) :
     Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrCellSdempty instr (VM.push (intV dispatchSentinel)) stack
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSliceWithSize (bits refs : Nat) (phase : Nat := 0) : Slice :=
   let refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
   let refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]

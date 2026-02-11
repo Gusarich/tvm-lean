@@ -73,9 +73,6 @@ private def refLeafD : Cell :=
 private def refPool : Array Cell :=
   #[refLeafA, refLeafB, refLeafC, refLeafD]
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSliceWithSize (bits refs : Nat) (phase : Nat := 0) : Slice :=
   let pickedRefs : Array Cell :=
     Array.ofFn (n := refs) fun i => refPool[i.1 % refPool.size]!

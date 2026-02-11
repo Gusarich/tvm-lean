@@ -123,13 +123,6 @@ private def oracleNoiseSliceA : Slice :=
 private def oracleNoiseSliceB : Slice :=
   Slice.ofCell (Cell.mkOrdinary (natToBits 2 2) #[Cell.empty])
 
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkBuilderProgramBitsRefs
     (builderBits builderRefs : Nat) : Array Instr :=
   #[.newc]

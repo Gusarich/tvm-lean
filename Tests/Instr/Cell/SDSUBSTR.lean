@@ -142,9 +142,6 @@ private def patternBits (count : Nat) (phase : Nat := 0) : BitString :=
   Array.ofFn (n := count) fun idx =>
     ((idx.1 + phase) % 3 = 1) || ((idx.1 + phase) % 5 = 0)
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def expectedSubstrSlice (s : Slice) (offs bits : Nat) : Slice :=
   let fromPos := s.bitPos + offs
   let toPos := fromPos + bits
@@ -155,10 +152,6 @@ private def expectedSubstrStack
     (s : Slice)
     (offs bits : Nat) : Array Value :=
   below ++ #[.slice (expectedSubstrSlice s offs bits)]
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 
 private def bits8A : BitString := natToBits 0xd3 8
 private def bits16A : BitString := natToBits 0xabcd 16

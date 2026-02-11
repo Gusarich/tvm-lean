@@ -130,16 +130,6 @@ private def builderRefs4 : Builder :=
   { bits := #[]
     refs := #[Cell.empty, Cell.empty, Cell.empty, Cell.empty] }
 
-private def appendBitsToTopBuilder (bits : Nat) (x : IntVal := .num 0) : Array Instr :=
-  Id.run do
-    let mut out : Array Instr := #[]
-    let mut rem := bits
-    while rem > 0 do
-      let chunk : Nat := Nat.min 256 rem
-      out := out ++ #[.pushInt x, .xchg0 1, .stu chunk]
-      rem := rem - chunk
-    return out
-
 private def appendOneEmptyCellRefToTopBuilder : Array Instr :=
   #[.newc, .endc, .xchg0 1, .stref]
 

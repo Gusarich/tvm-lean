@@ -385,7 +385,6 @@ private def bits13Tail : BitString := natToBits 0x315 13
 private def bitsPad4 : BitString := natToBits 0x9 4
 private def bitsTail5 : BitString := natToBits 0x16 5
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 
 private def sliceEmpty : Slice := mkFullSlice bitsEmpty

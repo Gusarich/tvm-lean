@@ -90,7 +90,6 @@ private def expectDecodeErr
 private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
   Array.ofFn (n := count) fun i => ((i.1 + phase) % 2 = 1)
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 13 4) #[]
 
 private def cellOrdinaryEmpty : Cell := Cell.empty

@@ -102,25 +102,8 @@ private def runBchkBitsQDispatchFallback (instr : Instr) (stack : Array Value) :
   runHandlerDirectWithNext execInstrCellOpBchkBitsImmOnly instr
     (VM.push (intV dispatchSentinel)) stack
 
-private def expectSameOutcome
-    (label : String)
-    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  let same :=
-    match lhs, rhs with
-    | .ok ls, .ok rs => ls == rs
-    | .error le, .error re => le == re
-    | _, _ => false
-  if same then
-    pure ()
-  else
-    throw (IO.userError
-      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
-
 private def bchkBitsImmWord (bits : Nat) (quiet : Bool := false) : Nat :=
   ((if quiet then 0xcf3c else 0xcf38) <<< 8) + (bits - 1)
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
 
 private def mkFullSlice (bits : BitString) (refs : Array Cell := #[]) : Slice :=
   Slice.ofCell (Cell.mkOrdinary bits refs)
@@ -158,13 +141,6 @@ private def appendStuChunk (bits : Nat) : Array Instr :=
 
 private def buildBuilderByChunks (chunks : Array Nat) : Array Instr :=
   chunks.foldl (fun (acc : Array Instr) (chunk : Nat) => acc ++ appendStuChunk chunk) #[.newc]
-
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
 
 private def mkBchkBitsQProgram (buildProgram : Array Instr) (bits : Nat) : Array Instr :=
   buildProgram ++ #[bchkBitsQInstr bits]

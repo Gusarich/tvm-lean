@@ -128,23 +128,6 @@ private def fullSliceNoiseB : Slice :=
 private def expectedBremrefsOut (below : Array Value) (b : Builder) : Array Value :=
   below ++ #[intV (Int.ofNat (4 - b.refs.size))]
 
-private def appendBitsToTopBuilder (bits : Nat) (x : IntVal := .num 0) : Array Instr :=
-  Id.run do
-    let mut out : Array Instr := #[]
-    let mut rem := bits
-    while rem > 0 do
-      let chunk : Nat := Nat.min 256 rem
-      out := out ++ #[.pushInt x, .xchg0 1, .stu chunk]
-      rem := rem - chunk
-    return out
-
-private def appendOneRefToTopBuilder : Array Instr :=
-  #[.newc, .endc, .xchg0 1, .stref]
-
-private def appendRefsToTopBuilder : Nat → Array Instr
-  | 0 => #[]
-  | n + 1 => appendRefsToTopBuilder n ++ appendOneRefToTopBuilder
-
 private def mkBuilderProgram
     (bits : Nat)
     (refs : Nat)

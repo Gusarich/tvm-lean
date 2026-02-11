@@ -84,35 +84,12 @@ private def expectDecodeErr
       throw (IO.userError
         s!"{label}: expected decode error {expected}, got instr={reprStr instr}, bits={bits}")
 
-private def expectSameOutcome
-    (label : String)
-    (lhs rhs : Except Excno (Array Value)) : IO Unit := do
-  let same :=
-    match lhs, rhs with
-    | .ok ls, .ok rs => ls == rs
-    | .error le, .error re => le == re
-    | _, _ => false
-  if same then
-    pure ()
-  else
-    throw (IO.userError
-      s!"{label}: expected identical outcomes, got lhs={reprStr lhs}, rhs={reprStr rhs}")
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSliceCursor
     (bits : BitString)
     (refs : Array Cell)
     (bitPos refPos : Nat) : Slice :=
   { cell := Cell.mkOrdinary bits refs, bitPos := bitPos, refPos := refPos }
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 0x5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 0x9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 0x3 2) #[]
 private def refLeafD : Cell := Cell.mkOrdinary (natToBits 0x2d 6) #[]
 
 private def emptySlice : Slice := mkSliceWithBitsRefs #[]

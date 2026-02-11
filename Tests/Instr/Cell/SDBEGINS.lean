@@ -51,9 +51,6 @@ private def fromExceptIO {α} (label : String) (res : Except String α) : IO α 
   | .ok v => pure v
   | .error e => failUnit s!"{label}: {e}"
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkSdbeginsInstrFromBits (quiet : Bool) (prefBits : BitString) : Instr :=
   .sdBeginsConst quiet (mkSliceWithBitsRefs prefBits)
 
@@ -95,9 +92,6 @@ private def expectDecodeErr
         failUnit s!"{label}: expected decode error {expected}, got {e}"
   | .ok (instr, bits, _) =>
       failUnit s!"{label}: expected decode error {expected}, got instr={reprStr instr}, bits={bits}"
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
 
 private def minLenTagForPayload (payloadBits : Nat) : Nat :=
   let need := payloadBits + 1
@@ -404,7 +398,6 @@ private def genSdbeginsDirectFuzzInput
       let (noise, rng5) := pickNoiseValue rng4
       ((quiet, pref, #[noise, .slice s]), rng5)
 
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 11 4) #[]
 private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[refLeafA]
 

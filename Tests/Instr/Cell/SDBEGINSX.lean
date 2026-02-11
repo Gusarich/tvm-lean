@@ -168,12 +168,6 @@ private def runSdbeginsxModel (quiet : Bool) (stack : Array Value) :
   else
     throw .cellUnd
 
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
 private def mkWordSlice
     (bits : Nat)
     (word : Nat)
@@ -195,14 +189,6 @@ private def mkSdBeginsConstRaw
   natToBits sdbeginsConstPrefix13 13 ++
     natToBits ((if quiet then 0x80 else 0) + args7) 8 ++
     rawData
-
-private def tailBits3 : BitString := natToBits 5 3
-private def tailBits5 : BitString := natToBits 21 5
-private def tailBits7 : BitString := natToBits 93 7
-
-private def refLeafA : Cell := Cell.mkOrdinary (natToBits 5 3) #[]
-private def refLeafB : Cell := Cell.mkOrdinary (natToBits 9 4) #[]
-private def refLeafC : Cell := Cell.mkOrdinary (natToBits 3 2) #[]
 
 private def sliceEmpty : Slice := mkSliceWithBitsRefs #[]
 private def prefEmpty : Slice := sliceEmpty

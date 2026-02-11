@@ -78,8 +78,6 @@ private def samplePos : Int := intPow2 200 + 654321
 
 private def tailBits9 : BitString := natToBits 341 9
 
-private def tailBits13 : BitString := natToBits 4242 13
-
 private def ldvaruint32SetGasExact : Int :=
   computeExactGasBudget ldvaruint32Instr
 
@@ -251,8 +249,11 @@ def suite : InstrSuite where
         | .error .invOpcode => pure ()
         | .error e => throw (IO.userError s!"ldvaruint32/kind24: expected invOpcode, got {e}")
         | .ok _ => throw (IO.userError "ldvaruint32/kind24: expected assemble invOpcode, got success")
-        expectErr "invopcode/direct-kind16"
-          (runLdvaruint32DirectInstr (.cellExt (.ldVarInt false 16)) #[.slice (mkLdvaruint32Slice 0)]) .invOpcode
+        -- kind=16 is valid (LDVARUINT16 / LDGRAMS alias), verify it succeeds
+        let kind16Input := mkLdvaruint32Slice 0
+        expectOkStack "ok/direct-kind16-varuint16"
+          (runLdvaruint32DirectInstr (.cellExt (.ldVarInt false 16)) #[.slice kind16Input])
+          #[intV 0, .slice (kind16Input.advanceBits 4)]
         expectErr "invopcode/direct-kind24"
           (runLdvaruint32DirectInstr (.cellExt (.ldVarInt false 24)) #[.slice (mkLdvaruint32Slice 0)]) .invOpcode }
     ,

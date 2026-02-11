@@ -89,12 +89,6 @@ private def sdppfxSetGasExact : Int :=
 private def sdppfxSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sdppfxInstr
 
-private def mkSliceWithBitsRefs (bits : BitString) (refs : Array Cell := #[]) : Slice :=
-  Slice.ofCell (Cell.mkOrdinary bits refs)
-
-private def stripeBits (count : Nat) (phase : Nat := 0) : BitString :=
-  Array.ofFn (n := count) fun idx => ((idx.1 + phase) % 2 = 1)
-
 private def refLeafA : Cell := Cell.mkOrdinary (natToBits 0b101 3) #[]
 private def refLeafB : Cell := Cell.mkOrdinary (natToBits 0b1101 4) #[]
 private def refLeafC : Cell := Cell.mkOrdinary (natToBits 0b11 2) #[]
