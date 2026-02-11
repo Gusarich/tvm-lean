@@ -1,9 +1,9 @@
 # Continuation Audit Progress
 
 ## Stats
-- Completed: 84/98
+- Completed: 91/98
 - Running: 0
-- Bugs reported: 49 (good: 48, bad: 0, pending: 1)
+- Bugs reported: 52 (good: 51, bad: 0, pending: 1)
 
 ## Instances
 
@@ -93,13 +93,13 @@
 | A082 | PREPAREDICT | done | matched C++ after idx canonicalization (`idx &&& 0x3fff`); 42 oracle |
 | A083 | JMPXARGS | done | matched C++ after removing opcode-local truncation/gas and delegating stack shaping to `VM.jump`; 47 oracle |
 | A084 | RETARGS | done | matched C++ after params canonicalization (`args &&& 0x0f`); 41 oracle |
-| A085 | RETURNARGS | pending | queued |
-| A086 | SETCONTARGS | pending | queued |
-| A087 | BLESSARGS | pending | queued |
-| A088 | SETCONTCTR | pending | queued |
-| A089 | SETRETCTR | pending | queued |
-| A090 | SETALTCTR | pending | queued |
-| A091 | POPSAVE | pending | queued |
+| A085 | RETURNARGS | done | matched C++ after params canonicalization (`count &&& 0x0f`); 44 oracle |
+| A086 | SETCONTARGS | done | matched C++; 38 oracle |
+| A087 | BLESSARGS | done | matched C++; 43 oracle |
+| A088 | SETCONTCTR | done | matched C++ after idx canonicalization (`idx &&& 0x0f`); 51 oracle |
+| A089 | SETRETCTR | done | matched C++; 49 oracle |
+| A090 | SETALTCTR | done | matched C++; 47 oracle |
+| A091 | POPSAVE | done | matched C++ after duplicate-define tolerance in c0-save path; 55 oracle |
 | A092 | SAVECTR | pending | queued |
 | A093 | SAVEALTCTR | pending | queued |
 | A094 | SAVEBOTHCTR | pending | queued |
@@ -160,3 +160,6 @@
 | B046 | `PREPAREDICT` missed C++ immediate canonicalization (`args &= 0x3fff`) | fixed | `TvmLean/Semantics/Exec/Flow/PrepareDict.lean` |
 | B047 | `JMPXARGS` performed opcode-local stack truncation/gas instead of C++ `jump(..., pass_args)` path | fixed | `TvmLean/Semantics/Exec/Flow/JmpxArgs.lean` |
 | B048 | `RETARGS` missed C++ params canonicalization (`args &= 15`) before return | fixed | `TvmLean/Semantics/Exec/Flow/RetArgs.lean` |
+| B049 | `RETURNARGS` missed C++ params canonicalization (`count &= 15`) before return | fixed | `TvmLean/Semantics/Exec/Cont/ReturnArgs.lean` |
+| B050 | `SETCONTCTR` missed C++ idx canonicalization (`idx &= 15`) | fixed | `TvmLean/Semantics/Exec/Cont/SetContCtr.lean` |
+| B051 | `POPSAVE` propagated duplicate c0-save define failure (C++ treats as non-fatal no-op) | fixed | `TvmLean/Semantics/Exec/Cont/ChangeExt.lean` |
