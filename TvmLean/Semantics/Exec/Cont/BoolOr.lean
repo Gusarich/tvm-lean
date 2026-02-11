@@ -7,6 +7,8 @@ def execInstrContBoolOr (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .boolOr =>
       -- Mirrors C++ `BOOLOR` (`exec_compos` with mask=2).
+      -- C++ does `stack.check_underflow(2)` before any `pop_cont` type checks.
+      VM.checkUnderflow 2
       let val ← VM.popCont
       let cont ← VM.popCont
       VM.push (.cont (cont.defineC1 val))

@@ -22,6 +22,19 @@ def VM.blessArgsCommon (copy : Nat) (more : Int) : VM Unit := do
   modify fun st => st.consumeStackGas captured.size
   VM.push (.cont cont)
 
+private def popBlessVarArgMore : VM Int := do
+  -- C++: `pop_smallint_range(255, -1)` in `exec_bless_varargs`.
+  -- Mapping: non-int -> `typeChk`, NaN / out-of-range -> `rangeChk`.
+  let v ← VM.popInt
+  match v with
+  | .nan =>
+      throw .rangeChk
+  | .num n =>
+      if decide (n < -1 ∨ n > 255) then
+        throw .rangeChk
+      else
+        pure n
+
 set_option maxHeartbeats 1000000 in
 def execInstrContBless (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
@@ -37,9 +50,7 @@ def execInstrContBless (i : Instr) (next : VM Unit) : VM Unit := do
       VM.blessArgsCommon copy more
   | .blessVarArgs =>
       VM.checkUnderflow 2
-      let more ← VM.popIntFinite
-      if decide (more < -1 ∨ more > 255) then
-        throw .rangeChk
+      let more ← popBlessVarArgMore
       let copy ← VM.popNatUpTo 255
       VM.blessArgsCommon copy more
   | _ => next

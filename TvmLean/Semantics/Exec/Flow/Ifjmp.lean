@@ -9,7 +9,7 @@ def execInstrFlowIfjmp (i : Instr) (next : VM Unit) : VM Unit := do
       VM.checkUnderflow 2
       let cont ← VM.popCont
       if (← VM.popBool) then
-        modify fun st => st.jumpTo cont
+        VM.jump cont
       else
         pure ()
   | _ => next

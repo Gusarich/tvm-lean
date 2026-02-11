@@ -8,7 +8,7 @@ def execInstrFlowIfref (i : Instr) (next : VM Unit) : VM Unit := do
   | .ifref code =>
       if (← VM.popBool) then
         VM.registerCellLoad code.cell
-        modify fun st => st.callTo (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
+        VM.call (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
       else
         pure ()
   | _ => next

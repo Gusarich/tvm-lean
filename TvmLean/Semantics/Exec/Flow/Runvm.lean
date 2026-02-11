@@ -65,10 +65,15 @@ def popNatUpToSigned (max : Nat) : VM Nat :=
   VM.popNatUpTo max
 
 def popGasRange : VM Int := do
-  let n ← VM.popIntFinite
-  if n < 0 ∨ n > GasLimits.infty then
-    throw .rangeChk
-  return n
+  let v ← VM.popInt
+  match v with
+  | .nan =>
+      -- C++ `pop_long_range` maps NaN / non-int64 values to `range_chk`.
+      throw .rangeChk
+  | .num n =>
+      if n < 0 ∨ n > GasLimits.infty then
+        throw .rangeChk
+      return n
 
 def VM.popTuple : VM (Array Value) := do
   let v ← VM.pop
@@ -115,18 +120,22 @@ def applyCregsCdata (st : VmState) (cregs : OrdCregs) (cdata : OrdCdata) : VmSta
     ({ st1' with stack := newStack }).consumeStackGas newStack.size
 
 def tryCommit (st : VmState) : Bool × VmState :=
-  if st.regs.c4.depthLe st.maxDataDepth && st.regs.c5.depthLe st.maxDataDepth then
+  let c4Level0 : Bool := LevelMask.getLevel st.regs.c4.levelMask = 0
+  let c5Level0 : Bool := LevelMask.getLevel st.regs.c5.levelMask = 0
+  if st.regs.c4.depthLe st.maxDataDepth && st.regs.c5.depthLe st.maxDataDepth && c4Level0 && c5Level0 then
     (true, { st with cstate := { c4 := st.regs.c4, c5 := st.regs.c5, committed := true } })
   else
     (false, st)
 
 def cp0InvOpcodeGasBitsRunvm (code : Slice) : Nat :=
   -- Mirror the main-step fallback (`cp0InvOpcodeGasBits`) for child VM decode errors.
-  -- C++ may charge one opcode slot for invalid/too-short prefixes.
+  -- For dummy invalid-opcode dispatches C++ charges only `gas_per_instr` (no per-bit addend),
+  -- so unresolved prefixes must return 0 bits here.
   let bits0 : BitString := code.readBits code.bitsRemaining
+  let padBitsTo : Nat := 2048
   let bitsPad : BitString :=
-    if bits0.size < 24 then
-      bits0 ++ Array.replicate (24 - bits0.size) false
+    if bits0.size < padBitsTo then
+      bits0 ++ Array.replicate (padBitsTo - bits0.size) false
     else
       bits0
   let refs0 : Array Cell := code.cell.refs.extract code.refPos code.cell.refs.size
@@ -137,8 +146,7 @@ def cp0InvOpcodeGasBitsRunvm (code : Slice) : Nat :=
       refs0
   match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary bitsPad refsPad)) with
   | .ok (_instr, totBits, _rest) => totBits
-  | .error _ =>
-      if code.bitsRemaining < 4 then 16 else 8
+  | .error _ => 0
 
 set_option maxHeartbeats 1000000 in
 def execInstrFlowChildNoRunvm (_host : Host) (i : Instr) (next : VM Unit) : VM Unit :=
@@ -242,13 +250,28 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
   | .whileCond cond body after =>
       let action : VM Unit := do
         if (← VM.popBool) then
-          modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
+          if body.hasC0 then
+            modify fun st => { st with cc := body }
+          else
+            modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
         else
-          match after with
-          | .ordinary code saved cregs cdata =>
-              modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-          | _ =>
-              modify fun st => { st with cc := after }
+          let st ← get
+          let afterNeedsMoreArgs : Bool :=
+            match after with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
+          if afterNeedsMoreArgs then
+            throw .stkUnd
+          else
+            match after with
+            | .ordinary code saved cregs cdata =>
+                modify fun st =>
+                  { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+            | _ =>
+                modify fun st => { st with cc := after }
       let (res, st') := (action.run st)
       match res with
       | .ok _ => .continue st'
@@ -260,20 +283,51 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
           else
             .continue stExcGas
   | .whileBody cond body after =>
-      .continue { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
+      if cond.hasC0 then
+        .continue { st with cc := cond }
+      else
+        .continue { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
   | .untilBody body after =>
       let action : VM Unit := do
         if (← VM.popBool) then
-          match after with
-          | .ordinary code saved cregs cdata =>
-              modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-          | _ =>
-              modify fun st => { st with cc := after }
-        else
-          if body.hasC0 then
-            modify fun st => { st with cc := body }
+          let st ← get
+          let afterNeedsMoreArgs : Bool :=
+            match after with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
+          if afterNeedsMoreArgs then
+            throw .stkUnd
           else
-            modify fun st => { st with regs := { st.regs with c0 := .untilBody body after }, cc := body }
+            match after with
+            | .ordinary code saved cregs cdata =>
+                modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+            | _ =>
+                modify fun st => { st with cc := after }
+        else
+          let st ← get
+          let bodyNeedsMoreArgs : Bool :=
+            match body with
+            | .ordinary _ _ _ cdata
+            | .envelope _ _ cdata =>
+                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+            | _ =>
+                false
+          if body.hasC0 then
+            if bodyNeedsMoreArgs then
+              throw .stkUnd
+            else
+              modify fun st => { st with cc := body }
+          else
+            -- Match C++ order in `UntilCont::jump`: install `c0` first, then jump to body
+            -- (which may throw `stk_und` in `adjust_jump_cont`).
+            modify fun st => { st with regs := { st.regs with c0 := .untilBody body after } }
+            if bodyNeedsMoreArgs then
+              throw .stkUnd
+            else
+              modify fun st => { st with cc := body }
       let (res, st') := (action.run st)
       match res with
       | .ok _ => .continue st'
@@ -286,105 +340,152 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
             .continue stExcGas
   | .repeatBody body after count =>
       if count = 0 then
-        match after with
-        | .ordinary code saved cregs cdata =>
-            .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-        | _ =>
-            .continue { st with cc := after }
+        let afterNeedsMoreArgs : Bool :=
+          match after with
+          | .ordinary _ _ _ cdata
+          | .envelope _ _ cdata =>
+              decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+          | _ =>
+              false
+        if afterNeedsMoreArgs then
+          let stExc := st.throwException Excno.stkUnd.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            outOfGasHalt stExcGas
+          else
+            .continue stExcGas
+        else
+          match after with
+          | .ordinary code saved cregs cdata =>
+              .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+          | _ =>
+              .continue { st with cc := after }
       else if body.hasC0 then
         .continue { st with cc := body }
       else
         let count' := count - 1
         .continue { st with regs := { st.regs with c0 := .repeatBody body after count' }, cc := body }
   | .againBody body =>
+      let bodyNeedsMoreArgs : Bool :=
+        match body with
+        | .ordinary _ _ _ cdata
+        | .envelope _ _ cdata =>
+            decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+        | _ =>
+            false
       if body.hasC0 then
-        .continue { st with cc := body }
+        if bodyNeedsMoreArgs then
+          let stExc := st.throwException Excno.stkUnd.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            outOfGasHalt stExcGas
+          else
+            .continue stExcGas
+        else
+          .continue { st with cc := body }
       else
-        .continue { st with regs := { st.regs with c0 := .againBody body }, cc := body }
+        -- Match C++ `AgainCont::jump[_w]`: install loop continuation in `c0` first,
+        -- then apply jump-time `nargs` checks (`adjust_jump_cont`).
+        let stLoop := { st with regs := { st.regs with c0 := .againBody body } }
+        if bodyNeedsMoreArgs then
+          let stExc := stLoop.throwException Excno.stkUnd.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            outOfGasHalt stExcGas
+          else
+            .continue stExcGas
+        else
+          .continue { stLoop with cc := body }
   | .envelope ext cregs cdata =>
       let st := applyCregsCdata st cregs cdata
-      .continue { st with cc := ext }
+      if decide (st.gas.gasRemaining < 0) then
+        outOfGasHalt st
+      else
+        .continue { st with cc := ext }
   | .ordinary code saved cregs cdata =>
       let st2 := applyCregsCdata st cregs cdata
-      let cdata' : OrdCdata := { cdata with stack := #[], nargs := -1 }
-      let st : VmState := { st2 with cc := .ordinary code saved OrdCregs.empty cdata' }
-      if code.bitsRemaining == 0 then
-        if code.refsRemaining == 0 then
-          let st0 := st.consumeGas implicitRetGasPrice
-          if decide (st0.gas.gasRemaining < 0) then
-            outOfGasHalt st0
-          else
-            let (res, st1) := (VM.ret).run st0
-            match res with
-            | .ok _ => .continue st1
-            | .error e =>
-                let stExc := st1.throwException e.toInt
-                let stExcGas := stExc.consumeGas exceptionGasPrice
-                if decide (stExcGas.gas.gasRemaining < 0) then
-                  outOfGasHalt stExcGas
-                else
-                  .continue stExcGas
-        else
-          let st0 := st.consumeGas implicitJmpRefGasPrice
-          if decide (st0.gas.gasRemaining < 0) then
-            outOfGasHalt st0
-          else if code.refPos < code.cell.refs.size then
-            let refCell := code.cell.refs[code.refPos]!
-            let st1 := st0.registerCellLoad refCell
-            if decide (st1.gas.gasRemaining < 0) then
-              outOfGasHalt st1
-            else
-              .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
-          else
-            let stExc := st0.throwException Excno.cellUnd.toInt
-            let stExcGas := stExc.consumeGas exceptionGasPrice
-            if decide (stExcGas.gas.gasRemaining < 0) then
-              outOfGasHalt stExcGas
-            else
-              .continue stExcGas
+      if decide (st2.gas.gasRemaining < 0) then
+        outOfGasHalt st2
       else
-        let decoded : Except Excno (Instr × Nat × Slice) :=
-          if st.cp = 0 then
-            decodeCp0WithBits code
-          else
-            .error .invOpcode
-        match decoded with
-        | .error e =>
-            let st0 :=
-              if e = .invOpcode ∧ code.bitsRemaining > 0 then
-                let invalBits : Nat := cp0InvOpcodeGasBitsRunvm code
-                st.consumeGas (gasPerInstr + Int.ofNat invalBits)
-              else
-                st
-            let st0 := st0.throwException e.toInt
-            let st0 := st0.consumeGas exceptionGasPrice
+        let cdata' : OrdCdata := { cdata with stack := #[], nargs := -1 }
+        let st : VmState := { st2 with cc := .ordinary code saved OrdCregs.empty cdata' }
+        if code.bitsRemaining == 0 then
+          if code.refsRemaining == 0 then
+            let st0 := st.consumeGas implicitRetGasPrice
             if decide (st0.gas.gasRemaining < 0) then
               outOfGasHalt st0
             else
-              .continue st0
-        | .ok (instr, totBits, rest) =>
-            let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
-            let stGas := st0.consumeGas (instrGas instr totBits)
-            if decide (stGas.gas.gasRemaining < 0) then
-              outOfGasHalt stGas
-            else
-              let (res, st1) := (execInstrChildNoRunvm host instr).run stGas
+              let (res, st1) := (VM.ret).run st0
               match res with
-              | .ok _ =>
-                  if decide (st1.gas.gasRemaining < 0) then
-                    outOfGasHalt st1
-                  else
-                    .continue st1
+              | .ok _ => .continue st1
               | .error e =>
-                  if e = .outOfGas then
-                    outOfGasHalt st1
+                  let stExc := st1.throwException e.toInt
+                  let stExcGas := stExc.consumeGas exceptionGasPrice
+                  if decide (stExcGas.gas.gasRemaining < 0) then
+                    outOfGasHalt stExcGas
                   else
-                    let stExc := st1.throwException e.toInt
-                    let stExcGas := stExc.consumeGas exceptionGasPrice
-                    if decide (stExcGas.gas.gasRemaining < 0) then
-                      outOfGasHalt stExcGas
+                    .continue stExcGas
+          else
+            let st0 := st.consumeGas implicitJmpRefGasPrice
+            if decide (st0.gas.gasRemaining < 0) then
+              outOfGasHalt st0
+            else if code.refPos < code.cell.refs.size then
+              let refCell := code.cell.refs[code.refPos]!
+              let st1 := st0.registerCellLoad refCell
+              if decide (st1.gas.gasRemaining < 0) then
+                outOfGasHalt st1
+              else
+                .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
+            else
+              let stExc := st0.throwException Excno.cellUnd.toInt
+              let stExcGas := stExc.consumeGas exceptionGasPrice
+              if decide (stExcGas.gas.gasRemaining < 0) then
+                outOfGasHalt stExcGas
+              else
+                .continue stExcGas
+        else
+          let decoded : Except Excno (Instr × Nat × Slice) :=
+            if st.cp = 0 then
+              decodeCp0WithBits code
+            else
+              .error .invOpcode
+          match decoded with
+          | .error e =>
+              let st0 :=
+                if e = .invOpcode ∧ code.bitsRemaining > 0 then
+                  let invalBits : Nat := cp0InvOpcodeGasBitsRunvm code
+                  st.consumeGas (gasPerInstr + Int.ofNat invalBits)
+                else
+                  st
+              let st0 := st0.throwException e.toInt
+              let st0 := st0.consumeGas exceptionGasPrice
+              if decide (st0.gas.gasRemaining < 0) then
+                outOfGasHalt st0
+              else
+                .continue st0
+          | .ok (instr, totBits, rest) =>
+              let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
+              let stGas := st0.consumeGas (instrGas instr totBits)
+              if decide (stGas.gas.gasRemaining < 0) then
+                outOfGasHalt stGas
+              else
+                let (res, st1) := (execInstrChildNoRunvm host instr).run stGas
+                match res with
+                | .ok _ =>
+                    if decide (st1.gas.gasRemaining < 0) then
+                      outOfGasHalt st1
                     else
-                      .continue stExcGas
+                      .continue st1
+                | .error e =>
+                    if e = .outOfGas then
+                      outOfGasHalt st1
+                    else
+                      let stExc := st1.throwException e.toInt
+                      let stExcGas := stExc.consumeGas exceptionGasPrice
+                      if decide (stExcGas.gas.gasRemaining < 0) then
+                        outOfGasHalt stExcGas
+                      else
+                        .continue stExcGas
 
 def childRun (host : Host) (fuel : Nat) (st : VmState) : Int × VmState :=
   match fuel with
@@ -411,6 +512,8 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
 
   -- Run on the provided parent state as the VM state.
   set (parent.consumeGas runvmGasPrice)
+  if decide ((← get).gas.gasRemaining < 0) then
+    throw .outOfGas
 
   -- Pop args in the same order as C++ `exec_runvm_common`.
   let sameC3 : Bool := (mode &&& 1) = 1
@@ -458,10 +561,14 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
   let stBeforeSize ← get
   if stBeforeSize.stack.size = 0 then
     throw .stkUnd
-  let stackSizeInt ← VM.popIntFinite
-  if stackSizeInt < 0 then
-    throw .rangeChk
-  let stackSize : Nat := stackSizeInt.toNat
+  let stackSize : Nat ←
+    match (← VM.popInt) with
+    | .nan => throw .rangeChk
+    | .num n =>
+        if n < 0 then
+          throw .rangeChk
+        else
+          pure n.toNat
   let stAfterSize ← get
   if stackSize > stAfterSize.stack.size then
     throw .rangeChk
@@ -472,6 +579,8 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
     childStack := childStack.set! (stackSize - 1 - i) v
 
   modify fun st => st.consumeStackGas stackSize
+  if decide ((← get).gas.gasRemaining < 0) then
+    throw .outOfGas
 
   -- C++ `init_cregs`: `push_0` is honored only when `same_c3` is set.
   if sameC3 && push0 then
@@ -504,6 +613,7 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
       gas := childGas
       loadedCells := if isolateGas then #[] else parentAfterPops.loadedCells
       chksgnCounter := if isolateGas then 0 else parentAfterPops.chksgnCounter
+      libraries := parentAfterPops.libraries
       maxDataDepth := parentAfterPops.maxDataDepth }
 
   let (childExit, childFinal) := childRun host childFuelDefault child
@@ -512,6 +622,12 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
   let childConsumed : Int := childFinal.gas.gasConsumed
   let pay : Int := min childConsumed (childFinal.gas.gasLimit + 1)
   let mut parentAfter : VmState := parentAfterPops.consumeGas pay
+  parentAfter := { parentAfter with
+    libraries := childFinal.libraries
+    chksgnCounter := childFinal.chksgnCounter
+    loadedCells := if isolateGas then parentAfter.loadedCells else childFinal.loadedCells }
+  if decide (parentAfter.gas.gasRemaining < 0) then
+    throw .outOfGas
 
   let depth := childFinal.stack.size
   let mut retCnt : Nat := 0
@@ -531,6 +647,8 @@ def runChildVm (host : Host) (parent : VmState) (mode : Nat) : VM VmState := do
 
   -- C++ `restore_parent_vm`: charge stack gas for returned value count before pushes.
   parentAfter := parentAfter.consumeStackGas retCnt
+  if decide (parentAfter.gas.gasRemaining < 0) then
+    throw .outOfGas
 
   for i in List.range retCnt |>.reverse do
     let pos := depth - 1 - i
@@ -558,6 +676,8 @@ set_option maxHeartbeats 1000000 in
 def execInstrFlowRunvm (host : Host) (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .contExt (.runvm mode) =>
+      -- Match C++ helper canonicalization (`exec_runvm(..., args & 4095)`).
+      let mode := mode &&& 0xfff
       let st ← get
       let st' ← runChildVm host st mode
       set st'

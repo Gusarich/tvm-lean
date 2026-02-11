@@ -49,13 +49,12 @@ set_option maxHeartbeats 1000000 in
 def execInstrContReturnArgs (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .returnArgs count =>
-      if count > 15 then
-        throw .rangeChk
-      VM.returnArgsCommon count
+      -- C++ helper canonicalizes immediate payload as `args & 15`.
+      let params : Nat := count &&& 0xf
+      VM.returnArgsCommon params
   | .returnVarArgs =>
       let n ← VM.popNatUpTo 255
       VM.returnArgsCommon n
   | _ => next
 
 end TvmLean
-

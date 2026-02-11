@@ -129,6 +129,7 @@ def VM.extractCc (saveCr : Nat) (stackCopy : Int := -1) (ccArgs : Int := -1) : V
   let depth : Nat := st.stack.size
   let mut bottom : Stack := #[]
   let mut newStack : Stack := st.stack
+  let mut chargeSplitGas : Bool := false
 
   if decide (stackCopy < 0) then
     -- Keep the whole stack, capture nothing.
@@ -148,11 +149,12 @@ def VM.extractCc (saveCr : Nat) (stackCopy : Int := -1) (ccArgs : Int := -1) : V
       let split : Nat := depth - copy
       bottom := st.stack.take split
       newStack := st.stack.extract split depth
+      chargeSplitGas := true
 
   -- Update stack and charge stack gas only when we actually split off a non-empty `newStack` via `copy > 0`.
-  -- This matches C++ behavior closely enough for our purposes.
+  -- C++ charges only for the strict split path (`0 < copy < depth`).
   let st :=
-    if decide (0 < stackCopy) && newStack.size > 0 then
+    if chargeSplitGas then
       ({ st with stack := newStack }).consumeStackGas newStack.size
     else
       { st with stack := newStack }

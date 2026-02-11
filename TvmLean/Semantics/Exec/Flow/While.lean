@@ -8,16 +8,18 @@ def execInstrFlowWhile (i : Instr) (next : VM Unit) : VM Unit := do
   | .while_ =>
       -- Stack effect: ... cond body -- ...
       -- Control flow: execute `cond`; if true then execute `body` and repeat.
+      -- Match C++ `exec_while`: underflow check happens before type checks from pops.
+      VM.checkUnderflow 2
       let body ← VM.popCont
       let cond ← VM.popCont
+      -- Match C++ `exec_while`: `after := extract_cc(1)` (save/reset c0) before `loop_while`.
+      let after ← VM.extractCc 1
       let st ← get
-      -- Capture the "after" continuation as the rest of the current code,
-      -- but remember the current return continuation in `savedC0` so we can restore it when the loop terminates.
-      let after :=
-        match st.cc with
-        | .ordinary rest _ _ _ => .ordinary rest st.regs.c0 OrdCregs.empty OrdCdata.empty
-        | _ => st.cc
-      set { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
+      -- Match C++ `VmState::loop_while`: install loop continuation into c0 only if `cond` has no c0.
+      if cond.hasC0 then
+        set { st with cc := cond }
+      else
+        set { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
   | _ => next
 
 end TvmLean

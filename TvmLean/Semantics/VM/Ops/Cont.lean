@@ -6,7 +6,7 @@ import TvmLean.Semantics.VM.Ops.Gas
 namespace TvmLean
 
 def VM.jump (cont : Continuation) (passArgs : Int := -1) : VM Unit := do
-  -- Mirrors C++ `VmState::jump(cont, pass_args)` stack truncation + underflow checks (simplified).
+  -- Mirrors C++ `VmState::adjust_jump_cont(cont, pass_args)` stack handling.
   let st ← get
   let depth : Nat := st.stack.size
   if decide (passArgs ≥ 0) then
@@ -23,19 +23,22 @@ def VM.jump (cont : Continuation) (passArgs : Int := -1) : VM Unit := do
         if decide (passArgs ≥ 0) then
           if cdata.nargs > passArgs then
             throw .stkUnd
-      let copy : Int :=
-        if decide (0 ≤ cdata.nargs) then
-          cdata.nargs
-        else if decide (passArgs ≥ 0) then
-          passArgs
-        else
-          -1
-      if decide (copy ≥ 0) then
-        let n : Nat := copy.toNat
-        if n < depth then
-          let newStack : Stack := st.stack.extract (depth - n) depth
-          set { st with stack := newStack }
-          modify fun st => st.consumeStackGas newStack.size
+      let mut copy : Int := cdata.nargs
+      if decide (passArgs ≥ 0 ∧ copy < 0) then
+        copy := passArgs
+      if cdata.stack.isEmpty then
+        if decide (copy ≥ 0) then
+          let n : Nat := copy.toNat
+          if n < depth then
+            let newStack : Stack := st.stack.extract (depth - n) depth
+            set { st with stack := newStack }
+            modify fun st => st.consumeStackGas newStack.size
+      else
+        let copyN : Nat := if decide (copy ≥ 0) then copy.toNat else depth
+        let argsStack : Stack := st.stack.extract (depth - copyN) depth
+        let newStack : Stack := cdata.stack ++ argsStack
+        set { st with stack := newStack }
+        modify fun st => st.consumeStackGas newStack.size
   | _ =>
       if decide (passArgs ≥ 0) then
         let n : Nat := passArgs.toNat
@@ -43,7 +46,18 @@ def VM.jump (cont : Continuation) (passArgs : Int := -1) : VM Unit := do
           let newStack : Stack := st.stack.extract (depth - n) depth
           set { st with stack := newStack }
           modify fun st => st.consumeStackGas newStack.size
-  modify fun st => { st with cc := cont }
+  -- `adjust_jump_cont`-style stack shaping is consumed at jump time.
+  -- Keep only save-list metadata on the active continuation to avoid
+  -- re-applying `cdata.stack`/`cdata.nargs` in subsequent step handlers.
+  let cont' : Continuation :=
+    match cont with
+    | .ordinary code saved cregs _ =>
+        .ordinary code saved cregs OrdCdata.empty
+    | .envelope ext cregs _ =>
+        .envelope ext cregs OrdCdata.empty
+    | _ =>
+        cont
+  modify fun st => { st with cc := cont' }
 
 def VM.callComputeStacks (stack captured : Stack) (nargs passArgs : Int) : VM (Stack × Stack × Bool) := do
   let depth : Nat := stack.size

@@ -15,53 +15,41 @@ private def intValBit? (x : IntVal) (i : Nat) : Except Excno Bool :=
   | .nan => .error .intOv
   | .num n => .ok (intBit n i)
 
+private def popIntFiniteKeepAndBit (idx : Nat) : VM Bool := do
+  let x ← VM.popIntFinite
+  let bit := intBit x idx
+  VM.push (.int (.num x))
+  pure bit
+
 set_option maxHeartbeats 1000000 in
 def execInstrFlowIfBitJmp (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .contExt (.ifbitjmp idx) =>
       VM.checkUnderflow 2
       let body ← VM.popCont
-      let x ← VM.fetch 0
-      match x with
-      | .int v =>
-          match intValBit? v idx with
-          | .ok true => VM.jump body
-          | .ok false => pure ()
-          | .error e => throw e
-      | _ => throw .typeChk
+      if (← popIntFiniteKeepAndBit idx) then
+        VM.jump body
+      else
+        pure ()
   | .contExt (.ifnbitjmp idx) =>
       VM.checkUnderflow 2
       let body ← VM.popCont
-      let x ← VM.fetch 0
-      match x with
-      | .int v =>
-          match intValBit? v idx with
-          | .ok true => pure ()
-          | .ok false => VM.jump body
-          | .error e => throw e
-      | _ => throw .typeChk
+      if !(← popIntFiniteKeepAndBit idx) then
+        VM.jump body
+      else
+        pure ()
   | .contExt (.ifbitjmpref idx code) =>
-      let x ← VM.fetch 0
-      match x with
-      | .int v =>
-          match intValBit? v idx with
-          | .ok true =>
-              VM.registerCellLoad code.cell
-              VM.jump (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
-          | .ok false => pure ()
-          | .error e => throw e
-      | _ => throw .typeChk
+      if (← popIntFiniteKeepAndBit idx) then
+        VM.registerCellLoad code.cell
+        VM.jump (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
+      else
+        pure ()
   | .contExt (.ifnbitjmpref idx code) =>
-      let x ← VM.fetch 0
-      match x with
-      | .int v =>
-          match intValBit? v idx with
-          | .ok true => pure ()
-          | .ok false =>
-              VM.registerCellLoad code.cell
-              VM.jump (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
-          | .error e => throw e
-      | _ => throw .typeChk
+      if !(← popIntFiniteKeepAndBit idx) then
+        VM.registerCellLoad code.cell
+        VM.jump (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
+      else
+        pure ()
   | _ => next
 
 end TvmLean

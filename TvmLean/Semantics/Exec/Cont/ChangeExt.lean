@@ -17,6 +17,8 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
       | .popCtrX =>
           VM.checkUnderflow 2
           let idx ← VM.popNatUpTo 16
+          if idx = 6 || idx > 7 then
+            throw .rangeChk
           let v ← VM.pop
           let st ← get
           match st.setCtr idx v with
@@ -87,45 +89,58 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
           match st.getCtr idx with
           | .error e => throw e
           | .ok oldVal =>
-              match st.regs.c0.defineCtr idx oldVal with
-              | .error e => throw e
-              | .ok c0' =>
-                  if idx = 0 then
-                    -- Match C++ ordering: update c0 first, then set c0 := v.
-                    let st1 : VmState := { st with regs := { st.regs with c0 := c0' } }
-                    match st1.setCtr idx v with
-                    | .ok st2 => set st2
-                    | .error e => throw e
-                  else
-                    match st.setCtr idx v with
-                    | .error e => throw e
-                    | .ok st1 =>
-                        set { st1 with regs := { st1.regs with c0 := c0' } }
+              -- C++ `exec_popsave_ctr` ignores duplicate define failures when saving into `c0`.
+              let c0' ←
+                match st.regs.c0.defineCtr idx oldVal with
+                | .ok k => pure k
+                | .error .typeChk => pure st.regs.c0
+                | .error e => throw e
+              if idx = 0 then
+                -- Match C++ ordering: update c0 first, then set c0 := v.
+                let st1 : VmState := { st with regs := { st.regs with c0 := c0' } }
+                match st1.setCtr idx v with
+                | .ok st2 => set st2
+                | .error e => throw e
+              else
+                match st.setCtr idx v with
+                | .error e => throw e
+                | .ok st1 =>
+                    set { st1 with regs := { st1.regs with c0 := c0' } }
       | .saveAltCtr idx =>
           let st ← get
-          match st.getCtr idx with
+          -- C++ `exec_savealt_ctr` maps invalid direct AST indices (e.g. c6/c8)
+          -- to `typeChk` via `define(idx, st->get(idx))`, not `rangeChk`.
+          let v : Value ←
+            match st.getCtr idx with
+            | .ok v => pure v
+            | .error .rangeChk => pure .null
+            | .error e => throw e
+          match st.regs.c1.defineCtr idx v with
+          | .ok c1' => set { st with regs := { st.regs with c1 := c1' } }
           | .error e => throw e
-          | .ok v =>
-              match st.regs.c1.defineCtr idx v with
-              | .ok c1' => set { st with regs := { st.regs with c1 := c1' } }
-              | .error e => throw e
       | .saveBothCtr idx =>
           let st ← get
           match st.getCtr idx with
           | .error e => throw e
           | .ok v =>
-              match st.regs.c0.defineCtr idx v with
-              | .error e => throw e
-              | .ok c0' =>
-                  match st.regs.c1.defineCtr idx v with
-                  | .error e => throw e
-                  | .ok c1' =>
-                      set { st with regs := { st.regs with c0 := c0', c1 := c1' } }
+              -- C++ `exec_saveboth_ctr` ignores `define` failures (duplicate save-slots are no-ops).
+              let c0' :=
+                match st.regs.c0.defineCtr idx v with
+                | .ok k => k
+                | .error _ => st.regs.c0
+              let c1' :=
+                match st.regs.c1.defineCtr idx v with
+                | .ok k => k
+                | .error _ => st.regs.c1
+              set { st with regs := { st.regs with c0 := c0', c1 := c1' } }
       | .setExitAlt =>
           let cont ← VM.popCont
           let st ← get
-          let cont' := (cont.defineC0 st.regs.c0).defineC1 st.regs.c1
-          set { st with regs := { st.regs with c1 := cont' } }
+          -- Match C++ `exec_setexit_alt` ordering:
+          -- `define_c0(st->get_c0())`, then `define_c1(st->get_c1())`, then `set_c1(cont)`.
+          let cont1 := cont.defineC0 st.regs.c0
+          let cont2 := cont1.defineC1 st.regs.c1
+          set { st with regs := { st.regs with c1 := cont2 } }
       | _ =>
           next
   | _ =>
