@@ -126,8 +126,11 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
       | .setExitAlt =>
           let cont ← VM.popCont
           let st ← get
-          let cont' := (cont.defineC0 st.regs.c0).defineC1 st.regs.c1
-          set { st with regs := { st.regs with c1 := cont' } }
+          -- Match C++ `exec_setexit_alt` ordering:
+          -- `define_c0(st->get_c0())`, then `define_c1(st->get_c1())`, then `set_c1(cont)`.
+          let cont1 := cont.defineC0 st.regs.c0
+          let cont2 := cont1.defineC1 st.regs.c1
+          set { st with regs := { st.regs with c1 := cont2 } }
       | _ =>
           next
   | _ =>
