@@ -46,7 +46,18 @@ def VM.jump (cont : Continuation) (passArgs : Int := -1) : VM Unit := do
           let newStack : Stack := st.stack.extract (depth - n) depth
           set { st with stack := newStack }
           modify fun st => st.consumeStackGas newStack.size
-  modify fun st => { st with cc := cont }
+  -- `adjust_jump_cont`-style stack shaping is consumed at jump time.
+  -- Keep only save-list metadata on the active continuation to avoid
+  -- re-applying `cdata.stack`/`cdata.nargs` in subsequent step handlers.
+  let cont' : Continuation :=
+    match cont with
+    | .ordinary code saved cregs _ =>
+        .ordinary code saved cregs OrdCdata.empty
+    | .envelope ext cregs _ =>
+        .envelope ext cregs OrdCdata.empty
+    | _ =>
+        cont
+  modify fun st => { st with cc := cont' }
 
 def VM.callComputeStacks (stack captured : Stack) (nargs passArgs : Int) : VM (Stack × Stack × Bool) := do
   let depth : Nat := stack.size
