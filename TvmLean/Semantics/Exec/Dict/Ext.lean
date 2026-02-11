@@ -20,11 +20,11 @@ private def consumeCreatedGas (created : Nat) : VM Unit := do
 
 private def registerLoaded (loaded : Array Cell) : VM Unit := do
   for c in loaded do
-    modify fun st => st.registerCellLoad c
+    VM.registerCellLoad c
 
 private def prechargeRootLoad (dictCell? : Option Cell) : VM Unit := do
   match dictCell? with
-  | some c => modify fun st => st.registerCellLoad c
+  | some c => VM.registerCellLoad c
   | none => pure ()
 
 private def loadedWithoutRoot (dictCell? : Option Cell) (loaded : Array Cell) : Array Cell :=
@@ -729,7 +729,7 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
 
       | .pfxSwitch dictCell keyLen =>
           let cs0 ← VM.popSlice
-          modify fun st => st.registerCellLoad dictCell
+          VM.registerCellLoad dictCell
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
           match DictExt.pfxLookupPrefixWithCells (some dictCell) keyBits keyBits.size keyLen with
           | .error e => throw e

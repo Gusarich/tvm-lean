@@ -21,7 +21,7 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
         throw .rangeChk
       let msgCell ← VM.popCell
       -- Mirrors the TL-B unpack attempt which loads the root cell once (even if the message is invalid).
-      modify fun st => st.registerCellLoad msgCell
+      VM.registerCellLoad msgCell
 
       let getParam (idx : Nat) : VM Value := do
         let st ← get
@@ -245,7 +245,7 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
       let isMasterchain : Bool := (myWc == -1) || (!parsedMsg.extMsg && destWc == -1)
 
       -- Load root cell one more time: storage stat.
-      modify fun st => st.registerCellLoad msgCell
+      VM.registerCellLoad msgCell
 
       -- storage stat: count reachable cells/bits excluding the root cell (and root bits)
       let unpacked ← VM.getUnpackedConfigTuple
@@ -279,7 +279,7 @@ def execInstrMsgSendMsg (i : Instr) (next : VM Unit) : VM Unit := do
           seen := seen.push h
           cells := cells + 1
           bits := bits + c.bits.size
-          modify fun st => st.registerCellLoad c
+          VM.registerCellLoad c
           todo := todo ++ c.refs
 
       let (lumpPrice, bitPrice, cellPrice, _ihrFactor, firstFrac) ← VM.getMsgPrices isMasterchain

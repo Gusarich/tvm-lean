@@ -29,9 +29,13 @@ structure OracleCase where
   name : String
   instr : InstrId
   program : Array Instr := #[]
+  /-- Optional pre-assembled cp0 code cell (used for instructions with inline refs/consts that `assembleCp0` rejects). -/
+  codeCell? : Option Cell := none
   initStack : Array Value := #[]
   initCregs : OracleInitCregs := {}
   initC7 : Array Value := #[]
+  /-- Optional library collection cells used by `XLOAD{Q}` (mirrors C++ `VmState.libraries`). -/
+  initLibraries : Array Cell := #[]
   gasLimits : OracleGasLimits := {}
   fuel : Nat := 1_000_000
   deriving Repr

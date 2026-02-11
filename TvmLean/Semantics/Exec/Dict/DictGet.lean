@@ -25,7 +25,7 @@ def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
           VM.pushSmallInt 0
       | some keyBits =>
           match dictCell? with
-          | some c => modify fun st => st.registerCellLoad c
+          | some c => VM.registerCellLoad c
           | none => pure ()
           match dictLookupWithCells dictCell? keyBits with
           | .error e =>
@@ -35,7 +35,7 @@ def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
                 | none => loadedAll
                 | some root => loadedAll.filter (fun c => c != root)
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               throw e
           | .ok (none, loaded) =>
               let loaded :=
@@ -43,7 +43,7 @@ def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
                 | none => loaded
                 | some root => loaded.filter (fun c => c != root)
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               VM.pushSmallInt 0
           | .ok (some valueSlice, loaded) =>
               let loaded :=
@@ -51,7 +51,7 @@ def execInstrDictDictGet (i : Instr) (next : VM Unit) : VM Unit := do
                 | none => loaded
                 | some root => loaded.filter (fun c => c != root)
               for c in loaded do
-                modify fun st => st.registerCellLoad c
+                VM.registerCellLoad c
               if byRef then
                 if valueSlice.bitsRemaining == 0 && valueSlice.refsRemaining == 1 then
                   let c := valueSlice.cell.refs[valueSlice.refPos]!

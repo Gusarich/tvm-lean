@@ -211,7 +211,13 @@ def execInstrChildNoRunvm (host : Host) (i : Instr) : VM Unit :=
 def outOfGasHalt (st : VmState) : ChildStepResult :=
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
-  ChildStepResult.halt Excno.outOfGas.toInt st'
+  ChildStepResult.halt (~~~ Excno.outOfGas.toInt) st'
+
+/-- Mirror C++ gas.check() → throw_exception(out_of_gas) for child VM. -/
+private def gasCheckFailed (st : VmState) : ChildStepResult :=
+  let stExc := st.throwException Excno.outOfGas.toInt
+  let stExcGas := stExc.consumeGas exceptionGasPrice
+  outOfGasHalt stExcGas
 
 def childStep (host : Host) (st : VmState) : ChildStepResult :=
   match st.cc with
@@ -370,12 +376,15 @@ def childStep (host : Host) (st : VmState) : ChildStepResult :=
                   else
                     .continue st1
               | .error e =>
-                  let stExc := st1.throwException e.toInt
-                  let stExcGas := stExc.consumeGas exceptionGasPrice
-                  if decide (stExcGas.gas.gasRemaining < 0) then
-                    outOfGasHalt stExcGas
+                  if e = .outOfGas then
+                    outOfGasHalt st1
                   else
-                    .continue stExcGas
+                    let stExc := st1.throwException e.toInt
+                    let stExcGas := stExc.consumeGas exceptionGasPrice
+                    if decide (stExcGas.gas.gasRemaining < 0) then
+                      outOfGasHalt stExcGas
+                    else
+                      .continue stExcGas
 
 def childRun (host : Host) (fuel : Nat) (st : VmState) : Int × VmState :=
   match fuel with

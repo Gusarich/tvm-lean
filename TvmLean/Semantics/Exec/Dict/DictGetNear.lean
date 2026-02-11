@@ -36,33 +36,33 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
           match dictKeyBits? key n unsigned with
           | some hintBits =>
               match dictCell? with
-              | some c => modify fun st => st.registerCellLoad c
+              | some c => VM.registerCellLoad c
               | none => pure ()
               match dictNearestWithCells dictCell? hintBits goUp allowEq sgnd with
               | .error e =>
                   let loaded := dropFirstRootLoad dictCell? (dictNearestVisitedCells dictCell? hintBits goUp allowEq sgnd)
                   for c in loaded do
-                    modify fun st => st.registerCellLoad c
+                    VM.registerCellLoad c
                   throw e
               | .ok r => pure r
           | none =>
               let cond : Bool := (decide (0 ≤ key)) != goUp
               if cond then
                 match dictCell? with
-                | some c => modify fun st => st.registerCellLoad c
+                | some c => VM.registerCellLoad c
                 | none => pure ()
                 match dictMinMaxWithCells dictCell? n (!goUp) sgnd with
                 | .error e =>
                     let loaded := dropFirstRootLoad dictCell? (dictMinMaxVisitedCells dictCell? n (!goUp) sgnd)
                     for c in loaded do
-                      modify fun st => st.registerCellLoad c
+                      VM.registerCellLoad c
                     throw e
                 | .ok r => pure r
               else
                 pure (none, #[])
 
         for c in dropFirstRootLoad dictCell? loaded0 do
-          modify fun st => st.registerCellLoad c
+          VM.registerCellLoad c
 
         match out? with
         | none =>
@@ -82,21 +82,21 @@ def execInstrDictDictGetNear (i : Instr) (next : VM Unit) : VM Unit := do
           throw .cellUnd
         let hintBits : BitString := keyHint.readBits n
         match dictCell? with
-        | some c => modify fun st => st.registerCellLoad c
+        | some c => VM.registerCellLoad c
         | none => pure ()
         match dictNearestWithCells dictCell? hintBits goUp allowEq false with
         | .error e =>
             let loaded := dropFirstRootLoad dictCell? (dictNearestVisitedCells dictCell? hintBits goUp allowEq false)
             for c in loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             throw e
         | .ok (none, loaded) =>
             for c in dropFirstRootLoad dictCell? loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             VM.pushSmallInt 0
         | .ok (some (val, keyBits), loaded) =>
             for c in dropFirstRootLoad dictCell? loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             VM.push (.slice val)
             modify fun st => st.consumeGas cellCreateGasPrice
             let keyCell : Cell := Cell.mkOrdinary keyBits #[]

@@ -32,11 +32,11 @@ def execInstrTonEnvGetExtraBalance (i : Instr) (next : VM Unit) : VM Unit := do
           throw e
       | .ok (none, loaded) =>
           for c in loaded do
-            modify fun st => st.registerCellLoad c
+            VM.registerCellLoad c
           VM.pushSmallInt 0
       | .ok (some cs, loaded) =>
           for c in loaded do
-            modify fun st => st.registerCellLoad c
+            VM.registerCellLoad c
           -- Parse `VarUInteger 32`-like: len_bits=5, unsigned, quiet=false.
           let (lenBytes, s1) ← cs.takeBitsAsNatCellUnd 5
           let dataBits : Nat := lenBytes * 8

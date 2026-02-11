@@ -142,10 +142,10 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
               throw .invOpcode
           -- Stack: ... builder x -- ...
           let x ← VM.popInt
+          let b ← VM.popBuilder
           match x with
           | .nan => throw .rangeChk
           | .num n =>
-              let b ← VM.popBuilder
               if !signed && n < 0 then
                 -- Unsigned VarInt cannot encode negative numbers.
                 throw .rangeChk
@@ -174,7 +174,7 @@ def execInstrCellExt (i : Instr) (next : VM Unit) : VM Unit := do
           -- - Always charges a cell load for the popped cell.
           -- - Resolves library exotic cells via the library collections in `VmState.libraries`.
           let c0 ← VM.popCell
-          modify fun st => st.registerCellLoad c0
+          VM.registerCellLoad c0
           let st ← get
           let resolve : Except Excno Cell := do
             if !c0.special then

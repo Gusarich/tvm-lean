@@ -11,8 +11,12 @@ def execInstrCellLdrefRtos (i : Instr) (next : VM Unit) : VM Unit := do
         let c := s.cell.refs[s.refPos]!
         let s' := { s with refPos := s.refPos + 1 }
         -- C++ `LDREFRTOS` uses `load_cell_slice_ref`, which charges a cell load/reload.
-        modify fun st => st.registerCellLoad c
+        VM.registerCellLoad c
         VM.push (.slice s')
+        -- `load_cell_slice_ref` rejects special cells for this opcode and throws after
+        -- the remainder slice has already been pushed.
+        if c.special then
+          throw .cellUnd
         VM.push (.slice (Slice.ofCell c))
       else
         throw .cellUnd

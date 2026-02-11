@@ -32,18 +32,18 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
       let n ← VM.popNatUpTo maxN
       let dictCell? ← VM.popMaybeCell
       match dictCell? with
-      | some c => modify fun st => st.registerCellLoad c
+      | some c => VM.registerCellLoad c
       | none => pure ()
       match dictMinMaxWithCells dictCell? n fetchMax invertFirst with
       | .error e =>
           let loaded := dropFirstRootLoad dictCell? (dictMinMaxVisitedCells dictCell? n fetchMax invertFirst)
           for c in loaded do
-            modify fun st => st.registerCellLoad c
+            VM.registerCellLoad c
           throw e
       | .ok (none, loaded) =>
           let loaded := dropFirstRootLoad dictCell? loaded
           for c in loaded do
-            modify fun st => st.registerCellLoad c
+            VM.registerCellLoad c
           if remove then
             match dictCell? with
             | none => VM.push .null
@@ -52,7 +52,7 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
       | .ok (some (val0, keyBits), loaded0) =>
           let loaded0 := dropFirstRootLoad dictCell? loaded0
           for c in loaded0 do
-            modify fun st => st.registerCellLoad c
+            VM.registerCellLoad c
           let mut val := val0
           let mut dictOut? : Option Cell := dictCell?
           let mut created : Nat := 0
@@ -62,7 +62,7 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
             | .error e =>
                 let loadedDel := dictDeleteVisitedCells dictCell? keyBits
                 for c in loadedDel do
-                  modify fun st => st.registerCellLoad c
+                  VM.registerCellLoad c
                 throw e
             | .ok (oldVal?, newRoot?, created1, loadedDel) =>
                 match oldVal? with
@@ -73,7 +73,7 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
                     created := created1
                     loaded1 := loadedDel
           for c in loaded1 do
-            modify fun st => st.registerCellLoad c
+            VM.registerCellLoad c
           if created > 0 then
             modify fun st => st.consumeGas (cellCreateGasPrice * Int.ofNat created)
 

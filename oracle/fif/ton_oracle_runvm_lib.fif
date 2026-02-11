@@ -46,6 +46,7 @@ variable stack_i
 {  // pushes Value
   dup "CB:" $pos 0= { 3 $| nip x>B B>boc } {
   dup "SB:" $pos 0= { 3 $| nip x>B B>boc <s } {
+  dup "BB:" $pos 0= { 3 $| nip x>B B>boc <s <b swap s, } {
   dup "C4" $= { drop <b 361 9 u, b> } {
   dup "C3" $= { drop <b 50 6 u, b> } {
   dup "C2" $= { drop <b 10 4 u, b> } {
@@ -74,7 +75,7 @@ variable stack_i
   dup "T" $= { drop nil } {
   dup "K" $= { drop <b 8 4 u, 0 32 i, b> <s vmcont@ swap drop } {
     parse-int
-  } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond
+  } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond } cond
 } : push-token
 
 // ( header$ tuple n i conv acc$ -- header$ conv acc$ )

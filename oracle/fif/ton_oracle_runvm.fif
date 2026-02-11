@@ -16,6 +16,7 @@
 //   K   -> push quit continuation (exit_code=0)
 //   CB:<boc_hex> -> push Cell from hex-encoded BOC
 //   SB:<boc_hex> -> push Slice from hex-encoded BOC
+//   BB:<boc_hex> -> push Builder with contents from hex-encoded BOC (cell bits+refs)
 //   <n> -> push integer parsed from decimal string (e.g. "-3", "10")
 //
 // Output is produced by `oracle-run` from `oracle/fif/ton_oracle_runvm_lib.fif`:
@@ -30,9 +31,22 @@
 
 variable argi
 
-// Push initial stack args from $2..$#
+// Optionally set VM library collections for XLOAD{Q}.
+// Usage extension:
+//   <code_boc_hex> LIB <lib_collection_boc_hex> [stack_args...]
+// If omitted, libraries are cleared (empty).
+null vmlibs !
 2 argi !
-$# 1- {
+$# 2 >= {
+  2 $() "LIB" $= {
+    $# 3 < { abort"missing LIB argument: expected <lib_collection_boc_hex> at $3" } if
+    3 $() x>B B>boc vmlibs !
+    4 argi !
+  } { } cond
+} { } cond
+
+// Push initial stack args from $argi..$#
+$# argi @ - 1+ {
   argi @ $() push-token
   argi @ 1+ argi !
 } swap times

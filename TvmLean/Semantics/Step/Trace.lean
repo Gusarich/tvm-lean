@@ -286,12 +286,15 @@ def VmState.stepTrace (host : Host) (st : VmState) (step : Nat) : TraceEntry × 
                     else
                       (s!"exec({instr.pretty})", .continue st1)
                 | .error e =>
-                    let stExc := st1.throwException e.toInt
-                    let stExcGas := stExc.consumeGas exceptionGasPrice
-                    if decide (stExcGas.gas.gasRemaining < 0) then
-                      (s!"exec_error({instr.pretty},{reprStr e}) out_of_gas", stExcGas.outOfGasHalt)
+                    if e = .outOfGas then
+                      (s!"exec({instr.pretty}) out_of_gas", st1.outOfGasHalt)
                     else
-                      (s!"exec_error({instr.pretty},{reprStr e})", .continue stExcGas)
+                      let stExc := st1.throwException e.toInt
+                      let stExcGas := stExc.consumeGas exceptionGasPrice
+                      if decide (stExcGas.gas.gasRemaining < 0) then
+                        (s!"exec_error({instr.pretty},{reprStr e}) out_of_gas", stExcGas.outOfGasHalt)
+                      else
+                        (s!"exec_error({instr.pretty},{reprStr e})", .continue stExcGas)
             let stAfter :=
               match res with
               | .continue st' => st'

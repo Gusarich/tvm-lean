@@ -6,6 +6,8 @@ set_option maxHeartbeats 1000000 in
 def execInstrCellSdPpfxRev (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .sdPpfxRev =>
+      -- Matches C++ `exec_bin_cs_cmp`: underflow is checked before type checks.
+      VM.checkUnderflow 2
       let pref ← VM.popSlice
       let s ← VM.popSlice
       let prefBits := pref.readBits pref.bitsRemaining

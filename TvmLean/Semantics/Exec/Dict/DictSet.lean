@@ -46,18 +46,18 @@ def execInstrDictDictSet (i : Instr) (next : VM Unit) : VM Unit := do
           | some bs => pure bs
           | none => throw .cellUnd
         match dictCell? with
-        | some c => modify fun st => st.registerCellLoad c
+        | some c => VM.registerCellLoad c
         | none => pure ()
         match dictSetRefWithCells dictCell? keyBits valRef mode with
         | .error e =>
             let loaded := dropFirstRootLoad dictCell? (dictLookupVisitedCells dictCell? keyBits)
             for c in loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             throw e
         | .ok (newRoot?, ok, created, loaded) =>
             let loaded := dropFirstRootLoad dictCell? loaded
             for c in loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             if created > 0 then
               modify fun st => st.consumeGas (cellCreateGasPrice * Int.ofNat created)
             match newRoot? with
@@ -75,18 +75,18 @@ def execInstrDictDictSet (i : Instr) (next : VM Unit) : VM Unit := do
           | some bs => pure bs
           | none => throw .cellUnd
         match dictCell? with
-        | some c => modify fun st => st.registerCellLoad c
+        | some c => VM.registerCellLoad c
         | none => pure ()
         match dictSetSliceWithCells dictCell? keyBits valSlice mode with
         | .error e =>
             let loaded := dropFirstRootLoad dictCell? (dictLookupVisitedCells dictCell? keyBits)
             for c in loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             throw e
         | .ok (newRoot?, ok, created, loaded) =>
             let loaded := dropFirstRootLoad dictCell? loaded
             for c in loaded do
-              modify fun st => st.registerCellLoad c
+              VM.registerCellLoad c
             if created > 0 then
               modify fun st => st.consumeGas (cellCreateGasPrice * Int.ofNat created)
             match newRoot? with

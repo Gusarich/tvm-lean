@@ -8,11 +8,22 @@ inductive StepResult : Type
   deriving Repr
 
 def VmState.outOfGasHalt (st : VmState) : StepResult :=
-  -- Match C++ unhandled out-of-gas: clear stack and push `gas_consumed()`
-  -- (which may exceed the base/limit if `gas_remaining` went negative).
+  -- Match `VmState::run()` behavior: unhandled out-of-gas returns the plain
+  -- exception number (13) and leaves `stack=[gas_consumed]`.  Note that the
+  -- Fift `runvmx` primitive applies `~` to this return value, so the oracle
+  -- observes `-14` for out-of-gas.
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
   StepResult.halt Excno.outOfGas.toInt st'
+
+/-- Mirror C++ gas.check() → VmNoGas → throw_exception(out_of_gas) path:
+    treat gas exhaustion as an out-of-gas exception, charge exception_gas_price,
+    then halt with 13 (Fift `runvmx` observes `~13 = -14`).
+    Used for non-error paths where gas went negative. -/
+def VmState.gasCheckFailed (st : VmState) : StepResult :=
+  let stExc := st.throwException Excno.outOfGas.toInt
+  let stExcGas := stExc.consumeGas exceptionGasPrice
+  stExcGas.outOfGasHalt
 
 def VmState.applyCregsCdata (st : VmState) (cregs : OrdCregs) (cdata : OrdCdata) : VmState :=
   -- Mirrors C++ `adjust_cr(save)` + `adjust_jump_cont` stack truncation/merge on jump/call.
@@ -53,9 +64,17 @@ def cp0InvOpcodeGasBits (code : Slice) : Nat :=
   -- decode the same prefix after zero-padding bits so short fixed/ext opcodes
   -- report their declared bit length (e.g. 16/24) instead of falling back to 8.
   let bits0 : BitString := code.readBits code.bitsRemaining
+  -- Some cp0 opcodes (e.g. PUSHSLICE_REFS/LONG, PUSHCONT) validate the presence of
+  -- inline payload bits and refs *after* their header is recognized. When the code
+  -- slice is truncated in the payload, C++ still charges based on the matched
+  -- opcode entry width (header bits), not the 8-bit fallback.
+  --
+  -- To approximate this, always pad enough bits so the decoder can proceed past
+  -- payload-length guards and report the header width.
+  let padBitsTo : Nat := 2048
   let bitsPad : BitString :=
-    if bits0.size < 24 then
-      bits0 ++ Array.replicate (24 - bits0.size) false
+    if bits0.size < padBitsTo then
+      bits0 ++ Array.replicate (padBitsTo - bits0.size) false
     else
       bits0
   let refs0 : Array Cell := code.cell.refs.extract code.refPos code.cell.refs.size
@@ -67,8 +86,10 @@ def cp0InvOpcodeGasBits (code : Slice) : Nat :=
   match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary bitsPad refsPad)) with
   | .ok (_instr, totBits, _rest) => totBits
   | .error _ =>
-      -- Conservative fallback kept for prefixes that still don't decode.
-      if code.bitsRemaining < 4 then 16 else 8
+      -- If we still can't match a real opcode-table entry even after padding,
+      -- treat this as a dummy `inv_opcode` dispatch (C++ charges `gas_per_instr`
+      -- without per-bit cost in this case).
+      0
 
 def VmState.step (host : Host) (st : VmState) : StepResult :=
   match st.cc with
@@ -237,16 +258,23 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
               match res with
               | .ok _ =>
                   if decide (st1.gas.gasRemaining < 0) then
+                    -- C++ gas.check() after step → VmNoGas → propagates to run(),
+                    -- bypassing throw_exception.  No exception_gas charged.
                     st1.outOfGasHalt
                   else
                     .continue st1
               | .error e =>
-                  -- TVM behavior: convert VM errors into an exception jump to c2.
-                  let stExc := st1.throwException e.toInt
-                  let stExcGas := stExc.consumeGas exceptionGasPrice
-                  if decide (stExcGas.gas.gasRemaining < 0) then
-                    stExcGas.outOfGasHalt
+                  if e = .outOfGas then
+                    -- VmNoGas thrown mid-instruction (e.g. from consume_gas during
+                    -- cell load).  Propagates to run(), no exception_gas charged.
+                    st1.outOfGasHalt
                   else
-                    .continue stExcGas
+                    -- TVM behavior: convert VM errors into an exception jump to c2.
+                    let stExc := st1.throwException e.toInt
+                    let stExcGas := stExc.consumeGas exceptionGasPrice
+                    if decide (stExcGas.gas.gasRemaining < 0) then
+                      stExcGas.outOfGasHalt
+                    else
+                      .continue stExcGas
 
 end TvmLean
