@@ -1,71 +1,40 @@
 # TVM Lean
 
-> ⚠️ **Experimental** — This project is in active development and has not been thoroughly tested. Do not rely on its semantics.
+**A formal executable model of the TON Virtual Machine, written in Lean 4.**
 
-A Lean 4 executable model of the TON Virtual Machine (TVM), designed to match the behavior of the [reference C++ implementation](https://github.com/ton-blockchain/ton). It aims to be both a proof-grade semantics package and a high-confidence reference implementation validated against TON's C++ behavior.
+Built to match the behavior of the [reference C++ implementation](https://github.com/ton-blockchain/ton) instruction-for-instruction. The goal is a proof-grade semantics that can serve as both a verified specification and a high-confidence reference implementation.
 
-## Motivation
-
-The existing C++ code in the [TON monorepo](https://github.com/ton-blockchain/ton) is a tangled mess of legacy code and obscure C++ patterns. TVM is the heart of TON smart contracts, and billions of dollars potentially depend on it, so ensuring its security is essential. Meanwhile, the [existing TVM specification](https://github.com/ton-blockchain/tvm-specification) is often inconsistent and doesn't always describe the actual semantics accurately.
-
-The original idea was to rewrite the specification for all instructions using AI agents. Early experiments with a few instructions showed promising results, but further thinking and experimentation led to pivoting toward this formal verification project instead.
-
-## Goals
-
-- **Full instruction coverage**: Implement all TVM instructions in pure Lean
-- **Differential testing**: Heavy diff testing against the reference C++ implementation to catch mismatches
-- **Formal proofs**: Prove important properties for all instructions and core TVM mechanics
-- **Better specification**: Improve the TVM specification as a side effect
+> ⚠️ **Experimental** — This project is in active development. Do not rely on its semantics until testing is complete.
 
 ## Status
 
-🚧 **In active development.** Most of the TVM is implemented, but it has not been properly tested yet. Differential testing against randomly sampled mainnet transactions currently shows ~99% of transactions emulating correctly.
+All 919 TVM instructions are implemented. The vast majority are pure Lean; cryptography-related instructions link to C/C++ implementations via FFI.
 
-The implementation will become a useful foundation for formal verification once it reaches 100% diff-testing accuracy and each instruction has its own dedicated test suite with carefully validated semantics. Until then, treat the semantics as approximate.
+### Test coverage
 
-## Architecture
+| Category | Instructions | Status |
+|---|--:|:-:|
+| Arithmetic | 246 | ✅ Tested |
+| Cell | 199 | ✅ Tested |
+| Dictionary | 143 | 🚧 |
+| Continuation | 98 | 🚧 |
+| Crypto | 50 | 🚧 |
+| Stack | 50 | 🚧 |
+| Other | 133 | 🚧 |
 
-### Model
-`TvmLean/Model/` contains the pure VM model: value/cell/slice/builder types, VM state, instruction IDs/AST, and cp0 decode/encode helpers. This layer is designed for proofs and has no FFI.
+Tested categories have both hand-crafted differential test cases and a randomized fuzz harness running hundreds of generated cases. Every test compares results directly against the C++ reference implementation, and all pass. Coverage for the remaining categories is in progress.
 
-### Semantics
-`TvmLean/Semantics/` contains instruction execution semantics (`execInstr`), step/run logic, and tracing infrastructure. Semantics is parameterized by `Host`.
+### Transaction-level validation
 
-### Native
-`TvmLean/Native/` provides concrete host implementations and all external bindings (`@[extern]`) in one isolated layer.
+Real transactions are pulled from the TON mainnet and re-emulated with both the C++ reference implementation and the Lean implementation. The resulting VM states are compared to ensure they match exactly. This currently passes on 100% of a small-scale sample (thousands of transactions). A larger effort targeting millions of real transactions is in progress.
 
-### Validation
-`TvmLean/Validation/` provides diff testing, oracle parity checking, canonicalization helpers, and coverage reporting.
+## Motivation
 
-## Quick Start
+TVM is the execution engine behind every TON smart contract, with billions of dollars potentially at stake. The C++ implementation in the [TON monorepo](https://github.com/ton-blockchain/ton) is difficult to audit and reason about, and the [existing TVM specification](https://github.com/ton-blockchain/tvm-specification) is often inconsistent with the actual runtime behavior.
 
-Build all project libraries:
-```sh
-lake build TvmLeanModel TvmLeanSemantics TvmLeanNative TvmLeanValidation TvmLeanTests
-```
+A formally verified TVM in Lean changes what's possible. Developers can prove properties about their contracts with mathematical certainty all the way down to the VM — things like "this wallet contract will never send more than the owner authorized", "this DEX's AMM logic preserves the constant product invariant across all execution paths", or "this multisig cannot execute without the required number of signatures, regardless of message ordering".
 
-Run tests:
-```sh
-lake exe tvm-lean-tests
-```
-
-Run curated diff tests:
-```sh
-lake exe tvm-lean-diff-test -- --dir diff-test/fixtures/ci --strict-exit
-```
-
-Generate coverage report:
-```sh
-lake exe tvm-lean-coverage -- --format json --out build/coverage.json
-```
-
-## Documentation
-
-- Getting started: `docs/start-here.md`
-- Architecture: `docs/architecture/overview.md`
-- Instruction implementation workflow: `docs/development/implementing-instructions.md`
-- Test writing/running: `docs/development/writing-tests.md`, `docs/development/running-tests.md`
-- Validation pipelines: `docs/validation/diff-testing.md`, `docs/validation/oracle.md`
+Without verified VM semantics, any smart contract proof is only as trustworthy as the informal spec it's built on. This project aims to provide that foundation: a precise, machine-checked semantics grounded in what TVM actually does, validated against the C++ implementation at scale, suitable for formal proofs about smart contracts all the way down — and, as a side effect, a better TVM specification than the one that exists today.
 
 ## License
 
