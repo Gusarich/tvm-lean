@@ -7,6 +7,7 @@ def execInstrContComposBoth (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .composBoth =>
       -- Mirrors C++ `COMPOSBOTH` (`exec_compos` with mask=3).
+      VM.checkUnderflow 2
       let val ← VM.popCont
       let cont ← VM.popCont
       let cont := cont.defineC0 val
