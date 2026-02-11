@@ -371,7 +371,7 @@ def suite : InstrSuite where
     mkCase "decode/truncated-8bit-prefix" #[intV 0] truncated8Code,
     mkCase "decode/truncated-15bit-prefix" #[intV 0] truncated15Code
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifnotjmprefId 500 ]
 
 initialize registerSuite suite
 

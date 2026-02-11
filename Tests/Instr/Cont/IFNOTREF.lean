@@ -468,7 +468,7 @@ def suite : InstrSuite where
       #[intV maxInt257, intV minInt257, intV 1, intV 0]
       codeTwoIfnotrefNoopTail
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifnotrefId 500 ]
 
 initialize registerSuite suite
 

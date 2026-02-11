@@ -414,7 +414,7 @@ def suite : InstrSuite where
     mkMissingRefCase "invopcode/missing-ref/type-vs-ref-order" 1 #[.cell refLeafA],
     mkMissingRefCase "invopcode/missing-ref/tuple-top" 31 #[.tuple #[]]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifbitjmprefId 500 ]
 
 initialize registerSuite suite
 

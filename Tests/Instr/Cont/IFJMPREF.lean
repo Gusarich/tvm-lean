@@ -341,7 +341,7 @@ def suite : InstrSuite where
     mkCase "decode/one-byte-prefix" #[] oneBytePrefixCode,
     mkCase "decode/empty-code" #[intV 1] emptyCode
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifjmprefId 500 ]
 
 initialize registerSuite suite
 

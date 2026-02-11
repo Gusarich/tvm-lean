@@ -397,7 +397,7 @@ def suite : InstrSuite where
     mkCase "err/range-too-large" #[intV int32TooLarge],
     mkCase "err/range-too-small" #[intV int32TooSmall]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec repeatEndBrkId 500 ]
 
 initialize registerSuite suite
 

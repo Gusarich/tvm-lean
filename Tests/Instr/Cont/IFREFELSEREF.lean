@@ -554,7 +554,7 @@ def suite : InstrSuite where
     mkCase "err/branch/false-selected-add-underflow" #[intV 0] codeFalseAddTail,
     mkCase "ok/branch/true-skips-false-add" #[intV 1] codeFalseAddTail
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifrefElseRefId 500 ]
 
 initialize registerSuite suite
 

@@ -366,7 +366,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" 0 (mkIfnbitStack #[] 0)
       #[.pushInt (.num ifnbitjmpSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnbitjmpInstr 0]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifnbitjmpId 500 ]
 
 initialize registerSuite suite
 

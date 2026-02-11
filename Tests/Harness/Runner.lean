@@ -114,7 +114,7 @@ private def runSuite (opts : RunnerOpts) (suite : InstrSuite) : IO SuiteRunResul
 
   if !opts.unitOnly && !opts.oracleOnly then
     for spec in suite.fuzz do
-      let fuzzOut ← runFuzzSpec spec
+      let fuzzOut ← runFuzzSpec spec suite.oracle
       out := { out with fuzzCases := out.fuzzCases + fuzzOut.total }
       if fuzzOut.failures.size > 0 then
         out := { out with failures := out.failures + fuzzOut.failures.size }

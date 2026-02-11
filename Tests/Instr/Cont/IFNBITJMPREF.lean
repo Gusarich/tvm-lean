@@ -348,7 +348,7 @@ def suite : InstrSuite where
     mkCase "type/pop-removes-top-null-with-below" 0 #[intV 9, .null],
     mkCase "type/pop-removes-top-cell-with-below" 0 #[intV 9, .cell refCellA]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifnbitjmprefId 500 ]
 
 initialize registerSuite suite
 

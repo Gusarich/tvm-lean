@@ -403,7 +403,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec thenRetId 500 ]
 
 initialize registerSuite suite
 

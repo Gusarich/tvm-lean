@@ -3,7 +3,10 @@
 ## Stats
 - Completed: 98/98
 - Running: 0
-- Bugs reported: 59 (good: 58, bad: 0, pending: 1)
+- Bugs reported: 60 (good: 59, bad: 0, pending: 1)
+- Fuzz coverage: 98/98 continuation suites configured
+- Fuzz target: 500 cases per continuation suite (49,000 total)
+- Fuzz validation: 98/98 pass (`.lake/build/bin/tvm-lean-tests -- --fuzz-only --filter <instr>`)
 
 ## Instances
 
@@ -170,3 +173,4 @@
 | B056 | `RUNVM` immediate path missed C++ canonicalization (`exec_runvm(..., args & 4095)`) | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
 | B057 | `RUNVM` restore-parent path missed C++ propagation of child `libraries`/`chksgnCounter`/`loadedCells` | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
 | B058 | `RUNVM` child invalid-opcode gas-bit charging diverged from C++ dummy-dispatch behavior | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
+| B059 | `CONDSELCHK` custom fuzz emitted oracle-unsupported stack tokens (non-full slices / non-empty tuples / non-`quit(0)` continuations) | fixed | `Tests/Instr/Cont/CONDSELCHK.lean` |

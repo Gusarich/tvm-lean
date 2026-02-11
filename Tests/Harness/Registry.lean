@@ -44,6 +44,7 @@ structure FuzzSpec where
   seed : UInt64
   count : Nat
   gen : StdGen → OracleCase × StdGen
+  replayOracle : Bool := false
 
 structure InstrSuite where
   id : InstrId
@@ -58,5 +59,22 @@ def registerSuite (suite : InstrSuite) : IO Unit := do
 
 def registeredSuites : IO (Array InstrSuite) :=
   instrSuiteRegistry.get
+
+private def foldHashBytes (h : UInt64) (bytes : Array UInt8) : UInt64 :=
+  bytes.foldl (fun acc b => (acc ^^^ (UInt64.ofNat b.toNat)) * 1099511628211) h
+
+/-- Deterministic per-instruction seed using FNV-1a over instruction name bytes. -/
+def fuzzSeedForInstr (instr : InstrId) : UInt64 :=
+  foldHashBytes 14695981039346656037 instr.name.toUTF8.data
+
+/--
+Build a fuzz spec that replays random oracle cases from the same suite.
+This is branch-aware because continuation suites already encode branch maps in oracle pools.
+-/
+def mkReplayOracleFuzzSpec (instr : InstrId) (count : Nat := 500) : FuzzSpec :=
+  { seed := fuzzSeedForInstr instr
+    count := count
+    gen := fun rng => ({ name := "fuzz/replay/placeholder", instr := instr }, rng)
+    replayOracle := true }
 
 end Tests

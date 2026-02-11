@@ -369,7 +369,7 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8bit-prefix" #[] composBothTruncated8Code,
     mkCaseCode "err/decode/truncated-15bit-prefix" #[q0] composBothTruncated15Code
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec composBothId 500 ]
 
 initialize registerSuite suite
 

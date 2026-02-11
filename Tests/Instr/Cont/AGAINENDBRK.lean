@@ -338,7 +338,7 @@ def suite : InstrSuite where
     mkCase "err/brk/body-popctr-type" #[.null] progPopCtr0,
     mkCase "err/brk/body-popctr-type-deep" #[.slice fullSliceB, intV 3] progPopCtr0
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec againEndBrkId 500 ]
 
 initialize registerSuite suite
 

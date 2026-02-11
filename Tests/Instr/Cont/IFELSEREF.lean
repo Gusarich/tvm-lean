@@ -589,7 +589,7 @@ def suite : InstrSuite where
       #[.builder Builder.empty, intV 1, q0, intV 0, q0]
       codeTwoIfelserefNoopTail
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifelserefId 500 ]
 
 initialize registerSuite suite
 

@@ -452,7 +452,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"raw/jump-captured: expected cc=capturedCont, got {reprStr st.cc}") }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec callccId 500 ]
 
 initialize registerSuite suite
 

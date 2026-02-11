@@ -73,13 +73,36 @@ private def dumpFailureArtifact
   catch _ =>
     pure none
 
-def runFuzzSpec (spec : FuzzSpec) : IO FuzzRunResult := do
+private def replayCaseName (baseName : String) (iteration : Nat) (tag : Nat) : String :=
+  s!"{baseName}/replay-{iteration}-{tag}"
+
+private def nextFuzzOracleCase
+    (spec : FuzzSpec)
+    (oraclePool : Array OracleCase)
+    (iteration : Nat)
+    (gen : StdGen) : OracleCase × StdGen :=
+  if spec.replayOracle then
+    if oraclePool.isEmpty then
+      spec.gen gen
+    else
+      let (idx, gen1) := randNat gen 0 (oraclePool.size - 1)
+      let (tag, gen2) := randNat gen1 0 999_999
+      match oraclePool[idx]? with
+      | some oracleCase =>
+          ({ oracleCase with name := replayCaseName oracleCase.name iteration tag }, gen2)
+      | none =>
+          let (fallback, gen3) := spec.gen gen2
+          ({ fallback with name := replayCaseName fallback.name iteration tag }, gen3)
+  else
+    spec.gen gen
+
+def runFuzzSpec (spec : FuzzSpec) (oraclePool : Array OracleCase := #[]) : IO FuzzRunResult := do
   let mut gen := mkStdGen spec.seed.toNat
   let mut i : Nat := 0
   let mut failures : Array FuzzFailure := #[]
   let mut artifacts : Array System.FilePath := #[]
   while i < spec.count do
-    let (oracleCase, gen') := spec.gen gen
+    let (oracleCase, gen') := nextFuzzOracleCase spec oraclePool i gen
     gen := gen'
     let out ← runOracleCase oracleCase
     if !out.ok then

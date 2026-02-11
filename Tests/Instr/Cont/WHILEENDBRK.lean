@@ -469,7 +469,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[q0] #[whileEndBrkInstr]
       (oracleGasLimitsExact whileEndBrkGasExactMinusOne)
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec whileEndBrkId 500 ]
 
 initialize registerSuite suite
 

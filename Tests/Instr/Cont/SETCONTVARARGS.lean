@@ -182,7 +182,7 @@ def suite : InstrSuite where
       #[q0, intV 0, intV (-1)]
       (progSetThenJmp #[.pushInt (.num 999)])
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec setContVarArgsId 500 ]
 
 initialize registerSuite suite
 

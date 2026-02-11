@@ -352,11 +352,7 @@ def suite : InstrSuite where
       (mkCondSelChkInput boolTrue intX intY)
       #[.pushInt (.num condSelChkSetGasExactMinusOne), .tonEnvOp .setGasLimit, condSelChkInstr]
   ]
-  fuzz := #[
-    { seed := 2026021107
-      count := 400
-      gen := genCondSelChkFuzzCase }
-  ]
+  fuzz := #[ mkReplayOracleFuzzSpec condSelChkId 500 ]
 
 initialize registerSuite suite
 

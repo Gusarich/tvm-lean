@@ -385,7 +385,7 @@ def suite : InstrSuite where
     mkCase "decode/empty-code/empty-stack" #[] Cell.empty,
     mkCase "decode/empty-code/with-stack" #[intV 6] Cell.empty
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec jmprefdataId 500 ]
 
 initialize registerSuite suite
 

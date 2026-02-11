@@ -531,7 +531,7 @@ def suite : InstrSuite where
       (withCond #[] 1)
       codeObserveTail
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifrefElseId 500 ]
 
 initialize registerSuite suite
 

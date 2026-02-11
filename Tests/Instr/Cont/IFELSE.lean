@@ -252,7 +252,7 @@ def suite : InstrSuite where
   oracle := oracleCases
   fuzz := #[
     { seed := 2026021105
-      count := 300
+      count := 500
       gen := genIfelseFuzzCase }
   ]
 

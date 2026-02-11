@@ -375,7 +375,7 @@ def suite : InstrSuite where
       #[intV 1]
       #[.pushInt (.num ifnotretaltSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretaltInstr]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifnotretaltId 500 ]
 
 initialize registerSuite suite
 

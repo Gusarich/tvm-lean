@@ -452,7 +452,7 @@ def suite : InstrSuite where
     mkCase "whileendbrk/basic" #[q0] #[whileEndBrkInstr],
     mkCase "whileendbrk/type-top-null" #[.null] #[whileEndBrkInstr]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec whileId 500 ]
 
 initialize registerSuite suite
 

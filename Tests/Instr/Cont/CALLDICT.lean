@@ -426,7 +426,7 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec callDictId 500 ]
 
 initialize registerSuite suite
 

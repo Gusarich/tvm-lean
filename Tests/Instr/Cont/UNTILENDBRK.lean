@@ -432,7 +432,7 @@ def suite : InstrSuite where
     mkCase "err/body-nan-intov" #[] progBodyNaN,
     mkCase "err/body-nan-intov-with-noise" #[.slice sliceA] progBodyNaN
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec untilEndBrkId 500 ]
 
 initialize registerSuite suite
 

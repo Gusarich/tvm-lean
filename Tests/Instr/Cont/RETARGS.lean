@@ -380,7 +380,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"decode/raw-end: expected exhausted bits, got {s4.bitsRemaining}") }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec retArgsId 500 ]
 
 initialize registerSuite suite
 

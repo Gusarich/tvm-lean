@@ -353,7 +353,7 @@ def suite : InstrSuite where
     mkCase "brk/type-top-null" #[.null] #[repeatEndBrkInstr],
     mkCase "brk/range-too-large" #[intV int32TooLarge] #[repeatEndBrkInstr]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec repeatEndId 500 ]
 
 initialize registerSuite suite
 

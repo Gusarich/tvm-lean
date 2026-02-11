@@ -170,7 +170,7 @@ def suite : InstrSuite where
       #[intV 10, intV 11]
       (progSetContVarCallxVarArgs 1 (-1) (-1) 0)
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec callxVarArgsId 500 ]
 
 initialize registerSuite suite
 

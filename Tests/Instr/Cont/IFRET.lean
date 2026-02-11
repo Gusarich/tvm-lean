@@ -348,7 +348,7 @@ def suite : InstrSuite where
     mkIfretCase "gas/exact-minus-one-false-out-of-gas" (withBool #[] (.num 0))
       #[.pushInt (.num ifretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifretInstr]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifretId 500 ]
 
 initialize registerSuite suite
 

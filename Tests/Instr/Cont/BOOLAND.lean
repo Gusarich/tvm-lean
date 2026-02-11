@@ -395,7 +395,7 @@ def suite : InstrSuite where
     mkCase "ok/noise/max-min-int-preserved"
       (mkK0Stack #[intV maxInt257, intV minInt257, .null])
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec boolAndId 500 ]
 
 initialize registerSuite suite
 

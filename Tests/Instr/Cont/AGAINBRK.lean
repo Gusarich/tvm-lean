@@ -427,7 +427,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[kCont]
       #[.pushInt (.num againBrkSetGasExactMinusOne), .tonEnvOp .setGasLimit, againBrkInstr]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec againBrkId 500 ]
 
 initialize registerSuite suite
 

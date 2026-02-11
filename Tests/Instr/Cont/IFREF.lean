@@ -419,7 +419,7 @@ def suite : InstrSuite where
     mkIfrefOracleCase "err/branch/true-body-add-underflow" #[intV 1] bodyAdd #[.pushInt (.num 9)],
     mkIfrefOracleCase "ok/branch/false-skips-body-add" #[intV 0] bodyAdd #[.pushInt (.num 9)]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec ifrefId 500 ]
 
 initialize registerSuite suite
 

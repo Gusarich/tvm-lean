@@ -119,7 +119,7 @@ def suite : InstrSuite where
     mkCase "err/underflow/after-roundtrip-add-one-int" (withIdx #[intV 1] 0) (progPushX #[.popCtr 0, .add]),
     mkCase "ok/edge/after-roundtrip-add-two-ints" (withIdx #[intV 2, intV 3] 0) (progPushX #[.popCtr 0, .add])
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec pushCtrXId 500 ]
 
 initialize registerSuite suite
 

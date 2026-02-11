@@ -294,7 +294,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[q0]
       #[.pushInt (.num untilSetGasExactMinusOne), .tonEnvOp .setGasLimit, untilInstr]
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec untilId 500 ]
 
 initialize registerSuite suite
 

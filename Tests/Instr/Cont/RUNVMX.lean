@@ -264,7 +264,7 @@ def suite : InstrSuite where
           #[intV 0, intV Excno.cellOv.toInt, .null] }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec runvmxId 500 ]
 
 initialize registerSuite suite
 

@@ -389,7 +389,7 @@ def suite : InstrSuite where
     mkCase "brk/err/body-null-type" #[] (progBodyNull untilEndBrkInstr),
     mkCase "brk/err/body-nan-intov" #[] (progBodyNaN untilEndBrkInstr)
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec untilEndId 500 ]
 
 initialize registerSuite suite
 

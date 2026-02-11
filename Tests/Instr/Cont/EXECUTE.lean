@@ -362,7 +362,7 @@ def suite : InstrSuite where
             s!"err/type-top-cell-over-cont: expected remaining #[K], got {reprStr stTypeDeep.stack}") }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec executeId 500 ]
 
 initialize registerSuite suite
 

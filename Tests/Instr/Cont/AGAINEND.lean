@@ -405,7 +405,7 @@ def suite : InstrSuite where
     mkCase "err/brk/body-popctr-underflow" #[] (progPopCtr0 againEndBrkInstr),
     mkCase "err/brk/body-popctr-type" #[.null] (progPopCtr0 againEndBrkInstr)
   ]
-  fuzz := #[]
+  fuzz := #[ mkReplayOracleFuzzSpec againEndId 500 ]
 
 initialize registerSuite suite
 
