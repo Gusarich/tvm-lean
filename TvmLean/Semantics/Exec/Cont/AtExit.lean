@@ -28,9 +28,10 @@ def execInstrContAtExit (i : Instr) (next : VM Unit) : VM Unit := do
   | .contExt .invert =>
       modify fun st => { st with regs := { st.regs with c0 := st.regs.c1, c1 := st.regs.c0 } }
   | .contExt .booleval =>
-      let c ← VM.popCont
-      let st ← get
-      let cc : Continuation := st.cc
+      -- Mirrors C++ `exec_booleval`:
+      --   cont := pop_cont(); cc := extract_cc(3); set_c0/set_c1(PushIntCont(..., cc)); jump(cont)
+      let cont ← VM.popCont
+      let cc ← VM.extractCc 3
       let pushNeg ←
         match mkPushIntCont (-1) with
         | .ok k => pure (k.defineC0 cc)
@@ -39,8 +40,8 @@ def execInstrContAtExit (i : Instr) (next : VM Unit) : VM Unit := do
         match mkPushIntCont 0 with
         | .ok k => pure (k.defineC0 cc)
         | .error e => throw e
-      let newCc : Continuation := (c.defineC0 pushNeg).defineC1 pushZero
-      set { st with cc := newCc }
+      modify fun st => { st with regs := { st.regs with c0 := pushNeg, c1 := pushZero } }
+      VM.jump cont
   | _ => next
 
 end TvmLean
