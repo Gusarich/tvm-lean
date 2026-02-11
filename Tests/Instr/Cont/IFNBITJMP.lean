@@ -16,7 +16,7 @@ IFNBITJMP branch map (Lean vs C++ `exec_if_bit_jmp`):
 - integer checks: non-int => `typeChk`, NaN/non-finite => `intOv`;
 - bit extraction: C++ uses `x->get_bit(bit)` with `bit = args & 0x1f`; cp0 decode constrains `idx` to 0..31;
 - stack effect on success: `cont` consumed, `x` preserved (C++ pop+push; Lean now mirrors this);
-- branch predicate: jump iff extracted bit is `true` (for IFNBITJMP);
+- branch predicate: jump iff extracted bit is `false` (`val ^ negate` with `negate = true` for IFNBITJMP);
 - taken path must use `VM.jump`/`VmState::jump` semantics (nargs checks + captured stack application).
 
 Regression fixed in Lean:
@@ -53,7 +53,7 @@ private def mkOrdCont
     (captured : Array Value := #[]) : Continuation :=
   .ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty { stack := captured, nargs := nargs }
 
-private def mkIfbitStack
+private def mkIfnbitStack
     (below : Array Value)
     (x : Int)
     (cont : Continuation := .quit 0) : Array Value :=
@@ -87,19 +87,19 @@ private def mkProbeCase
     (idx : Nat)
     (x : Int)
     (below : Array Value := #[]) : OracleCase :=
-  mkCase name idx (mkIfbitStack below x) (branchProbeProgram idx)
+  mkCase name idx (mkIfnbitStack below x) (branchProbeProgram idx)
 
-private def runIfbitjmpDirect
+private def runIfnbitjmpDirect
     (idx : Nat)
     (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrFlowIfBitJmp (ifnbitjmpInstr idx) stack
 
-private def runIfbitjmpDispatchFallback
+private def runIfnbitjmpDispatchFallback
     (instr : Instr)
     (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrFlowIfBitJmp instr (VM.push (intV dispatchSentinel)) stack
 
-private def runIfbitjmpRaw
+private def runIfnbitjmpRaw
     (idx : Nat)
     (stack : Array Value)
     (cc : Continuation := .quit 0) : Except Excno Unit × VmState :=
@@ -120,44 +120,44 @@ def suite : InstrSuite where
         let ccInit : Continuation := .quit 91
         let target : Continuation := .quit 13
 
-        let (rTaken0, sTaken0) := runIfbitjmpRaw 0 (mkIfbitStack #[] 1 target) ccInit
+        let (rTaken0, sTaken0) := runIfnbitjmpRaw 0 (mkIfnbitStack #[] 2 target) ccInit
         match rTaken0 with
         | .error e => throw (IO.userError s!"taken/idx0: expected success, got {e}")
         | .ok _ =>
-            if sTaken0.stack != #[intV 1] then
+            if sTaken0.stack != #[intV 2] then
               throw (IO.userError s!"taken/idx0: stack mismatch {reprStr sTaken0.stack}")
             else if sTaken0.cc != target then
               throw (IO.userError s!"taken/idx0: cc mismatch {reprStr sTaken0.cc}")
             else
               pure ()
 
-        let (rNotTaken0, sNotTaken0) := runIfbitjmpRaw 0 (mkIfbitStack #[] 2 target) ccInit
+        let (rNotTaken0, sNotTaken0) := runIfnbitjmpRaw 0 (mkIfnbitStack #[] 1 target) ccInit
         match rNotTaken0 with
         | .error e => throw (IO.userError s!"not-taken/idx0: expected success, got {e}")
         | .ok _ =>
-            if sNotTaken0.stack != #[intV 2] then
+            if sNotTaken0.stack != #[intV 1] then
               throw (IO.userError s!"not-taken/idx0: stack mismatch {reprStr sNotTaken0.stack}")
             else if sNotTaken0.cc != ccInit then
               throw (IO.userError s!"not-taken/idx0: cc should remain unchanged, got {reprStr sNotTaken0.cc}")
             else
               pure ()
 
-        let (rTaken31, sTaken31) := runIfbitjmpRaw 31 (mkIfbitStack #[] (pow2 31) target) ccInit
+        let (rTaken31, sTaken31) := runIfnbitjmpRaw 31 (mkIfnbitStack #[] ((pow2 31) - 1) target) ccInit
         match rTaken31 with
         | .error e => throw (IO.userError s!"taken/idx31: expected success, got {e}")
         | .ok _ =>
-            if sTaken31.stack != #[intV (pow2 31)] then
+            if sTaken31.stack != #[intV ((pow2 31) - 1)] then
               throw (IO.userError s!"taken/idx31: stack mismatch {reprStr sTaken31.stack}")
             else if sTaken31.cc != target then
               throw (IO.userError s!"taken/idx31: cc mismatch {reprStr sTaken31.cc}")
             else
               pure ()
 
-        let (rNotTaken31, sNotTaken31) := runIfbitjmpRaw 31 (mkIfbitStack #[] ((pow2 31) - 1) target) ccInit
+        let (rNotTaken31, sNotTaken31) := runIfnbitjmpRaw 31 (mkIfnbitStack #[] (pow2 31) target) ccInit
         match rNotTaken31 with
         | .error e => throw (IO.userError s!"not-taken/idx31: expected success, got {e}")
         | .ok _ =>
-            if sNotTaken31.stack != #[intV ((pow2 31) - 1)] then
+            if sNotTaken31.stack != #[intV (pow2 31)] then
               throw (IO.userError s!"not-taken/idx31: stack mismatch {reprStr sNotTaken31.stack}")
             else if sNotTaken31.cc != ccInit then
               throw (IO.userError s!"not-taken/idx31: cc should remain unchanged, got {reprStr sNotTaken31.cc}")
@@ -166,12 +166,12 @@ def suite : InstrSuite where
     ,
     { name := "unit/error/underflow-before-any-pop"
       run := do
-        expectErr "underflow/empty" (runIfbitjmpDirect 0 #[]) .stkUnd
-        expectErr "underflow/one-int" (runIfbitjmpDirect 0 #[intV 0]) .stkUnd
-        expectErr "underflow/one-cont" (runIfbitjmpDirect 0 #[q0]) .stkUnd
+        expectErr "underflow/empty" (runIfnbitjmpDirect 0 #[]) .stkUnd
+        expectErr "underflow/one-int" (runIfnbitjmpDirect 0 #[intV 0]) .stkUnd
+        expectErr "underflow/one-cont" (runIfnbitjmpDirect 0 #[q0]) .stkUnd
 
         let singleton : Array Value := #[.null]
-        let (res, st) := runIfbitjmpRaw 0 singleton (.quit 7)
+        let (res, st) := runIfnbitjmpRaw 0 singleton (.quit 7)
         match res with
         | .error .stkUnd =>
             if st.stack == singleton then
@@ -185,13 +185,13 @@ def suite : InstrSuite where
     ,
     { name := "unit/error/pop-cont-site"
       run := do
-        expectErr "type/top-int" (runIfbitjmpDirect 0 #[intV 1, intV 2]) .typeChk
-        expectErr "type/top-null" (runIfbitjmpDirect 0 #[intV 1, .null]) .typeChk
-        expectErr "type/top-cell" (runIfbitjmpDirect 0 #[intV 1, .cell refCellA]) .typeChk
-        expectErr "type/top-builder" (runIfbitjmpDirect 0 #[intV 1, .builder Builder.empty]) .typeChk
-        expectErr "type/top-slice" (runIfbitjmpDirect 0 #[intV 1, .slice fullSliceA]) .typeChk
+        expectErr "type/top-int" (runIfnbitjmpDirect 0 #[intV 1, intV 2]) .typeChk
+        expectErr "type/top-null" (runIfnbitjmpDirect 0 #[intV 1, .null]) .typeChk
+        expectErr "type/top-cell" (runIfnbitjmpDirect 0 #[intV 1, .cell refCellA]) .typeChk
+        expectErr "type/top-builder" (runIfnbitjmpDirect 0 #[intV 1, .builder Builder.empty]) .typeChk
+        expectErr "type/top-slice" (runIfnbitjmpDirect 0 #[intV 1, .slice fullSliceA]) .typeChk
 
-        let (resOrder, stOrder) := runIfbitjmpRaw 0 #[.int .nan, intV 9] (.quit 77)
+        let (resOrder, stOrder) := runIfnbitjmpRaw 0 #[.int .nan, intV 9] (.quit 77)
         match resOrder with
         | .error .typeChk =>
             if stOrder.stack == #[.int .nan] then
@@ -205,7 +205,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/error/pop-int-finite-site-stack-effects"
       run := do
-        let (rType, sType) := runIfbitjmpRaw 0 #[intV 88, .null, .cont (.quit 0)] (.quit 10)
+        let (rType, sType) := runIfnbitjmpRaw 0 #[intV 88, .null, .cont (.quit 0)] (.quit 10)
         match rType with
         | .error .typeChk =>
             if sType.stack == #[intV 88] then
@@ -217,7 +217,7 @@ def suite : InstrSuite where
         | .ok _ =>
             throw (IO.userError "pop-int/type: expected typeChk, got success")
 
-        let (rNan, sNan) := runIfbitjmpRaw 0 #[intV 99, .int .nan, .cont (.quit 0)] (.quit 10)
+        let (rNan, sNan) := runIfnbitjmpRaw 0 #[intV 99, .int .nan, .cont (.quit 0)] (.quit 10)
         match rNan with
         | .error .intOv =>
             if sNan.stack == #[intV 99] then
@@ -234,40 +234,40 @@ def suite : InstrSuite where
         let ccInit : Continuation := .quit 21
         let target : Continuation := .quit 22
 
-        let (rNeg1, sNeg1) := runIfbitjmpRaw 0 (mkIfbitStack #[] (-1) target) ccInit
+        let (rNeg1, sNeg1) := runIfnbitjmpRaw 0 (mkIfnbitStack #[] (-1) target) ccInit
         match rNeg1 with
         | .error e => throw (IO.userError s!"neg1/idx0: expected success, got {e}")
         | .ok _ =>
-            if sNeg1.cc != target then
-              throw (IO.userError s!"neg1/idx0: expected jump")
+            if sNeg1.cc != ccInit then
+              throw (IO.userError s!"neg1/idx0: expected no jump")
             else
               pure ()
 
-        let (rNeg2Bit0, sNeg2Bit0) := runIfbitjmpRaw 0 (mkIfbitStack #[] (-2) target) ccInit
+        let (rNeg2Bit0, sNeg2Bit0) := runIfnbitjmpRaw 0 (mkIfnbitStack #[] (-2) target) ccInit
         match rNeg2Bit0 with
         | .error e => throw (IO.userError s!"neg2/idx0: expected success, got {e}")
         | .ok _ =>
-            if sNeg2Bit0.cc != ccInit then
-              throw (IO.userError s!"neg2/idx0: expected no jump")
+            if sNeg2Bit0.cc != target then
+              throw (IO.userError s!"neg2/idx0: expected jump")
             else
               pure ()
 
-        let (rNeg2Bit1, sNeg2Bit1) := runIfbitjmpRaw 1 (mkIfbitStack #[] (-2) target) ccInit
+        let (rNeg2Bit1, sNeg2Bit1) := runIfnbitjmpRaw 1 (mkIfnbitStack #[] (-2) target) ccInit
         match rNeg2Bit1 with
         | .error e => throw (IO.userError s!"neg2/idx1: expected success, got {e}")
         | .ok _ =>
-            if sNeg2Bit1.cc != target then
-              throw (IO.userError s!"neg2/idx1: expected jump")
+            if sNeg2Bit1.cc != ccInit then
+              throw (IO.userError s!"neg2/idx1: expected no jump")
             else
               pure ()
 
         let (rMin257Bit31, sMin257Bit31) :=
-          runIfbitjmpRaw 31 (mkIfbitStack #[] minInt257 target) ccInit
+          runIfnbitjmpRaw 31 (mkIfnbitStack #[] minInt257 target) ccInit
         match rMin257Bit31 with
         | .error e => throw (IO.userError s!"min257/idx31: expected success, got {e}")
         | .ok _ =>
-            if sMin257Bit31.cc != ccInit then
-              throw (IO.userError s!"min257/idx31: expected no jump")
+            if sMin257Bit31.cc != target then
+              throw (IO.userError s!"min257/idx31: expected jump")
             else
               pure () }
     ,
@@ -276,10 +276,10 @@ def suite : InstrSuite where
         let ccInit : Continuation := .quit 123
 
         let contNeed2 : Continuation := mkOrdCont 2 #[]
-        let (rUnd, sUnd) := runIfbitjmpRaw 0 (mkIfbitStack #[] 1 contNeed2) ccInit
+        let (rUnd, sUnd) := runIfnbitjmpRaw 0 (mkIfnbitStack #[] 0 contNeed2) ccInit
         match rUnd with
         | .error .stkUnd =>
-            if sUnd.stack != #[intV 1] then
+            if sUnd.stack != #[intV 0] then
               throw (IO.userError s!"jump/nargs-underflow: stack mismatch {reprStr sUnd.stack}")
             else if sUnd.cc != ccInit then
               throw (IO.userError s!"jump/nargs-underflow: cc mismatch {reprStr sUnd.cc}")
@@ -291,13 +291,13 @@ def suite : InstrSuite where
             throw (IO.userError "jump/nargs-underflow: expected stkUnd, got success")
 
         let contCaptured : Continuation := mkOrdCont 1 #[intV 42]
-        let (rCap, sCap) := runIfbitjmpRaw 0 (mkIfbitStack #[.null, intV 9] 1 contCaptured) (.quit 55)
+        let (rCap, sCap) := runIfnbitjmpRaw 0 (mkIfnbitStack #[.null, intV 9] 0 contCaptured) (.quit 55)
         match rCap with
         | .error e =>
             throw (IO.userError s!"jump/captured-stack: expected success, got {e}")
         | .ok _ =>
-            if sCap.stack != #[intV 42, intV 1] then
-              throw (IO.userError s!"jump/captured-stack: expected [42,1], got {reprStr sCap.stack}")
+            if sCap.stack != #[intV 42, intV 0] then
+              throw (IO.userError s!"jump/captured-stack: expected [42,0], got {reprStr sCap.stack}")
             else if sCap.cc != contCaptured then
               throw (IO.userError s!"jump/captured-stack: cc mismatch {reprStr sCap.cc}")
             else
@@ -306,38 +306,38 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback-vs-match"
       run := do
         expectOkStack "dispatch/fallback-add"
-          (runIfbitjmpDispatchFallback .add #[.null])
+          (runIfnbitjmpDispatchFallback .add #[.null])
           #[.null, intV dispatchSentinel]
         expectOkStack "dispatch/match-ifnbitjmp"
-          (runIfbitjmpDispatchFallback (ifnbitjmpInstr 0) (mkIfbitStack #[] 0 (.quit 0)))
-          #[intV 0] }
+          (runIfnbitjmpDispatchFallback (ifnbitjmpInstr 0) (mkIfnbitStack #[] 1 (.quit 0)))
+          #[intV 1] }
   ]
   oracle := #[
-    mkProbeCase "branch/taken/idx0/x1" 0 1,
-    mkProbeCase "branch/taken/idx0/xneg1" 0 (-1),
-    mkProbeCase "branch/taken/idx1/x2" 1 2,
-    mkProbeCase "branch/taken/idx1/xneg2" 1 (-2),
-    mkProbeCase "branch/taken/idx5/xpow5" 5 (pow2 5),
-    mkProbeCase "branch/taken/idx5/xpow5plus3" 5 ((pow2 5) + 3),
-    mkProbeCase "branch/taken/idx31/xpow31" 31 (pow2 31),
-    mkProbeCase "branch/taken/idx31/xneg2" 31 (-2),
-    mkProbeCase "branch/taken/deep-null-int" 0 1 #[.null, intV 9],
-    mkProbeCase "branch/taken/deep-cell" 1 2 #[.cell refCellA],
+    mkProbeCase "branch/taken/idx0/x0" 0 0,
+    mkProbeCase "branch/taken/idx0/x2" 0 2,
+    mkProbeCase "branch/taken/idx1/x1" 1 1,
+    mkProbeCase "branch/taken/idx5/xpow4" 5 (pow2 4),
+    mkProbeCase "branch/taken/idx5/x0" 5 0,
+    mkProbeCase "branch/taken/idx31/xpow31minus1" 31 ((pow2 31) - 1),
+    mkProbeCase "branch/taken/idx31/xmin257" 31 minInt257,
+    mkProbeCase "branch/taken/deep-null-int" 0 0 #[.null, intV 9],
+    mkProbeCase "branch/taken/deep-cell" 31 minInt257 #[.cell refCellA],
+    mkProbeCase "branch/taken/deep-builder-tuple" 1 1 #[.builder Builder.empty, .tuple #[]],
 
-    mkProbeCase "branch/not-taken/idx0/x0" 0 0,
-    mkProbeCase "branch/not-taken/idx0/x2" 0 2,
-    mkProbeCase "branch/not-taken/idx1/x1" 1 1,
-    mkProbeCase "branch/not-taken/idx5/xpow4" 5 (pow2 4),
-    mkProbeCase "branch/not-taken/idx5/x0" 5 0,
-    mkProbeCase "branch/not-taken/idx31/xpow31minus1" 31 ((pow2 31) - 1),
-    mkProbeCase "branch/not-taken/idx31/xmin257" 31 minInt257,
-    mkProbeCase "branch/not-taken/deep-null-int" 0 0 #[.null, intV 9],
-    mkProbeCase "branch/not-taken/deep-cell" 31 minInt257 #[.cell refCellA],
-    mkProbeCase "branch/not-taken/deep-builder-tuple" 1 1 #[.builder Builder.empty, .tuple #[]],
+    mkProbeCase "branch/not-taken/idx0/x1" 0 1,
+    mkProbeCase "branch/not-taken/idx0/xneg1" 0 (-1),
+    mkProbeCase "branch/not-taken/idx1/x2" 1 2,
+    mkProbeCase "branch/not-taken/idx1/xneg2" 1 (-2),
+    mkProbeCase "branch/not-taken/idx5/xpow5" 5 (pow2 5),
+    mkProbeCase "branch/not-taken/idx5/xpow5plus3" 5 ((pow2 5) + 3),
+    mkProbeCase "branch/not-taken/idx31/xpow31" 31 (pow2 31),
+    mkProbeCase "branch/not-taken/idx31/xneg2" 31 (-2),
+    mkProbeCase "branch/not-taken/deep-null-int" 0 1 #[.null, intV 9],
+    mkProbeCase "branch/not-taken/deep-cell" 1 2 #[.cell refCellA],
 
-    mkCase "ok/no-tail/taken-default" 0 (mkIfbitStack #[] 1),
-    mkCase "ok/no-tail/not-taken-default" 0 (mkIfbitStack #[] 0),
-    mkCase "ok/no-tail/deep-preserve" 31 (mkIfbitStack #[.slice fullSliceB, .tuple #[]] ((pow2 31) - 1)),
+    mkCase "ok/no-tail/taken-default" 0 (mkIfnbitStack #[] 0),
+    mkCase "ok/no-tail/not-taken-default" 0 (mkIfnbitStack #[] 1),
+    mkCase "ok/no-tail/deep-preserve" 31 (mkIfnbitStack #[.slice fullSliceB, .tuple #[]] (pow2 31)),
 
     mkCase "underflow/empty" 0 #[],
     mkCase "underflow/one-int" 0 #[intV 0],
@@ -361,9 +361,9 @@ def suite : InstrSuite where
     mkCase "intov/popint/nan-after-cont" 0 #[q0] (nanOperandProgram 0),
     mkCase "intov/popint/nan-after-cont-with-below" 31 #[intV 9, q0] (nanOperandProgram 31),
 
-    mkCase "gas/exact-cost-succeeds" 0 (mkIfbitStack #[] 1)
+    mkCase "gas/exact-cost-succeeds" 0 (mkIfnbitStack #[] 0)
       #[.pushInt (.num ifnbitjmpSetGasExact), .tonEnvOp .setGasLimit, ifnbitjmpInstr 0],
-    mkCase "gas/exact-minus-one-out-of-gas" 0 (mkIfbitStack #[] 1)
+    mkCase "gas/exact-minus-one-out-of-gas" 0 (mkIfnbitStack #[] 0)
       #[.pushInt (.num ifnbitjmpSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnbitjmpInstr 0]
   ]
   fuzz := #[]

@@ -9,10 +9,10 @@ def execInstrFlowIfelseRef (i : Instr) (next : VM Unit) : VM Unit := do
       VM.checkUnderflow 2
       let cont ← VM.popCont
       if (← VM.popBool) then
-        modify fun st => st.callTo cont
+        VM.call cont
       else
         VM.registerCellLoad code.cell
-        modify fun st => st.callTo (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
+        VM.call (.ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty)
   | _ => next
 
 end TvmLean
