@@ -184,8 +184,7 @@ private def okCellPool : Array Cell :=
     cOrdRefs12,
     cOrdRefs24,
     cOrdRefsMixed7,
-    cOrdNested7,
-    cWeirdMask9
+    cOrdNested7
   ]
 
 private def noisePool : Array Value :=

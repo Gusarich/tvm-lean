@@ -7,6 +7,7 @@ def execInstrCellSdPpfx (i : Instr) (next : VM Unit) : VM Unit := do
   match i with
   | .sdPpfx =>
       -- Match C++ `exec_bin_cs_cmp`: pop cs2 (top), then cs1, and compute cs1.is_proper_prefix_of(cs2).
+      VM.checkUnderflow 2
       let s ← VM.popSlice
       let pref ← VM.popSlice
       -- Matches C++ `CellSlice::is_proper_prefix_of`: compare only remaining bits (ignore refs).

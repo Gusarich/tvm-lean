@@ -781,11 +781,116 @@ private def oracleCases : Array OracleCase :=
         #[.slice (Slice.ofCell oracleRefB)] #[] #[true] #[] 0)
   ]
 
+private def mkFuzzOracleFromRaw (fallback : OracleCase) (res : Except String RawOracleCase) : OracleCase :=
+  match res with
+  | .ok c => rawOracleToOracleCase c
+  | .error _ => fallback
+
+private def mkFuzzOracleCase
+    (name : String)
+    (code : Cell)
+    (stack : Array Value) : OracleCase :=
+  { name := name
+    instr := stSliceConstId
+    codeCell? := some code
+    initStack := stack }
+
+private def genStSliceConstOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let fallback := oracleCases[0]!
+  let (shape, rng1) := randNat rng0 0 15
+  let (lenTag, rng2) := randNat rng1 0 7
+  let (payloadLen, rng3) := pickPayloadLen lenTag rng2
+  let (payload, rng4) := randBitString payloadLen rng3
+  let (refCount, rng5) := randNat rng4 0 3
+  let (refs, rng6) := genRefs refCount rng5
+
+  if shape = 0 then
+    let raw := mkRawCase "fuzz/ok/top-empty-builder"
+      #[.builder Builder.empty] #[] payload refs lenTag
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 1 then
+    let (noise, rng7) := pickOracleNoise rng6
+    let raw := mkRawCase "fuzz/ok/deep-stack-noise"
+      #[noise, .builder Builder.empty] #[] payload refs lenTag
+    (mkFuzzOracleFromRaw fallback raw, rng7)
+  else if shape = 2 then
+    let maxBits := 1023 - payload.size
+    let maxRefs := 4 - refs.size
+    let (bBits, rng7) := randNat rng6 0 (Nat.min 63 maxBits)
+    let (bRefs, rng8) := randNat rng7 0 maxRefs
+    let raw := mkRawCase s!"fuzz/ok/prelude/bits-{bBits}-refs-{bRefs}"
+      #[] (mkBuilderPrelude bBits bRefs) payload refs lenTag
+    (mkFuzzOracleFromRaw fallback raw, rng8)
+  else if shape = 3 then
+    let raw := mkRawCase "fuzz/ok/boundary/bits1022-plus1"
+      #[] (mkBuilderPrelude 1022 0) #[true] #[] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 4 then
+    let raw := mkRawCase "fuzz/ok/boundary/refs3-plus1"
+      #[] (mkBuilderPrelude 0 3) #[] #[Cell.empty] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 5 then
+    let raw := mkRawCase "fuzz/underflow/empty"
+      #[] #[] #[true] #[] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 6 then
+    let raw := mkRawCase "fuzz/type/top-null"
+      #[.null] #[] #[true] #[] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 7 then
+    let raw := mkRawCase "fuzz/type/top-int"
+      #[intV 9] #[] #[true] #[] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 8 then
+    let raw := mkRawCase "fuzz/cellov/bits-full"
+      #[] (mkBuilderPrelude 1023 0) #[true] #[] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 9 then
+    let raw := mkRawCase "fuzz/cellov/refs-full"
+      #[] (mkBuilderPrelude 0 4) #[] #[Cell.empty] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 10 then
+    let raw := mkRawCase "fuzz/ok/prelude-mid-bits-refs"
+      #[] (mkBuilderPrelude 31 1) (natToBits 93 7) #[Cell.empty] 1
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 11 then
+    let (noise, rng7) := pickOracleNoise rng6
+    let raw := mkRawCase "fuzz/ok/deep-stack-noise-variant"
+      #[noise, .builder Builder.empty] #[] (natToBits 9 4) #[] 1
+    (mkFuzzOracleFromRaw fallback raw, rng7)
+  else if shape = 12 then
+    let bBits := 1023 - payload.size
+    let bRefs := 4 - refs.size
+    let raw := mkRawCase s!"fuzz/ok/max-fit/bits-{bBits}-refs-{bRefs}"
+      #[] (mkBuilderPrelude bBits bRefs) payload refs lenTag
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 13 then
+    let raw := mkRawCase "fuzz/cellov/bits-and-refs-full"
+      #[] (mkBuilderPrelude 1023 4) #[true] #[Cell.empty] 0
+    (mkFuzzOracleFromRaw fallback raw, rng6)
+  else if shape = 14 then
+    match mkTruncatedDataCode lenTag with
+    | .ok code =>
+        (mkFuzzOracleCase s!"fuzz/decode/truncated-lenTag-{lenTag}" code #[.builder Builder.empty], rng6)
+    | .error _ =>
+        (fallback, rng6)
+  else
+    let (argsRefs, rng7) := randNat rng6 1 3
+    match mkMissingRefsCode lenTag argsRefs with
+    | .ok code =>
+        (mkFuzzOracleCase s!"fuzz/decode/missing-refs-lenTag-{lenTag}-args-{argsRefs}" code #[.builder Builder.empty], rng7)
+    | .error _ =>
+        (fallback, rng7)
+
 def suite : InstrSuite where
   id := stSliceConstId
   unit := baseUnitCases ++ handcraftedOracleUnitCases ++ fuzzUnitCases
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021113
+      count := 500
+      gen := genStSliceConstOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 

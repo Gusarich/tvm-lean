@@ -318,7 +318,7 @@ def suite : InstrSuite where
         expectErr "type/second-not-slice-cell"
           (runSdPpfxRevDirect #[.cell refLeafA, .slice prefBasic]) .typeChk
         expectErr "type/one-item-null"
-          (runSdPpfxRevDirect #[.null]) .typeChk }
+          (runSdPpfxRevDirect #[.null]) .stkUnd }
     ,
     { name := "unit/direct/result-shape-consumes-two-slices"
       run := do

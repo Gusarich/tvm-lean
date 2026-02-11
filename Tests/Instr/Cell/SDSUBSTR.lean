@@ -292,8 +292,9 @@ private def genSdSubstrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkSdSubstrCase "fuzz/range/offs"
         #[.slice slice8A, intV (-1), intV 0], rng2)
     else
-      (mkSdSubstrCase "fuzz/range/nan"
-        #[.slice slice8A, .int .nan, intV 0], rng2)
+      let stack : Array Value := #[.slice slice8A]
+      let program : Array Instr := #[.pushInt .nan, .pushInt (.num 0), sdSubstrInstr]
+      (mkSdSubstrCase "fuzz/range/offs-nan" stack program, rng2)
   else
     (mkSdSubstrCase "fuzz/type/slice"
       #[.null, intV 0, intV 0], rng1)

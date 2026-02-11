@@ -258,22 +258,30 @@ private def genScutfirstFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkScutfirstCase "fuzz/underflow/two" #[.slice sliceBits8Refs0, intV 1], rng2)
   else if shape = 5 then
     let (mode, rng2) := randNat rng1 0 3
-    let badRefs : Value :=
-      if mode = 0 then .null
-      else if mode = 1 then intV (-1)
-      else if mode = 2 then intV 5
-      else .int .nan
-    (mkScutfirstCase "fuzz/bad-refs"
-      #[.slice sliceBits8Refs0, intV 1, badRefs], rng2)
+    if mode = 3 then
+      let stack : Array Value := #[.slice sliceBits8Refs0, intV 1]
+      let program : Array Instr := #[.pushInt .nan, scutfirstInstr]
+      (mkScutfirstCase "fuzz/range/refs-nan" stack program, rng2)
+    else
+      let badRefs : Value :=
+        if mode = 0 then .null
+        else if mode = 1 then intV (-1)
+        else intV 5
+      (mkScutfirstCase "fuzz/bad-refs"
+        #[.slice sliceBits8Refs0, intV 1, badRefs], rng2)
   else if shape = 6 then
     let (mode, rng2) := randNat rng1 0 3
-    let badBits : Value :=
-      if mode = 0 then .null
-      else if mode = 1 then intV (-1)
-      else if mode = 2 then intV 1024
-      else .int .nan
-    (mkScutfirstCase "fuzz/bad-bits"
-      #[.slice sliceBits8Refs0, badBits, intV 0], rng2)
+    if mode = 3 then
+      let stack : Array Value := #[.slice sliceBits8Refs0]
+      let program : Array Instr := #[.pushInt .nan, .pushInt (.num 0), scutfirstInstr]
+      (mkScutfirstCase "fuzz/range/bits-nan" stack program, rng2)
+    else
+      let badBits : Value :=
+        if mode = 0 then .null
+        else if mode = 1 then intV (-1)
+        else intV 1024
+      (mkScutfirstCase "fuzz/bad-bits"
+        #[.slice sliceBits8Refs0, badBits, intV 0], rng2)
   else
     (mkScutfirstCase "fuzz/bad-slice"
       #[.null, intV 1, intV 0], rng1)

@@ -227,11 +227,15 @@ private def genSdcutlastFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     (mkSdcutlastCase "fuzz/type/bits" #[.slice s6_110101, badBits], rng2)
   else if shape = 6 then
     let (mode, rng2) := randNat rng1 0 2
-    let badBits : Value :=
-      if mode = 0 then intV (-1)
-      else if mode = 1 then intV 1024
-      else .int .nan
-    (mkSdcutlastCase "fuzz/range/bits" #[.slice s6_110101, badBits], rng2)
+    if mode = 2 then
+      let stack : Array Value := #[.slice s6_110101]
+      let program : Array Instr := #[.pushInt .nan, sdcutlastInstr]
+      (mkSdcutlastCase "fuzz/range/bits-nan" stack program, rng2)
+    else
+      let badBits : Value :=
+        if mode = 0 then intV (-1)
+        else intV 1024
+      (mkSdcutlastCase "fuzz/range/bits" #[.slice s6_110101, badBits], rng2)
   else
     (mkSdcutlastCase "fuzz/type/slice" #[.null, intV 1], rng1)
 

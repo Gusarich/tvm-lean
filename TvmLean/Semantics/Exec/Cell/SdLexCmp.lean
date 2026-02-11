@@ -24,6 +24,8 @@ def execInstrCellSdLexCmp (i : Instr) (next : VM Unit) : VM Unit := do
         if len1 == len2 then 0 else if len1 < len2 then -1 else 1
   match i with
   | .sdLexCmp =>
+      -- Matches C++ `exec_ibin_cs_cmp`: underflow is checked before type checks.
+      VM.checkUnderflow 2
       let s2 ← VM.popSlice
       let s1 ← VM.popSlice
       -- Matches C++ `CellSlice::lex_cmp`: compare only remaining bits (ignore refs).

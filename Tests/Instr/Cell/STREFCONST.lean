@@ -475,6 +475,44 @@ private def genStrefConstDirectFuzzInput (rng0 : StdGen) : (Cell × Array Value)
 private def strefConstFuzzSeed : UInt64 := 2026021041
 private def strefConstFuzzCount : Nat := 320
 
+private def mkStrefConstCodeCell (constRef : Cell) (extraRefs : Array Cell := #[]) : Cell :=
+  Cell.mkOrdinary (natToBits strefConstOpcode 16) (#[constRef] ++ extraRefs)
+
+private def mkOracleFuzzCase
+    (name : String)
+    (code : Cell)
+    (stack : Array Value) : OracleCase :=
+  { name := name
+    instr := strefConstId
+    codeCell? := some code
+    initStack := stack }
+
+private def genStrefConstOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 15
+  if shape = 0 then
+    -- Decode error: `0xcf20` requires one embedded ref.
+    (mkOracleFuzzCase "fuzz/decode/missing-ref"
+      (Cell.mkOrdinary (natToBits strefConstOpcode 16) #[])
+      #[.builder Builder.empty], rng1)
+  else if shape = 1 then
+    -- Decode should consume exactly one ref and leave the rest for the stream.
+    let (constRef, rng2) := pickFromPool constCellPool rng1
+    let (extraCount, rng3) := randNat rng2 1 2
+    let (extras, rng4) := Id.run do
+      let mut rng := rng3
+      let mut out : Array Cell := #[]
+      for _ in [0:extraCount] do
+        let (c, rng') := pickFromPool constCellPool rng
+        out := out.push c
+        rng := rng'
+      return (out, rng)
+    (mkOracleFuzzCase s!"fuzz/decode/extra-refs-{extraCount}"
+      (mkStrefConstCodeCell constRef extras)
+      #[.builder Builder.empty], rng4)
+  else
+    let ((constRef, stack), rng2) := genStrefConstDirectFuzzInput rng1
+    (mkOracleFuzzCase s!"fuzz/oracle/{shape}" (mkStrefConstCodeCell constRef) stack, rng2)
+
 def suite : InstrSuite where
   id := strefConstId
   unit := (#[
@@ -625,7 +663,11 @@ def suite : InstrSuite where
                 s!"fuzz/direct/{i}: result kind mismatch\nconst={reprStr constRef}\nstack={reprStr stack}\nwant={reprStr want}\ngot={reprStr got}") }
   ] ++ strefConstRawOracleUnitCases)
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021111
+      count := 500
+      gen := genStrefConstOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 

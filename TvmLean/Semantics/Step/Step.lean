@@ -86,8 +86,10 @@ def cp0InvOpcodeGasBits (code : Slice) : Nat :=
   match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary bitsPad refsPad)) with
   | .ok (_instr, totBits, _rest) => totBits
   | .error _ =>
-      -- Conservative fallback kept for prefixes that still don't decode.
-      if code.bitsRemaining < 4 then 16 else 8
+      -- If we still can't match a real opcode-table entry even after padding,
+      -- treat this as a dummy `inv_opcode` dispatch (C++ charges `gas_per_instr`
+      -- without per-bit cost in this case).
+      0
 
 def VmState.step (host : Host) (st : VmState) : StepResult :=
   match st.cc with

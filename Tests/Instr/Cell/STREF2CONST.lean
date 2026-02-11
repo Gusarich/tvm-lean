@@ -516,6 +516,69 @@ private def runStructuredFuzzIter (iter : Nat) (rng0 : StdGen) : IO StdGen := do
       #[noise, .builder expected]
     pure rng5
 
+private def mkStref2ConstCodeCell (c1 c2 : Cell) (extraRefs : Array Cell := #[]) : Cell :=
+  Cell.mkOrdinary (natToBits 0xcf21 16) (#[c1, c2] ++ extraRefs)
+
+private def mkOracleFuzzCase
+    (name : String)
+    (code : Cell)
+    (stack : Array Value) : OracleCase :=
+  { name := name
+    instr := stref2constId
+    codeCell? := some code
+    initStack := stack }
+
+private def genStref2ConstOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 19
+  if shape = 0 then
+    -- Decode error: `0xcf21` requires two embedded refs.
+    (mkOracleFuzzCase "fuzz/decode/zero-ref"
+      (Cell.mkOrdinary (natToBits 0xcf21 16) #[])
+      #[.builder Builder.empty], rng1)
+  else if shape = 1 then
+    (mkOracleFuzzCase "fuzz/decode/one-ref"
+      (Cell.mkOrdinary (natToBits 0xcf21 16) #[constCell1])
+      #[.builder Builder.empty], rng1)
+  else if shape = 2 then
+    -- Decode should consume exactly two refs and leave the rest.
+    (mkOracleFuzzCase "fuzz/decode/three-refs"
+      (mkStref2ConstCodeCell constCell1 constCell2 #[constCell3])
+      #[.builder Builder.empty], rng1)
+  else
+    let (c1, rng2) := pickCellFromPool rng1
+    let (c2, rng3) := pickCellFromPool rng2
+    let code := mkStref2ConstCodeCell c1 c2
+    let (stackShape, rng4) := randNat rng3 0 9
+    if stackShape = 0 then
+      (mkOracleFuzzCase "fuzz/ok/empty-builder" code #[.builder Builder.empty], rng4)
+    else if stackShape = 1 then
+      let (noise, rng5) := pickNoiseValue rng4
+      (mkOracleFuzzCase "fuzz/ok/deep-stack" code #[noise, .builder Builder.empty], rng5)
+    else if stackShape = 2 then
+      let (refsN, rng5) := randNat rng4 0 2
+      let (refs, rng6) := pickRefs refsN rng5
+      let (bits, rng7) := pickSmallBits rng6
+      let b : Builder := { bits := bits, refs := refs }
+      (mkOracleFuzzCase "fuzz/ok/nonempty-builder" code #[.builder b], rng7)
+    else if stackShape = 3 then
+      let (refs, rng5) := pickRefs 3 rng4
+      let b : Builder := { bits := #[], refs := refs }
+      (mkOracleFuzzCase "fuzz/cellov/refs3" code #[.builder b], rng5)
+    else if stackShape = 4 then
+      let (refs, rng5) := pickRefs 4 rng4
+      let b : Builder := { bits := fullBuilder1023.bits, refs := refs }
+      (mkOracleFuzzCase "fuzz/cellov/fullbits-refs4" code #[.builder b], rng5)
+    else if stackShape = 5 then
+      (mkOracleFuzzCase "fuzz/underflow/empty-stack" code #[], rng4)
+    else if stackShape = 6 then
+      (mkOracleFuzzCase "fuzz/type/top-null" code #[.null], rng4)
+    else if stackShape = 7 then
+      (mkOracleFuzzCase "fuzz/type/top-int" code #[intV 7], rng4)
+    else if stackShape = 8 then
+      (mkOracleFuzzCase "fuzz/type/top-int-builder-below" code #[.builder Builder.empty, intV 9], rng4)
+    else
+      (mkOracleFuzzCase "fuzz/type/top-cell" code #[.cell constCell0], rng4)
+
 def suite : InstrSuite where
   id := stref2constId
   unit := #[
@@ -625,7 +688,11 @@ def suite : InstrSuite where
           rng := (← runStructuredFuzzIter i rng) }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021112
+      count := 500
+      gen := genStref2ConstOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 

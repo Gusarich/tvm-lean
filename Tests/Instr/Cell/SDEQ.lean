@@ -274,8 +274,9 @@ def suite : InstrSuite where
             { label := "neq/len-7-vs-8", left := sliceBits7Len, right := sliceBits8Len, expected := 0 },
             { label := "neq/bits255", left := sliceBits255A, right := sliceBits255B, expected := 0 },
             { label := "neq/bits1023", left := sliceBits1023A, right := sliceBits1023B, expected := 0 },
-            { label := "neq/ref-count", left := sliceRef2EqA, right := sliceRef1EqA, expected := 0 },
-            { label := "neq/ref-content", left := sliceRef2EqA, right := sliceRef2RefDiff, expected := 0 }
+            -- C++ `CellSlice::lex_cmp` ignores refs, so these are equal if remaining bits match.
+            { label := "eq/refs-ignored-ref-count", left := sliceRef2EqA, right := sliceRef1EqA, expected := -1 },
+            { label := "eq/refs-ignored-ref-content", left := sliceRef2EqA, right := sliceRef2RefDiff, expected := -1 }
           ]
         for c in checks do
           expectOkStack c.label
@@ -290,9 +291,10 @@ def suite : InstrSuite where
         expectOkStack "neq/partial-vs-bit-mismatch"
           (runSdeqDirect (mkSdeqStack partialLeft partialBitMismatch))
           #[intV 0]
-        expectOkStack "neq/partial-vs-ref-mismatch"
+        -- C++ `CellSlice::lex_cmp` ignores refs, so this is equal if remaining bits match.
+        expectOkStack "eq/partial-vs-ref-mismatch"
           (runSdeqDirect (mkSdeqStack partialLeft partialRefMismatch))
-          #[intV 0]
+          #[intV (-1)]
         expectOkStack "ok/deep-stack-preserve-below"
           (runSdeqDirect #[.null, intV 44, .slice partialLeft, .slice partialEquivalent])
           #[.null, intV 44, intV (-1)] }
@@ -302,7 +304,7 @@ def suite : InstrSuite where
         expectErr "underflow/empty" (runSdeqDirect #[]) .stkUnd
         expectErr "underflow/one-slice" (runSdeqDirect #[.slice sliceBit1]) .stkUnd
 
-        expectErr "type/one-int" (runSdeqDirect #[intV 7]) .typeChk
+        expectErr "type/one-int" (runSdeqDirect #[intV 7]) .stkUnd
         expectErr "type/top-null" (runSdeqDirect #[.slice sliceBit0, .null]) .typeChk
         expectErr "type/top-int" (runSdeqDirect #[.slice sliceBit0, intV 1]) .typeChk
         expectErr "type/top-cell" (runSdeqDirect #[.slice sliceBit0, .cell Cell.empty]) .typeChk

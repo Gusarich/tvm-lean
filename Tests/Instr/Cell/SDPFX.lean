@@ -267,7 +267,7 @@ def suite : InstrSuite where
         expectErr "underflow/one-slice"
           (runSdpfxDirect #[.slice equal8A5]) .stkUnd
         expectErr "type/one-non-slice"
-          (runSdpfxDirect #[.null]) .typeChk
+          (runSdpfxDirect #[.null]) .stkUnd
 
         expectErr "type/top-null"
           (runSdpfxDirect #[.slice equal8A5, .null]) .typeChk

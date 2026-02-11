@@ -277,7 +277,8 @@ private def okRefPool : Array Cell :=
   ]
 
 private def specialRefPool : Array Cell :=
-  #[specialLibraryCell, specialUnknownCell, specialWithRefCell]
+  -- Keep fuzz inputs oracle-serializable: some malformed exotic cells are rejected at BOC.
+  #[specialLibraryCell]
 
 private def noisePool : Array Value :=
   #[.null, intV 0, intV 7, .cell refLeafB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]

@@ -314,6 +314,71 @@ private def oracleCases : Array OracleCase :=
     mkOracleCase "oracle/err/type-top-null" xloadqCode1 #[.null]
   ]
 
+private def mkOracleFuzzCase
+    (name : String)
+    (stack : Array Value)
+    (libraries : Array Cell := #[])
+    (code : Cell := xloadqCode1) : OracleCase :=
+  mkOracleCase name code stack libraries
+
+private def genXloadqOracleFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  if shape = 0 then
+    let (c, rng2) := genRandomOrdinaryCell rng1
+    (mkOracleFuzzCase "fuzz/ok/ordinary" #[.cell c], rng2)
+  else if shape = 1 then
+    let (c, rng2) := genRandomOrdinaryCell rng1
+    (mkOracleFuzzCase "fuzz/ok/deep-stack" #[.null, intV (-1), .cell c], rng2)
+  else if shape = 2 then
+    (mkOracleFuzzCase "fuzz/ok/reload-via-xchg01" #[.cell ordinaryBits31] #[] xloadqCodeReload, rng1)
+  else if shape = 3 then
+    (mkOracleFuzzCase "fuzz/ok/quiet-fail/special-pruned" #[.cell specialPrunedMask1], rng1)
+  else if shape = 4 then
+    let (c, rng2) := genRandomOrdinaryCell rng1
+    (mkOracleFuzzCase "fuzz/ok/quiet-fail/merkle-proof" #[.cell (mkMerkleProofCell c)], rng2)
+  else if shape = 5 then
+    let (fromCell, rng2) := genRandomOrdinaryCell rng1
+    let (toCell, rng3) := genRandomOrdinaryCell rng2
+    (mkOracleFuzzCase "fuzz/ok/quiet-fail/merkle-update" #[.cell (mkMerkleUpdateCell fromCell toCell)], rng3)
+  else if shape = 6 then
+    let (target, rng2) := genRandomOrdinaryCell rng1
+    let key := hashBitsOfCell target
+    let libCell := mkLibraryCellByHashBits key
+    let collection :=
+      match mkLibraryCollectionRef key target with
+      | .ok c => c
+      | .error _ => libCollectionHit
+    (mkOracleFuzzCase "fuzz/ok/quiet-hit/library-collection" #[.cell libCell] #[collection], rng2)
+  else if shape = 7 then
+    let (target, rng2) := genRandomOrdinaryCell rng1
+    let (other, rng3) := genRandomOrdinaryCell rng2
+    let key := hashBitsOfCell target
+    let libCell := mkLibraryCellByHashBits key
+    let mismatch :=
+      match mkLibraryCollectionRef key other with
+      | .ok c => c
+      | .error _ => libCollectionMismatch
+    (mkOracleFuzzCase "fuzz/ok/quiet-fail/library-hash-mismatch" #[.cell libCell] #[mismatch], rng3)
+  else if shape = 8 then
+    let (target, rng2) := genRandomOrdinaryCell rng1
+    let key := hashBitsOfCell target
+    let libCell := mkLibraryCellByHashBits key
+    let noRef :=
+      match mkLibraryCollectionSlice key (Slice.ofCell Cell.empty) with
+      | .ok c => c
+      | .error _ => libCollectionNoRefValue
+    (mkOracleFuzzCase "fuzz/ok/quiet-fail/library-no-ref-value" #[.cell libCell] #[noRef], rng2)
+  else if shape = 9 then
+    (mkOracleFuzzCase "fuzz/ok/quiet-fail/library-miss" #[.cell libRefHit], rng1)
+  else if shape = 10 then
+    (mkOracleFuzzCase "fuzz/err/underflow-empty-stack" #[], rng1)
+  else if shape = 11 then
+    (mkOracleFuzzCase "fuzz/err/type-top-null" #[.null], rng1)
+  else if shape = 12 then
+    (mkOracleFuzzCase "fuzz/ok/ordinary-refs2" #[.cell ordinaryRefs2], rng1)
+  else
+    (mkOracleFuzzCase "fuzz/ok/ordinary-empty" #[.cell ordinaryEmpty], rng1)
+
 def suite : InstrSuite where
   id := xloadqId
   unit := #[
@@ -675,7 +740,11 @@ def suite : InstrSuite where
             rng := rng1 }
   ]
   oracle := oracleCases
-  fuzz := #[]
+  fuzz := #[
+    { seed := 2026021114
+      count := 500
+      gen := genXloadqOracleFuzzCase }
+  ]
 
 initialize registerSuite suite
 
