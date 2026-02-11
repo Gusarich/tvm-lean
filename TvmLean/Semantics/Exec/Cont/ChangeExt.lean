@@ -89,20 +89,23 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
           match st.getCtr idx with
           | .error e => throw e
           | .ok oldVal =>
-              match st.regs.c0.defineCtr idx oldVal with
-              | .error e => throw e
-              | .ok c0' =>
-                  if idx = 0 then
-                    -- Match C++ ordering: update c0 first, then set c0 := v.
-                    let st1 : VmState := { st with regs := { st.regs with c0 := c0' } }
-                    match st1.setCtr idx v with
-                    | .ok st2 => set st2
-                    | .error e => throw e
-                  else
-                    match st.setCtr idx v with
-                    | .error e => throw e
-                    | .ok st1 =>
-                        set { st1 with regs := { st1.regs with c0 := c0' } }
+              -- C++ `exec_popsave_ctr` ignores duplicate define failures when saving into `c0`.
+              let c0' ←
+                match st.regs.c0.defineCtr idx oldVal with
+                | .ok k => pure k
+                | .error .typeChk => pure st.regs.c0
+                | .error e => throw e
+              if idx = 0 then
+                -- Match C++ ordering: update c0 first, then set c0 := v.
+                let st1 : VmState := { st with regs := { st.regs with c0 := c0' } }
+                match st1.setCtr idx v with
+                | .ok st2 => set st2
+                | .error e => throw e
+              else
+                match st.setCtr idx v with
+                | .error e => throw e
+                | .ok st1 =>
+                    set { st1 with regs := { st1.regs with c0 := c0' } }
       | .saveAltCtr idx =>
           let st ← get
           match st.getCtr idx with
