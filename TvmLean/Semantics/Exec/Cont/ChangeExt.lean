@@ -123,13 +123,16 @@ def execInstrContChangeExt (i : Instr) (next : VM Unit) : VM Unit := do
           match st.getCtr idx with
           | .error e => throw e
           | .ok v =>
-              match st.regs.c0.defineCtr idx v with
-              | .error e => throw e
-              | .ok c0' =>
-                  match st.regs.c1.defineCtr idx v with
-                  | .error e => throw e
-                  | .ok c1' =>
-                      set { st with regs := { st.regs with c0 := c0', c1 := c1' } }
+              -- C++ `exec_saveboth_ctr` ignores `define` failures (duplicate save-slots are no-ops).
+              let c0' :=
+                match st.regs.c0.defineCtr idx v with
+                | .ok k => k
+                | .error _ => st.regs.c0
+              let c1' :=
+                match st.regs.c1.defineCtr idx v with
+                | .ok k => k
+                | .error _ => st.regs.c1
+              set { st with regs := { st.regs with c0 := c0', c1 := c1' } }
       | .setExitAlt =>
           let cont ← VM.popCont
           let st ← get
