@@ -526,7 +526,7 @@ def suite : InstrSuite where
   oracle := oracleSuccessCases ++ oracleErrorCases ++ oracleGasCases
   fuzz := #[
     { seed := 2026021038
-      count := 180
+      count := 500
       gen := genSchkRefsFuzzCase }
   ]
 

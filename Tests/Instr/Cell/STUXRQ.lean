@@ -320,7 +320,7 @@ def suite : InstrSuite where
   ]
   fuzz := #[
     { seed := 2026020910
-      count := 300
+      count := 500
       gen := genStuxrqFuzzCase }
   ]
 

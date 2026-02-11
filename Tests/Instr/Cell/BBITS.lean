@@ -413,7 +413,7 @@ def suite : InstrSuite where
   oracle := oracleDirectCases ++ oracleProgramBitsCases ++ oracleProgramRefCases ++ oracleErrorCases ++ oracleGasCases
   fuzz := #[
     { seed := 2026021051
-      count := 320
+      count := 500
       gen := genBbitsFuzzCase }
   ]
 
