@@ -224,6 +224,27 @@ private def oracleCases : Array OracleCase := #[
   mkCodeCase "err/raw/opcode-near-ed78" (stackFor q0 q0) (rawOp16 0xed78)
 ]
 
+private def setContCtrOracleFamilies : Array String :=
+  #[
+    "ok/index/",
+    "ok/flow/",
+    "ok/redefine/",
+    "ok/raw/",
+    "err/underflow/",
+    "err/cont/",
+    "err/value/",
+    "err/redefine/",
+    "err/order/",
+    "err/raw/"
+  ]
+
+private def setContCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setContCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := setContCtrId
   unit := #[
@@ -349,7 +370,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setContCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile setContCtrId setContCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

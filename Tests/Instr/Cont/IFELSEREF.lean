@@ -307,6 +307,33 @@ private def mkCaseWithFlag
     (codeCell : Cell := codePushCtr0ObserveTail) : OracleCase :=
   mkCase name (below ++ #[intV flag]) codeCell
 
+private def ifelserefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/branch/",
+      "ok/prefix-ctr0/",
+      "ok/prefix-ctr1/",
+      "ok/add/",
+      "ok/prefix-add/",
+      "ok/two-ifelseref-noop/",
+      "err/add/",
+      "err/prefix-add/",
+      "err/underflow/",
+      "err/popcont/",
+      "err/popbool/",
+      "err/decode/",
+      "err/two-ifelseref-one-ref/"
+    ]
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2, 2,
+      3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifelserefId
   unit := #[
@@ -589,7 +616,7 @@ def suite : InstrSuite where
       #[.builder Builder.empty, intV 1, q0, intV 0, q0]
       codeTwoIfelserefNoopTail
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifelserefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifelserefId ifelserefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -279,6 +279,31 @@ private def mkTwoCallrefCase
     (fuel : Nat := 1_000_000) : OracleCase :=
   mkCase name stack (mkTwoCallrefCode targetA targetB tail) gasLimits fuel
 
+private def callrefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/body/",
+      "ok/tail/",
+      "ok/prelude/",
+      "ok/two-callrefs/",
+      "ok/target/",
+      "ok/stack/",
+      "ok/boundary/",
+      "err/body/",
+      "err/special/",
+      "err/decode/"
+    ]
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1,
+      2, 2, 2,
+      3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success paths.
   mkCallrefCase "ok/basic/empty-stack-empty-body" #[] bodyEmpty,
@@ -471,7 +496,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callrefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callrefId callrefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

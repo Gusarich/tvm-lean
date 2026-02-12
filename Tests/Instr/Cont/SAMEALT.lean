@@ -132,6 +132,24 @@ private def sameAltTruncated8Code : Cell :=
 private def sameAltTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xedfa >>> 1) 15) #[]
 
+private def sameAltOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/c0-from-c1/",
+    "ok/nargs",
+    "err/nargs",
+    "ok/captured/",
+    "err/captured/",
+    "err/decode/"
+  ]
+
+private def sameAltFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := sameAltOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := sameAltId
   unit := #[
@@ -276,7 +294,7 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8-prefix" #[] sameAltTruncated8Code,
     mkCaseCode "err/decode/truncated-15-prefix" #[intV 1] sameAltTruncated15Code
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec sameAltId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile sameAltId sameAltFuzzProfile 500 ]
 
 initialize registerSuite suite
 

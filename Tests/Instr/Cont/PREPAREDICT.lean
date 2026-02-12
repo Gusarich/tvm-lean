@@ -184,6 +184,29 @@ private def mkCodeCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private def prepareOracleFamilies : Array String :=
+  #[
+    "default/nojump/",
+    "set-c3/",
+    "downstream/popctr3-add/",
+    "snapshot/",
+    "downstream/execute/",
+    "decode-seq/"
+  ]
+
+private def prepareFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := prepareOracleFamilies
+    mutationModes := #[
+      0, 0, 0,
+      1, 1,
+      2, 2,
+      3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase :=
   #[
     -- default c3 (`quit 11`): no jump, tail must execute.
@@ -369,7 +392,7 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec prepareId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile prepareId prepareFuzzProfile 500 ]
 
 initialize registerSuite suite
 

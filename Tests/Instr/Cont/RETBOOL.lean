@@ -156,6 +156,27 @@ private def retBoolTruncated8Code : Cell :=
 private def retBoolTruncated15Code : Cell :=
   Cell.mkOrdinary ((natToBits 0xdb32 16).take 15) #[]
 
+private def retBoolOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "branch/skip-",
+    "c0nargs",
+    "c1nargs",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "err/intov/",
+    "err/decode/"
+  ]
+
+private def retBoolFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := retBoolOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := retBoolId
   unit := #[
@@ -371,7 +392,7 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8-prefix" #[] retBoolTruncated8Code,
     mkCaseCode "err/decode/truncated-15-prefix" #[intV 1] retBoolTruncated15Code
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec retBoolId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile retBoolId retBoolFuzzProfile 500 ]
 
 initialize registerSuite suite
 

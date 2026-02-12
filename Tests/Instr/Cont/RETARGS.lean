@@ -223,6 +223,26 @@ private def retArgsTruncated8Code : Cell :=
 private def retArgsTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xdb20 >>> 1) 15) #[]
 
+private def retArgsOracleFamilies : Array String :=
+  #[
+    "ok/default/",
+    "err/default/",
+    "ok/c0-from-c1/",
+    "err/c0-from-c1/",
+    "ok/nargs",
+    "err/nargs",
+    "ok/captured/",
+    "err/captured/",
+    "err/decode/"
+  ]
+
+private def retArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := retArgsOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Basic RETARGS with default c0=quit0.
@@ -380,7 +400,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"decode/raw-end: expected exhausted bits, got {s4.bitsRemaining}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec retArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile retArgsId retArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

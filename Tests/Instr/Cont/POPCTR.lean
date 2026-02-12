@@ -90,6 +90,25 @@ private def expectRawErr
   | .ok _ =>
       throw (IO.userError s!"{label}: expected error {expected}, got success")
 
+private def popCtrOracleFamilies : Array String :=
+  #[
+    "ok/index/",
+    "ok/roundtrip/",
+    "err/type-probe/",
+    "err/value-type/",
+    "err/underflow/",
+    "err/order/",
+    "ok/raw-opcode/",
+    "err/raw-opcode/"
+  ]
+
+private def popCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := popCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success matrix over valid static indices and value classes.
   mkCase "ok/index/idx0-cont-q0" (withValue #[] q0) (progPop 0 #[.pushCtr 0]),
@@ -219,7 +238,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec popCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile popCtrId popCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

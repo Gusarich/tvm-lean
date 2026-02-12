@@ -186,6 +186,32 @@ private def codeTwoIfnotrefOneRefTail : Cell :=
 private def codeTruncated8WithRef : Cell :=
   Cell.mkOrdinary (natToBits 0xe3 8) #[branchNoop]
 
+private def ifnotrefOracleFamilies : Array String :=
+  #[
+    "ok/branch/taken/",
+    "ok/branch/skipped/",
+    "ok/branch-add/",
+    "ok/two-ifnotref/noop/",
+    "err/branch-add/",
+    "err/popbool/",
+    "err/decode/missing-ref/",
+    "err/decode/truncated-",
+    "err/decode/two-ifnotref-one-ref/"
+  ]
+
+private def ifnotrefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifnotrefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifnotrefId
   unit := #[
@@ -468,7 +494,7 @@ def suite : InstrSuite where
       #[intV maxInt257, intV minInt257, intV 1, intV 0]
       codeTwoIfnotrefNoopTail
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnotrefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifnotrefId ifnotrefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

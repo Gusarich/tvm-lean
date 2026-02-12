@@ -183,6 +183,24 @@ private def progSetNumCallccArgs (nargs : Int) (params : Nat) (retVals : Int) : 
 private def progSetContVarCallccArgs (copy more : Int) (params : Nat) (retVals : Int) : Array Instr :=
   #[.pushCtr 0, .pushInt (.num copy), .pushInt (.num more), .setContVarArgs, .callccArgs params retVals]
 
+private def callccArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/order/",
+      "err/underflow/",
+      "err/type/",
+      "err/order/",
+      "ok/jump/",
+      "err/jump/",
+      "ok/decode/",
+      "err/decode/"
+    ]
+    -- Bias toward argument-shape, ordering, and jump/decode interaction perturbations.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- params/retvals boundaries.
   mkCase "ok/basic/p0-r-1-empty" (mkStack #[]) 0 (-1),
@@ -353,7 +371,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callccArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callccArgsId callccArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

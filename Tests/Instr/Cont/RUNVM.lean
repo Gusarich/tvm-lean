@@ -387,6 +387,30 @@ private def oracleCases : Array OracleCase :=
       runvmTruncated23Code
   ]
 
+private def runvmOracleFamilies : Array String :=
+  #[
+    "ok/mode",
+    "ok/child/",
+    "ok/stack/",
+    "ok/raw-opcode/",
+    "err/child/",
+    "err/underflow/",
+    "err/type/",
+    "err/range/",
+    "err/full-flags/",
+    "err/retvals/",
+    "err/commit/",
+    "err/raw-opcode/"
+  ]
+
+private def runvmFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := runvmOracleFamilies
+    -- Bias toward int perturbation, drops, and noise while preserving all mutation modes.
+    mutationModes := #[4, 4, 4, 0, 0, 0, 3, 3, 3, 1, 2]
+    minMutations := 1
+    maxMutations := 6
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := runvmId
   unit := #[
@@ -472,7 +496,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec runvmId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile runvmId runvmFuzzProfile 500 ]
 
 initialize registerSuite suite
 

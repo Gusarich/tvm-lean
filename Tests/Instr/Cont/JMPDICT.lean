@@ -245,6 +245,31 @@ private def progSetC3FromCtr (ctr : Nat) (idx : Nat) : Array Instr :=
 private def progSetNumC3ThenJmp (more : Int) (idx : Nat) (tail : Array Instr := #[.pushInt (.num tailMarker)]) : Array Instr :=
   #[.pushCtr 0, .pushInt (.num more), .setNumVarArgs, .popCtr 3, jmpDictInstr idx] ++ tail
 
+private def jmpDictOracleFamilies : Array String :=
+  #[
+    "default-c3/",
+    "set-c3/",
+    "setnum-c3/",
+    "dict-call/",
+    "dict-call-z/",
+    "dict-jump/",
+    "dict-errors/"
+  ]
+
+private def jmpDictFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmpDictOracleFamilies
+    -- Bias toward jump-path stack-shape perturbations while exercising all mutation modes.
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Default c3 (quit 11): JMPDICT pushes idx then jumps to c3; caller tail is skipped.
@@ -460,7 +485,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec jmpDictId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpDictId jmpDictFuzzProfile 500 ]
 
 initialize registerSuite suite
 

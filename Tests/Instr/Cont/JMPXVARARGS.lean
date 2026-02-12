@@ -48,6 +48,35 @@ private def mkCase
 private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrFlowJmpxVarArgs jmpxVarArgsInstr stack
 
+private def jmpxVarArgsOracleFamilies : Array String :=
+  #[
+    "ok/pass-minus1/",
+    "ok/pass0/",
+    "ok/pass1/",
+    "ok/pass2/",
+    "ok/pass3/",
+    "ok/pass254/",
+    "order/",
+    "err/underflow/",
+    "err/type/",
+    "err/range/",
+    "err/order/"
+  ]
+
+private def jmpxVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmpxVarArgsOracleFamilies
+    -- Bias toward parameter/order perturbations while still covering all mutation families.
+    mutationModes := #[
+      0, 0, 0, 0,
+      2, 2, 2,
+      4, 4,
+      1, 1,
+      3
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success and pass-args behavior.
   mkCase "ok/pass-minus1/empty" (mkStack #[] (-1)),
@@ -156,7 +185,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec jmpxVarArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpxVarArgsId jmpxVarArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

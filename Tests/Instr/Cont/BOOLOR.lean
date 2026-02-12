@@ -146,6 +146,22 @@ private def progBoolOrPopCtr1PushCtr1 : Array Instr :=
 private def progPushNanBoolOr : Array Instr :=
   #[.pushInt .nan, boolOrInstr]
 
+private def boolOrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/order/",
+      "ok/decode/",
+      "err/underflow/",
+      "err/type/",
+      "order/",
+      "err/decode/"
+    ]
+    -- Bias toward stack-shape perturbations while still covering all mutation families.
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 2, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success / continuation branch coverage.
   mkCase "ok/basic/q0-q0-empty" (mkStack #[]),
@@ -325,7 +341,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec boolOrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile boolOrId boolOrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

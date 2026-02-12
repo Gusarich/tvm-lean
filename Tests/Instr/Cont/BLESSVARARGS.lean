@@ -71,6 +71,25 @@ private def expectRawOk (label : String) (out : Except Excno Unit × VmState) : 
   | .ok _ => pure st
   | .error e => throw (IO.userError s!"{label}: expected success, got {e}")
 
+private def blessVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/copy",
+      "order/program-",
+      "err/underflow/",
+      "err/type/more-",
+      "err/range/more-",
+      "order/more-",
+      "err/type/copy-",
+      "err/range/copy-",
+      "err/type/slice-",
+      "order/copy-"
+    ]
+    -- Bias toward stack-shape/order and copy-more boundary perturbations.
+    mutationModes := #[0, 0, 0, 2, 2, 2, 4, 4, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success coverage for copy/more bounds.
   mkCase "ok/copy0/more-minus1/empty"
@@ -251,7 +270,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec blessVarArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile blessVarArgsId blessVarArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

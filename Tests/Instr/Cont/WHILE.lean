@@ -171,6 +171,32 @@ private def noiseB : Array Value :=
 private def noiseLong : Array Value :=
   #[intV 1, .null, intV (-1), .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
 
+private def whileOracleFamilies : Array String :=
+  #[
+    "ok/direct/no-tail/",
+    "ok/direct/tail-skipped/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "gas/",
+    "brk/",
+    "whileend/",
+    "whileendbrk/"
+  ]
+
+private def whileFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := whileOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      3, 3, 3,
+      2,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -452,7 +478,7 @@ def suite : InstrSuite where
     mkCase "whileendbrk/basic" #[q0] #[whileEndBrkInstr],
     mkCase "whileendbrk/type-top-null" #[.null] #[whileEndBrkInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec whileId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile whileId whileFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -54,6 +54,24 @@ private def progSetContVarCallccVarArgs (copy more params retVals : Int) : Array
   #[.pushCtr 0, .pushInt (.num copy), .pushInt (.num more), .setContVarArgs,
     .pushInt (.num params), .pushInt (.num retVals), callccVarArgsInstr]
 
+private def callccVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/order/",
+      "err/underflow/",
+      "err/range/",
+      "err/type/",
+      "err/order/",
+      "err/rangemap/",
+      "ok/jump/",
+      "err/jump/"
+    ]
+    -- Bias toward argument/order perturbations while still covering all mutation families.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success: params/retvals bounds and extraction stack-copy paths.
   mkCase "ok/basic/pass-minus1-ret-minus1-empty" (mkStack #[] (-1) (-1)),
@@ -181,7 +199,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callccVarArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callccVarArgsId callccVarArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

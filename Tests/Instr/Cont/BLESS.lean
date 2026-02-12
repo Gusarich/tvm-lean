@@ -282,6 +282,38 @@ private def oracleCases : Array OracleCase := #[
   mkCodeCase "decode/bless-truncated15" #[intV 1] blessTruncated15Code
 ]
 
+private def blessFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/bless/",
+      "order/bless/",
+      "err/bless/underflow-",
+      "err/bless/type-",
+      "ok/blessargs/",
+      "err/blessargs/underflow-",
+      "err/blessargs/type-",
+      "err/blessargs/order-",
+      "ok/blessvarargs/",
+      "err/blessvarargs/underflow-",
+      "err/blessvarargs/type-",
+      "err/blessvarargs/range-",
+      "err/blessvarargs/rangemap-",
+      "err/blessvarargs/order-",
+      "ok/interaction/",
+      "err/interaction/",
+      "decode/"
+    ]
+    -- Weight toward stack-shape/order/range perturbations for BLESS copy/more families.
+    mutationModes := #[
+      0, 0, 0, 0,
+      2, 2, 2, 2,
+      4, 4, 4,
+      1, 1,
+      3
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := blessId
   unit := #[
@@ -359,7 +391,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec blessId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile blessId blessFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -198,6 +198,30 @@ private def progCondCtr0BodyCtr1 (tail : Array Instr := #[]) : Array Instr :=
 private def progCondHasC0BodyCtr0 (tail : Array Instr := #[]) : Array Instr :=
   #[.pushCtr 1, .pushCtr 0, .setContCtr 0, .pushCtr 0, whileBrkInstr] ++ tail
 
+private def whileBrkOracleFamilies : Array String :=
+  #[
+    "ok/direct/no-tail/",
+    "ok/direct/tail-skipped/",
+    "ok/ctr/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "gas/"
+  ]
+
+private def whileBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := whileBrkOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := whileBrkId
   unit := #[
@@ -469,7 +493,7 @@ def suite : InstrSuite where
       #[.pushInt (.num whileBrkGasExactMinusOne), .tonEnvOp .setGasLimit, whileBrkInstr]
       (oracleGasLimitsExact whileBrkGasExactMinusOne)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec whileBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile whileBrkId whileBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

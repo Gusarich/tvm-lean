@@ -171,6 +171,27 @@ private def returnArgsTruncated11Code : Cell :=
 private def returnArgsTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xed00 >>> 1) 15) #[]
 
+private def returnArgsOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/order/",
+    "ok/c0-from-c1/",
+    "ok/c0-nargs",
+    "err/c0-nargs",
+    "ok/captured/",
+    "err/captured/",
+    "err/underflow/",
+    "err/decode-"
+  ]
+
+private def returnArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := returnArgsOracleFamilies
+    -- Bias toward stack-shape/count perturbations while still covering all mutation modes.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Basic stack reshape behavior.
   mkCaseI "ok/basic/pass0-empty" #[] 0,
@@ -369,7 +390,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec returnArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile returnArgsId returnArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

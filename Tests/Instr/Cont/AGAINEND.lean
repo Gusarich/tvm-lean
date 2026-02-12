@@ -173,6 +173,31 @@ private def noiseA : Array Value :=
 private def noiseB : Array Value :=
   #[.slice fullSliceB, .builder Builder.empty, .tuple #[]]
 
+private def againEndFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/nonbrk/retalt/",
+      "ok/nonbrk/push-retalt/",
+      "ok/nonbrk/add-retalt/",
+      "ok/nonbrk/setc0fromc1-implicitret/",
+      "ok/nonbrk/setc0fromc1-ret/",
+      "ok/brk/retalt/",
+      "ok/brk/push-retalt/",
+      "ok/brk/add-retalt/",
+      "ok/brk/setc0fromc1-implicitret/",
+      "ok/brk/setc0fromc1-ret/",
+      "err/nonbrk/body-add-underflow",
+      "err/nonbrk/body-add-type",
+      "err/nonbrk/body-popctr-",
+      "err/brk/body-add-underflow",
+      "err/brk/body-add-type",
+      "err/brk/body-popctr-"
+    ]
+    -- Emphasize control-flow stack-shape disruption and body-error ordering.
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := againEndId
   unit := #[
@@ -405,7 +430,7 @@ def suite : InstrSuite where
     mkCase "err/brk/body-popctr-underflow" #[] (progPopCtr0 againEndBrkInstr),
     mkCase "err/brk/body-popctr-type" #[.null] (progPopCtr0 againEndBrkInstr)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec againEndId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile againEndId againEndFuzzProfile 500 ]
 
 initialize registerSuite suite
 

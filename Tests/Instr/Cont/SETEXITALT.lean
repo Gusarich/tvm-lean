@@ -245,6 +245,24 @@ private def progDefineC0ThenSet : Array Instr :=
 private def progDefineC0ThenSetRetAlt : Array Instr :=
   #[.pushCtr 0, .pushRefCont refContCell, .setContCtr 0, setExitAltInstr, .retAlt]
 
+private def setExitAltOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/order/",
+    "ok/gas/",
+    "err/gas/",
+    "err/underflow/",
+    "err/type/",
+    "err/decode/"
+  ]
+
+private def setExitAltFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setExitAltOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Basic direct SETEXITALT coverage.
   mkCase "ok/basic/q0-only" #[q0V],
@@ -387,7 +405,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setExitAltId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile setExitAltId setExitAltFuzzProfile 500 ]
 
 initialize registerSuite suite
 

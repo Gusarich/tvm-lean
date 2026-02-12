@@ -231,6 +231,29 @@ private def oracleCases : Array OracleCase :=
       (mkRunvmxInit 36 #[] childCodeRet (dataCell := dataPrunedMask1))
   ]
 
+private def runvmxOracleFamilies : Array String :=
+  #[
+    "ok/mode",
+    "ok/child/",
+    "ok/stack/",
+    "err/mode/",
+    "err/underflow/",
+    "err/type/",
+    "err/range/",
+    "err/full-flags/",
+    "err/child/",
+    "err/retvals/",
+    "err/commit/"
+  ]
+
+private def runvmxFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := runvmxOracleFamilies
+    -- Bias toward int perturbation, drops, and noise while preserving all mutation modes.
+    mutationModes := #[4, 4, 4, 0, 0, 0, 3, 3, 3, 1, 2]
+    minMutations := 1
+    maxMutations := 6
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := runvmxId
   unit := #[
@@ -264,7 +287,7 @@ def suite : InstrSuite where
           #[intV 0, intV Excno.cellOv.toInt, .null] }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec runvmxId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile runvmxId runvmxFuzzProfile 500 ]
 
 initialize registerSuite suite
 

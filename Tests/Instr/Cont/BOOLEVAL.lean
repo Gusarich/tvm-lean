@@ -208,6 +208,23 @@ private def boolevalTruncated8Code : Cell :=
 private def boolevalTruncated15Code : Cell :=
   Cell.mkOrdinary ((natToBits 0xedf9 16).take 15) #[]
 
+private def boolevalFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/order/",
+      "err/pop/",
+      "err/order/",
+      "ok/jump/",
+      "err/jump/",
+      "ok/decode/",
+      "err/decode/"
+    ]
+    -- Emphasize stack/continuation shape mutation while keeping ordering and decode paths active.
+    mutationModes := #[0, 0, 0, 2, 2, 1, 1, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Direct success paths.
   mkCase "ok/basic/empty-below" #[q0],
@@ -401,7 +418,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec boolevalId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile boolevalId boolevalFuzzProfile 500 ]
 
 initialize registerSuite suite
 

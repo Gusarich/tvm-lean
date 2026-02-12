@@ -142,6 +142,28 @@ private def k0 : Continuation := .quit 0
 private def mkK0Stack (below : Array Value := #[]) : Array Value :=
   mkBoolAndStack below k0 k0
 
+private def boolAndFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/success/",
+      "ok/program-tail/",
+      "ok/order/",
+      "ok/branch/",
+      "ok/noise/",
+      "err/underflow/",
+      "err/type/",
+      "err/order/"
+    ]
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      3, 3, 3,
+      2,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := boolAndId
   unit := #[
@@ -395,7 +417,7 @@ def suite : InstrSuite where
     mkCase "ok/noise/max-min-int-preserved"
       (mkK0Stack #[intV maxInt257, intV minInt257, .null])
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec boolAndId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile boolAndId boolAndFuzzProfile 500 ]
 
 initialize registerSuite suite
 

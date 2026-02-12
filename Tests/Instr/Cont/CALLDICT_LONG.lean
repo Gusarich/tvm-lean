@@ -252,6 +252,30 @@ private def mkCodeCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private def callDictLongOracleFamilies : Array String :=
+  #[
+    "long/default-c3/",
+    "long/set-c3/",
+    "long/dict-call/",
+    "long/dict-call-z/",
+    "long/dict-jump/",
+    "long/dict-errors/"
+  ]
+
+private def callDictLongFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := callDictLongOracleFamilies
+    -- Bias toward call/jump stack-shape perturbations while exercising all mutation modes.
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Default c3 (quit 11): CALLDICT_LONG pushes idx then calls c3; trailing caller code is not reached.
@@ -432,7 +456,7 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callDictLongId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callDictLongId callDictLongFuzzProfile 500 ]
 
 initialize registerSuite suite
 

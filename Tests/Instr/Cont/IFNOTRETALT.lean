@@ -112,6 +112,29 @@ private def ifnotretaltSetGasExact : Int :=
 private def ifnotretaltSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifnotretaltInstr
 
+private def ifnotretaltOracleFamilies : Array String :=
+  #[
+    "ok/taken/",
+    "ok/not-taken/",
+    "underflow/",
+    "type/",
+    "intov/",
+    "gas/"
+  ]
+
+private def ifnotretaltFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifnotretaltOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifnotretaltId
   unit := #[
@@ -375,7 +398,7 @@ def suite : InstrSuite where
       #[intV 1]
       #[.pushInt (.num ifnotretaltSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretaltInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnotretaltId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifnotretaltId ifnotretaltFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -254,6 +254,27 @@ private def progCallOnly (idx : Nat) : Array Instr :=
 private def progSetC3FromCtr (ctr : Nat) (idx : Nat) : Array Instr :=
   #[.pushCtr ctr, .popCtr 3, .callDict idx, .pushInt (.num tailMarker)]
 
+private def callDictFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "default-c3/",
+      "set-c3/",
+      "dict-call/",
+      "dict-call-z/",
+      "dict-jump/",
+      "dict-errors/"
+    ]
+    -- Bias toward call/jump stack-shape perturbations while still exercising all mutation modes.
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Default c3 (quit 11): CALLDICT pushes idx then calls c3; trailing caller code is not reached.
@@ -426,7 +447,7 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callDictId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callDictId callDictFuzzProfile 500 ]
 
 initialize registerSuite suite
 

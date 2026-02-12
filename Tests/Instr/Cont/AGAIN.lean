@@ -184,6 +184,25 @@ private def againSetGasExact : Int :=
 private def againSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne againInstr
 
+private def againFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/no-tail/",
+      "ok/tail-",
+      "err/underflow/",
+      "err/type/",
+      "gas/"
+    ]
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      3, 3, 3,
+      2,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := againId
   unit := #[
@@ -384,7 +403,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[kCont]
       #[.pushInt (.num againSetGasExactMinusOne), .tonEnvOp .setGasLimit, againInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec againId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile againId againFuzzProfile 500 ]
 
 initialize registerSuite suite
 

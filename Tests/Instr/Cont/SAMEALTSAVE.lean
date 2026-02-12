@@ -309,6 +309,28 @@ private def oracleCases : Array OracleCase := #[
     #[.pushInt (.num sameAltSaveGasExactMinusOne), .tonEnvOp .setGasLimit, sameAltSaveInstr]
 ]
 
+private def sameAltSaveOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/c0-from-c1/",
+    "ok/nargs",
+    "err/nargs",
+    "ok/captured/",
+    "err/captured/",
+    "ok/control/",
+    "err/control/",
+    "ok/decode/",
+    "err/decode/",
+    "gas/"
+  ]
+
+private def sameAltSaveFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := sameAltSaveOracleFamilies
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 1, 1, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := sameAltSaveId
   unit := #[
@@ -399,7 +421,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec sameAltSaveId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile sameAltSaveId sameAltSaveFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -155,6 +155,22 @@ private def progSetC0Quit1 (body : Array Instr := #[]) : Array Instr :=
 private def progSetC0Nargs (n : Int) (body : Array Instr := #[]) : Array Instr :=
   #[.pushCtr 1, .pushInt (.num n), .setNumVarArgs, .popCtr 0, repeatEndBrkInstr] ++ body
 
+private def repeatEndBrkOracleFamilies : Array String :=
+  #[
+    "ret/",
+    "repeat/",
+    "err/underflow-",
+    "err/type-top-",
+    "err/range-"
+  ]
+
+private def repeatEndBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := repeatEndBrkOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := repeatEndBrkId
   unit := #[
@@ -397,7 +413,7 @@ def suite : InstrSuite where
     mkCase "err/range-too-large" #[intV int32TooLarge],
     mkCase "err/range-too-small" #[intV int32TooSmall]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec repeatEndBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile repeatEndBrkId repeatEndBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

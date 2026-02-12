@@ -299,6 +299,33 @@ private def mkCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private def ifrefElseOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "ok/branchadd/",
+    "ok/two-ifrefelse-noop/",
+    "ok/observe-tail/",
+    "err/underflow/",
+    "err/type/",
+    "err/intov/",
+    "err/decode/",
+    "err/branchadd/"
+  ]
+
+private def ifrefElseFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifrefElseOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifrefElseId
   unit := #[
@@ -531,7 +558,7 @@ def suite : InstrSuite where
       (withCond #[] 1)
       codeObserveTail
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifrefElseId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifrefElseId ifrefElseFuzzProfile 500 ]
 
 initialize registerSuite suite
 

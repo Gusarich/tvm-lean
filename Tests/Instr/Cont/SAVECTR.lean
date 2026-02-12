@@ -156,6 +156,26 @@ private def progSave (idx : Nat) (tail : Array Instr := #[]) : Array Instr :=
 private def progSave2 (idx1 idx2 : Nat) (tail : Array Instr := #[]) : Array Instr :=
   #[saveCtrInstr idx1, saveCtrInstr idx2] ++ tail
 
+private def saveCtrOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/flow/",
+    "ok/program/",
+    "ok/redefine/",
+    "ok/stack-preserved/",
+    "ok/raw/",
+    "err/redefine/",
+    "err/order/",
+    "err/raw/"
+  ]
+
+private def saveCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := saveCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success matrix over all decoded indices.
   mkCase "ok/basic/idx0-empty" #[] (progSave 0),
@@ -360,7 +380,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec saveCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile saveCtrId saveCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

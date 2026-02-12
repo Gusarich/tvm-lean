@@ -3,10 +3,12 @@
 ## Stats
 - Completed: 98/98
 - Running: 0
-- Bugs reported: 60 (good: 59, bad: 0, pending: 1)
-- Fuzz coverage: 98/98 continuation suites configured
+- Bugs reported: 61 (good: 60, bad: 0, pending: 1)
+- Fuzz coverage: 98/98 continuation suites configured with instruction-specific fuzz generators (93 `mkContMutationFuzzSpecWithProfile` + 5 explicit per-instr generators)
 - Fuzz target: 500 cases per continuation suite (49,000 total)
-- Fuzz validation: 98/98 pass (`.lake/build/bin/tvm-lean-tests -- --fuzz-only --filter <instr>`)
+- Replay-era validation (before custom mutator rollout): 98/98 pass (`audit/continuation-ops/fuzz_validation_20260212_095402.log`)
+- Custom-mutator validation (post-RUNVM fix): 98/98 pass (`audit/continuation-ops/fuzz_validation_custom_20260212_123542_post_runvm_fix.log`)
+- Fuzz config check: 98/98 continuation suites declare exactly 500 fuzz cases; 0 replay fuzz specs remain in `Tests/Instr/Cont`
 
 ## Instances
 
@@ -106,7 +108,7 @@
 | A092 | SAVECTR | done | matched C++ after idx canonicalization + invalid-index typeChk mapping parity; 46 oracle |
 | A093 | SAVEALTCTR | done | matched C++ after invalid-index typeChk mapping parity; 46 oracle |
 | A094 | SAVEBOTHCTR | done | matched C++ after duplicate-define no-op parity in c0/c1 savelists; 42 oracle |
-| A095 | RUNVM | done | matched C++ after immediate canonicalization, restore-parent state parity, and invalid-opcode gas-bit parity fixes; 50 oracle |
+| A095 | RUNVM | done | matched C++ after immediate canonicalization, restore-parent state parity, invalid-opcode gas-bit parity fixes, and OOG return-code inversion parity; 50 oracle |
 | A096 | POPCTR | done | matched C++ after `set`-failure→`typeChk` mapping parity; 53 oracle |
 | A097 | CALLXARGS | done | matched C++; 55 oracle |
 | A098 | CALLXARGS_1 | done | matched C++; 47 oracle |
@@ -174,3 +176,5 @@
 | B057 | `RUNVM` restore-parent path missed C++ propagation of child `libraries`/`chksgnCounter`/`loadedCells` | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
 | B058 | `RUNVM` child invalid-opcode gas-bit charging diverged from C++ dummy-dispatch behavior | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean` |
 | B059 | `CONDSELCHK` custom fuzz emitted oracle-unsupported stack tokens (non-full slices / non-empty tuples / non-`quit(0)` continuations) | fixed | `Tests/Instr/Cont/CONDSELCHK.lean` |
+| B060 | `ADD` missed C++ underflow-first precedence (`check_underflow(2)` before typed pops), causing `CALLREF` custom-mutator mismatches (`lean=7`, `oracle=2`) on depth-1 non-int add bodies | fixed | `TvmLean/Semantics/Exec/Arith/Add.lean`; validated by `CALLREF` fuzz rerun |
+| B061 | `RUNVM` custom-mutator fuzz reveals Lean/oracle stack divergence on mutated `mode8/return-gas` seed (OOG return-code inversion) | fixed | `TvmLean/Semantics/Exec/Flow/Runvm.lean`; full continuation fuzz sweep now passes 98/98 (`audit/continuation-ops/fuzz_validation_custom_20260212_123542_post_runvm_fix.log`) |

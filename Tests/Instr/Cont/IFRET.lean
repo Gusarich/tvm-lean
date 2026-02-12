@@ -143,6 +143,23 @@ private def ifretSetGasExact : Int :=
 private def ifretSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifretInstr
 
+private def ifretOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "err/underflow/",
+    "err/type/",
+    "err/intov/",
+    "gas/"
+  ]
+
+private def ifretFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifretOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifretId
   unit := #[
@@ -348,7 +365,7 @@ def suite : InstrSuite where
     mkIfretCase "gas/exact-minus-one-false-out-of-gas" (withBool #[] (.num 0))
       #[.pushInt (.num ifretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifretInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifretId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifretId ifretFuzzProfile 500 ]
 
 initialize registerSuite suite
 

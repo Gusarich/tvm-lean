@@ -163,6 +163,25 @@ private def whileEndBrkGasExact : Int :=
 private def whileEndBrkGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne whileEndBrkInstr
 
+private def whileEndBrkOracleFamilies : Array String :=
+  #[
+    "ok/direct/no-tail/",
+    "ok/direct/tail-skipped/",
+    "ok/ctr",
+    "ok/cond-has-c0/",
+    "err/underflow-",
+    "err/type-",
+    "err/pop-order-",
+    "gas/"
+  ]
+
+private def whileEndBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := whileEndBrkOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -469,7 +488,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[q0] #[whileEndBrkInstr]
       (oracleGasLimitsExact whileEndBrkGasExactMinusOne)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec whileEndBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile whileEndBrkId whileEndBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

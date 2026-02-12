@@ -222,6 +222,36 @@ private def genCondSelChkFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     let (noise, rng3) := pickNoise rng2
     (mkCondSelChkCase s!"fuzz/type/{mp.tag}/deep-mismatch" (mkCondSelChkInput boolFalse mp.x mp.y #[noise]), rng3)
 
+private def condSelChkOracleFamilies : Array String :=
+  #[
+    "ok/int/",
+    "ok/cell/",
+    "ok/slice/",
+    "ok/builder/",
+    "ok/tuple/",
+    "ok/cont/",
+    "ok/null/",
+    "ok/deep/",
+    "type/mismatch/",
+    "type/order/",
+    "underflow/",
+    "bool/type/",
+    "gas/"
+  ]
+
+private def condSelChkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := condSelChkOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := condSelChkId
   unit := #[
@@ -352,7 +382,7 @@ def suite : InstrSuite where
       (mkCondSelChkInput boolTrue intX intY)
       #[.pushInt (.num condSelChkSetGasExactMinusOne), .tonEnvOp .setGasLimit, condSelChkInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec condSelChkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile condSelChkId condSelChkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -194,6 +194,24 @@ private def progBlessArgsCallxVarArgs (copy : Nat) (more params retVals : Int) :
 private def progBlessArgsJmpxVarArgs (copy : Nat) (more params : Int) : Array Instr :=
   #[.blessArgs copy more, .pushInt (.num params), .jmpxVarArgs]
 
+private def blessArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "order/program-",
+      "err/underflow-",
+      "err/type-",
+      "err/order-",
+      "ok/decode/",
+      "err/decode/",
+      "ok/interaction/",
+      "err/interaction/"
+    ]
+    -- Bias toward argument-shape, underflow/order, and boundary/range-adjacent stress.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success boundaries for copy/more and stack splitting.
   mkCase "ok/basic/c0-more-neg1-empty" #[.slice sliceA] 0 (-1),
@@ -343,7 +361,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec blessArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile blessArgsId blessArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

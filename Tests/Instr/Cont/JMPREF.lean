@@ -216,6 +216,31 @@ private def mkCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private def jmprefOracleFamilies : Array String :=
+  #[
+    "jump/observable/",
+    "jump/no-tail/",
+    "jump/target-add/",
+    "special/cellund/",
+    "decode/missing-ref/",
+    "decode/missing-ref-with-tail/",
+    "decode/truncated-",
+    "decode/empty-code"
+  ]
+
+private def jmprefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmprefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := jmprefId
   unit := #[
@@ -409,7 +434,7 @@ def suite : InstrSuite where
     mkCase "decode/truncated-15bit-prefix" #[intV 0] truncated15Code,
     mkCase "decode/empty-code" #[intV 0] emptyCode
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec jmprefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile jmprefId jmprefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

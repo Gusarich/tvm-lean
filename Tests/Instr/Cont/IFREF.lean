@@ -195,6 +195,31 @@ private def runIfrefLean (code : Cell) (initStack : Array Value) (fuel : Nat := 
   let st0 : VmState := { (VmState.initial code) with stack := initStack }
   VmState.run nativeHost fuel st0
 
+private def ifrefOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "ok/call-tail/",
+    "ok/branch/",
+    "err/underflow/",
+    "err/type/",
+    "err/decode/",
+    "err/branch/"
+  ]
+
+private def ifrefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifrefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def expectExit (label : String) (expectedExit : Int) (res : StepResult) : IO VmState := do
   match res with
   | .halt exitCode st =>
@@ -419,7 +444,7 @@ def suite : InstrSuite where
     mkIfrefOracleCase "err/branch/true-body-add-underflow" #[intV 1] bodyAdd #[.pushInt (.num 9)],
     mkIfrefOracleCase "ok/branch/false-skips-body-add" #[intV 0] bodyAdd #[.pushInt (.num 9)]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifrefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifrefId ifrefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

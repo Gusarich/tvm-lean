@@ -210,6 +210,26 @@ private def progSetContArgsCallxArgs
 private def depth15 : Array Value := intStackAsc 15
 private def depth16 : Array Value := intStackAsc 16
 
+private def callxArgs1FuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/pass",
+      "order/",
+      "err/underflow/",
+      "err/type/",
+      "err/order/",
+      "ok/nargs/",
+      "err/nargs/",
+      "ok/captured/",
+      "err/captured/",
+      "ok/decode/",
+      "err/decode/"
+    ]
+    -- Bias toward pass-arg shaping, ordering checks, and delegated jump/decode boundaries.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Pass-arg shaping for CALLXARGS p,-1.
   mkCallCase "ok/pass0/empty" 0 #[],
@@ -393,7 +413,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callxArgs1Id 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callxArgs1Id callxArgs1FuzzProfile 500 ]
 
 initialize registerSuite suite
 

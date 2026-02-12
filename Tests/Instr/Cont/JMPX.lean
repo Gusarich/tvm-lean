@@ -182,6 +182,33 @@ private def jmpxGasExact : Int :=
 private def jmpxGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne jmpxInstr
 
+private def jmpxOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/deep/",
+    "order/tail/",
+    "order/prelude/",
+    "err/underflow/",
+    "err/type/",
+    "decode/truncated7/",
+    "decode/truncated1/",
+    "decode/empty-code/",
+    "gas/"
+  ]
+
+private def jmpxFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmpxOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success: unconditional jump (`JMPX`) with oracle-supported continuation token `K=quit(0)`.
   mkJumpCase "ok/basic/empty-below" #[],
@@ -396,7 +423,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec jmpxId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpxId jmpxFuzzProfile 500 ]
 
 initialize registerSuite suite
 

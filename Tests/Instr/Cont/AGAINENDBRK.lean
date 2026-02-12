@@ -172,6 +172,26 @@ private def noiseA : Array Value :=
 private def noiseB : Array Value :=
   #[.slice fullSliceB, .builder Builder.empty, .tuple #[]]
 
+private def againEndBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/brk/retalt/",
+      "ok/brk/ret/",
+      "ok/brk/push-retalt/",
+      "ok/brk/push-ret/",
+      "ok/brk/add-retalt/",
+      "ok/brk/add-ret/",
+      "ok/brk/setc0fromc1-implicitret/",
+      "ok/brk/setc0fromc1-ret/",
+      "err/brk/body-add-underflow",
+      "err/brk/body-add-type",
+      "err/brk/body-popctr-underflow",
+      "err/brk/body-popctr-type"
+    ]
+    mutationModes := #[0, 0, 0, 1, 1, 1, 4, 4, 4, 2, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := againEndBrkId
   unit := #[
@@ -338,7 +358,7 @@ def suite : InstrSuite where
     mkCase "err/brk/body-popctr-type" #[.null] progPopCtr0,
     mkCase "err/brk/body-popctr-type-deep" #[.slice fullSliceB, intV 3] progPopCtr0
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec againEndBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile againEndBrkId againEndBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -112,6 +112,32 @@ private def ifbitjmpSetGasExact : Int :=
 private def ifbitjmpSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne (ifbitjmpInstr 0)
 
+private def ifbitjmpOracleFamilies : Array String :=
+  #[
+    "branch/taken/",
+    "branch/not-taken/",
+    "ok/no-tail/",
+    "underflow/",
+    "type/popcont/",
+    "error-order/",
+    "type/popint/",
+    "intov/popint/",
+    "gas/"
+  ]
+
+private def ifbitjmpFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifbitjmpOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifbitjmpId
   unit := #[
@@ -366,7 +392,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" 0 (mkIfbitStack #[] 1)
       #[.pushInt (.num ifbitjmpSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifbitjmpInstr 0]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifbitjmpId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifbitjmpId ifbitjmpFuzzProfile 500 ]
 
 initialize registerSuite suite
 

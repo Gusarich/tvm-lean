@@ -213,6 +213,24 @@ private def preC1Slot0Q9 : Continuation :=
 private def preC0Slot7Keep : Continuation :=
   .envelope q0 ({ OrdCregs.empty with c7 := some tupleKeepA }) OrdCdata.empty
 
+private def saveBothCtrOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/noise/",
+    "ok/flow/",
+    "ok/duplicate/",
+    "err/order/",
+    "ok/raw/",
+    "err/raw/"
+  ]
+
+private def saveBothCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := saveBothCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success matrix across all legal indices.
   mkCase "ok/basic/idx0-empty" #[] (progSaveBoth 0),
@@ -374,7 +392,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec saveBothCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile saveBothCtrId saveBothCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

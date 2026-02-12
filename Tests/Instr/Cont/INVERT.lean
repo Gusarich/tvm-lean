@@ -196,6 +196,23 @@ private def progInvertThenBoolAnd : Array Instr :=
 private def progInvertThenPop : Array Instr :=
   #[invertInstr, .pop 0]
 
+private def invertOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/program/",
+    "ok/observe/",
+    "err/tail/",
+    "ok/decode/",
+    "err/decode/"
+  ]
+
+private def invertFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := invertOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Basic success: stack must be untouched.
   mkCase "ok/basic/empty-stack" #[],
@@ -329,7 +346,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec invertId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile invertId invertFuzzProfile 500 ]
 
 initialize registerSuite suite
 

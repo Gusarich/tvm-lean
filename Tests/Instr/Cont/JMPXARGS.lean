@@ -165,6 +165,37 @@ private def progCaptureThenJmp (copy : Nat) (more : Int) (params : Nat) (tail : 
 private def depth15 : Array Value := intStackAsc 15
 private def depth16 : Array Value := intStackAsc 16
 
+private def jmpxArgsOracleFamilies : Array String :=
+  #[
+    "ok/pass",
+    "order/tail-skipped/",
+    "order/prelude/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "ok/nargs",
+    "err/nargs",
+    "ok/captured/",
+    "err/captured/",
+    "ok/decode/",
+    "err/decode/",
+    "gas/"
+  ]
+
+private def jmpxArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmpxArgsOracleFamilies
+    -- Bias toward pass-arg shaping, jump-order checks, and jump-time nargs/captured/decode paths.
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def jmpxArgsGasExact : Int :=
   computeExactGasBudget (jmpxArgsInstr 0)
 
@@ -335,7 +366,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec jmpxArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpxArgsId jmpxArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

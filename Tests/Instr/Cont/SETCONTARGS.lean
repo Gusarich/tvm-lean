@@ -158,6 +158,27 @@ private def progSetNumThenSetCont (nargs : Int) (copy : Nat) (more : Int) (tail 
 private def progDoubleCaptureAppend : Array Instr :=
   #[.pushCtr 0, .setContArgs 1 (-1), .setContArgs 1 (-1), .jmpx]
 
+private def setContArgsOracleFamilies : Array String :=
+  #[
+    "ok/direct/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "ok/jump/",
+    "err/jump/",
+    "err/stkov/",
+    "ok/order/",
+    "ok/decode/",
+    "err/decode/"
+  ]
+
+private def setContArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setContArgsOracleFamilies
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success paths and immediate bounds.
   mkCase "ok/direct/copy0-more-neg1-keep-quit-empty" #[q0] 0 (-1),
@@ -334,7 +355,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setContArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile setContArgsId setContArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -143,6 +143,30 @@ private def composBothTruncated8Code : Cell :=
 private def composBothTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xedf2 >>> 1) 15) #[]
 
+private def composBothOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/program/",
+    "ok/decode/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "err/decode/"
+  ]
+
+private def composBothFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := composBothOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := composBothId
   unit := #[
@@ -369,7 +393,7 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8bit-prefix" #[] composBothTruncated8Code,
     mkCaseCode "err/decode/truncated-15bit-prefix" #[q0] composBothTruncated15Code
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec composBothId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile composBothId composBothFuzzProfile 500 ]
 
 initialize registerSuite suite
 

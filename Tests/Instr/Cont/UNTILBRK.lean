@@ -158,6 +158,28 @@ private def noiseB : Array Value :=
 private def noiseLong : Array Value :=
   #[intV 1, .null, intV (-1), .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
 
+private def untilBrkOracleFamilies : Array String :=
+  #[
+    "ok/direct/tail-skipped/",
+    "ok/direct/no-tail/",
+    "err/underflow/",
+    "err/type/",
+    "gas/"
+  ]
+
+private def untilBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := untilBrkOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      3, 3, 3,
+      2,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := untilBrkId
   unit := #[
@@ -409,7 +431,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[q0]
       #[.pushInt (.num untilBrkSetGasExactMinusOne), .tonEnvOp .setGasLimit, untilBrkInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec untilBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile untilBrkId untilBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

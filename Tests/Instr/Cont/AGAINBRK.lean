@@ -180,6 +180,22 @@ private def againBrkSetGasExact : Int :=
 private def againBrkSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne againBrkInstr
 
+private def againBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/no-tail/",
+      "ok/tail-push-skipped/",
+      "ok/tail-add-skipped/",
+      "ok/tail-retalt-skipped/",
+      "err/underflow/",
+      "err/type/",
+      "gas/"
+    ]
+    -- Bias toward branch/underflow/order stress while still including all mutation modes.
+    mutationModes := #[0, 0, 0, 2, 2, 2, 3, 3, 1, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := againBrkId
   unit := #[
@@ -427,7 +443,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[kCont]
       #[.pushInt (.num againBrkSetGasExactMinusOne), .tonEnvOp .setGasLimit, againBrkInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec againBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile againBrkId againBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

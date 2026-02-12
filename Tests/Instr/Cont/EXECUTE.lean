@@ -205,6 +205,27 @@ private def gasProgExact : Array Instr :=
 private def gasProgExactMinusOne : Array Instr :=
   #[.pushInt (.num executeSetGasExactMinusOne), .tonEnvOp .setGasLimit, executeInstr]
 
+private def executeFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/control/direct/",
+      "ok/control/skip-tail/",
+      "ok/control/pushctr0/",
+      "ok/control/pushctr1/",
+      "ok/control/pushctr3/",
+      "ok/control/two-exec/",
+      "ok/control/execute-then-truncated/",
+      "ok/decode/",
+      "err/underflow/",
+      "err/type/",
+      "err/decode/",
+      "gas/"
+    ]
+    -- Bias toward control-stack perturbation while preserving coverage of all mutation modes.
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Success and control-flow transfer (`VM.call cont`) with oracle-encodable K=quit(0).
@@ -362,7 +383,7 @@ def suite : InstrSuite where
             s!"err/type-top-cell-over-cont: expected remaining #[K], got {reprStr stTypeDeep.stack}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec executeId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile executeId executeFuzzProfile 500 ]
 
 initialize registerSuite suite
 

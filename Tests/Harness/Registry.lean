@@ -40,11 +40,25 @@ structure OracleCase where
   fuel : Nat := 1_000_000
   deriving Repr
 
+structure ContMutationProfile where
+  /-- Optional case-name prefixes to select branch families from oracle seeds. -/
+  oracleNamePrefixes : Array String := #[]
+  /-- Mutation mode weights. Modes: 0=drop, 1=top-replacement, 2=swap/dup, 3=noise, 4=int-perturb. -/
+  mutationModes : Array Nat := #[0, 1, 2, 3, 4]
+  /-- Inclusive bounds for number of stack-mutation steps. -/
+  minMutations : Nat := 1
+  maxMutations : Nat := 4
+  /-- Include `err/*` seeds when selecting oracle bases. -/
+  includeErrOracleSeeds : Bool := false
+  deriving Repr
+
 structure FuzzSpec where
   seed : UInt64
   count : Nat
   gen : StdGen → OracleCase × StdGen
   replayOracle : Bool := false
+  mutateOracle : Bool := false
+  contProfile : ContMutationProfile := {}
 
 structure InstrSuite where
   id : InstrId
@@ -76,5 +90,29 @@ def mkReplayOracleFuzzSpec (instr : InstrId) (count : Nat := 500) : FuzzSpec :=
     count := count
     gen := fun rng => ({ name := "fuzz/replay/placeholder", instr := instr }, rng)
     replayOracle := true }
+
+/--
+Build a fuzz spec that mutates oracle cases from the same suite.
+Used by continuation suites that need stack-shape mutation instead of replay-only sampling.
+-/
+def mkContMutationFuzzSpec (instr : InstrId) (count : Nat := 500) : FuzzSpec :=
+  { seed := fuzzSeedForInstr instr
+    count := count
+    gen := fun rng => ({ name := "fuzz/mutate/placeholder", instr := instr }, rng)
+    mutateOracle := true }
+
+/--
+Build a mutation fuzz spec with an explicit instruction-local profile.
+Use this for handcrafted continuation generators per instruction.
+-/
+def mkContMutationFuzzSpecWithProfile
+    (instr : InstrId)
+    (profile : ContMutationProfile)
+    (count : Nat := 500) : FuzzSpec :=
+  { seed := fuzzSeedForInstr instr
+    count := count
+    gen := fun rng => ({ name := "fuzz/mutate/placeholder", instr := instr }, rng)
+    mutateOracle := true
+    contProfile := profile }
 
 end Tests

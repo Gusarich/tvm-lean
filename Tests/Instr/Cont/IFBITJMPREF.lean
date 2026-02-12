@@ -181,6 +181,30 @@ private def expectDecodeStep
       else
         pure s'
 
+private def ifbitjmprefOracleFamilies : Array String :=
+  #[
+    "branch/taken/",
+    "branch/not-taken/",
+    "ok/no-tail/",
+    "underflow/",
+    "type/popint/",
+    "intov/popint/",
+    "invopcode/missing-ref/"
+  ]
+
+private def ifbitjmprefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifbitjmprefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifbitjmprefId
   unit := #[
@@ -414,7 +438,7 @@ def suite : InstrSuite where
     mkMissingRefCase "invopcode/missing-ref/type-vs-ref-order" 1 #[.cell refLeafA],
     mkMissingRefCase "invopcode/missing-ref/tuple-top" 31 #[.tuple #[]]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifbitjmprefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifbitjmprefId ifbitjmprefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

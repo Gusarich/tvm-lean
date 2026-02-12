@@ -50,6 +50,25 @@ private def mkRawCase
 private def progPush (idx : Nat) (tail : Array Instr := #[]) : Array Instr :=
   #[.pushCtr idx] ++ tail
 
+private def pushCtrOracleFamilies : Array String :=
+  #[
+    "ok/decode/",
+    "ok/edge/",
+    "ok/raw-opcode/",
+    "err/type/",
+    "err/order/",
+    "err/edge/",
+    "err/underflow/",
+    "err/raw-opcode/"
+  ]
+
+private def pushCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := pushCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := pushCtrId
   unit := #[]
@@ -102,7 +121,7 @@ def suite : InstrSuite where
     mkCase "err/underflow/after-roundtrip-add-one-int" #[intV 1] (progPush 0 #[.popCtr 0, .add]),
     mkCase "ok/edge/after-roundtrip-add-two-ints" #[intV 2, intV 3] (progPush 0 #[.popCtr 0, .add])
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec pushCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile pushCtrId pushCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -162,6 +162,28 @@ private def expectDecodeSaveAltCtr
   | .error e =>
       throw (IO.userError s!"{label}: expected successful decode, got {e}")
 
+private def saveAltCtrOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/noise/",
+    "ok/flow/",
+    "ok/redefine/",
+    "ok/probe/",
+    "ok/raw/",
+    "err/flow/",
+    "err/redefine/",
+    "err/order/",
+    "err/probe/",
+    "err/raw/"
+  ]
+
+private def saveAltCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := saveAltCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success across all valid indices.
   mkCase "ok/basic/idx0-empty" #[] (progSaveAlt 0),
@@ -366,7 +388,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec saveAltCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile saveAltCtrId saveAltCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

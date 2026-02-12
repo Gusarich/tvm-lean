@@ -241,6 +241,26 @@ private def thenRetAltGasExact : Int :=
 private def thenRetAltGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne thenRetAltInstr
 
+private def thenRetAltOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/program/",
+    "ok/control/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "ok/decode/",
+    "err/decode/",
+    "gas/"
+  ]
+
+private def thenRetAltFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := thenRetAltOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   mkCase "ok/basic/q0-only" #[q0V],
   mkCase "ok/basic/q0-over-int" #[intV 1, q0V],
@@ -372,7 +392,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec thenRetAltId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile thenRetAltId thenRetAltFuzzProfile 500 ]
 
 initialize registerSuite suite
 

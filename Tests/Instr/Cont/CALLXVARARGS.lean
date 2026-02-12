@@ -37,6 +37,23 @@ private def progSetContVarCallxVarArgs (copy more params retVals : Int) : Array 
   #[.pushCtr 0, .pushInt (.num copy), .pushInt (.num more), .setContVarArgs,
     .pushInt (.num params), .pushInt (.num retVals), callxVarArgsInstr]
 
+private def callxVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/call/",
+      "err/underflow/",
+      "err/bounds/",
+      "err/call/",
+      "err/order/",
+      "err/type/",
+      "err/rangemap/"
+    ]
+    -- Bias toward argument/order perturbations while still covering all mutation families.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := callxVarArgsId
   unit := #[]
@@ -170,7 +187,7 @@ def suite : InstrSuite where
       #[intV 10, intV 11]
       (progSetContVarCallxVarArgs 1 (-1) (-1) 0)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec callxVarArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callxVarArgsId callxVarArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

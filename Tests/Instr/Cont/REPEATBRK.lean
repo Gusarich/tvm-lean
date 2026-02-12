@@ -222,6 +222,30 @@ private def repeatBrkSetGasExactMinusOne : Int :=
 private def progSetC0Quit1 (loopInstr : Instr) (body : Array Instr := #[]) : Array Instr :=
   #[.pushCtr 1, .popCtr 0, loopInstr] ++ body
 
+private def repeatBrkOracleFamilies : Array String :=
+  #[
+    "ok/nonpositive/",
+    "ok/positive/",
+    "err/underflow/",
+    "err/type/",
+    "err/range/",
+    "raw/",
+    "gas/"
+  ]
+
+private def repeatBrkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := repeatBrkOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := repeatBrkId
   unit := #[
@@ -552,7 +576,7 @@ def suite : InstrSuite where
     mkRepeatBrkCase "gas/exact-minus-one-zero-out-of-gas" (withRepeatArgs #[] (.num 0))
       #[.pushInt (.num repeatBrkSetGasExactMinusOne), .tonEnvOp .setGasLimit, repeatBrkInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec repeatBrkId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile repeatBrkId repeatBrkFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -125,6 +125,30 @@ private def runIfnbitjmprefRaw
 private def jumpTarget (code : Slice) : Continuation :=
   .ordinary code (.quit 0) OrdCregs.empty OrdCdata.empty
 
+private def ifnbitjmprefOracleFamilies : Array String :=
+  #[
+    "branch/taken/",
+    "branch/not-taken/",
+    "ok/no-tail/",
+    "target/push7/",
+    "target/push9/",
+    "underflow/",
+    "type/"
+  ]
+
+private def ifnbitjmprefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifnbitjmprefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifnbitjmprefId
   unit := #[
@@ -348,7 +372,7 @@ def suite : InstrSuite where
     mkCase "type/pop-removes-top-null-with-below" 0 #[intV 9, .null],
     mkCase "type/pop-removes-top-cell-with-below" 0 #[intV 9, .cell refCellA]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnbitjmprefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifnbitjmprefId ifnbitjmprefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

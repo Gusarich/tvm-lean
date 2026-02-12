@@ -173,6 +173,30 @@ private def repeatSetGasExact : Int :=
 private def repeatSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne repeatInstr
 
+private def repeatOracleFamilies : Array String :=
+  #[
+    "ok/nonpositive/",
+    "ok/positive/",
+    "err/underflow/",
+    "err/type/top-",
+    "err/type/count-",
+    "err/type/order-",
+    "err/range/",
+    "raw/loop/",
+    "raw/type/",
+    "raw/range/",
+    "raw/underflow/",
+    "gas/"
+  ]
+
+private def repeatFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := repeatOracleFamilies
+    -- Bias toward stack-shape and count perturbations while exercising all mutation modes.
+    mutationModes := #[0, 0, 0, 1, 1, 1, 4, 4, 4, 2, 2, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := repeatId
   unit := #[
@@ -415,7 +439,7 @@ def suite : InstrSuite where
     mkRepeatCase "gas/exact-minus-one-zero-out-of-gas" (withRepeatArgs #[] (.num 0))
       #[.pushInt (.num repeatSetGasExactMinusOne), .tonEnvOp .setGasLimit, repeatInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec repeatId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile repeatId repeatFuzzProfile 500 ]
 
 initialize registerSuite suite
 

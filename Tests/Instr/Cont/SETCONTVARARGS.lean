@@ -48,6 +48,27 @@ private def progDoubleCaptureAppend : Array Instr :=
     .pushInt (.num 1), .pushInt (.num (-1)), setContVarArgsInstr,
     .jmpx]
 
+private def setContVarArgsOracleFamilies : Array String :=
+  #[
+    "ok/direct/",
+    "err/underflow/",
+    "err/range/",
+    "err/type/",
+    "err/order/",
+    "err/rangemap/",
+    "ok/jump/",
+    "err/jump/",
+    "err/stkov/",
+    "ok/order/"
+  ]
+
+private def setContVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setContVarArgsOracleFamilies
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := setContVarArgsId
   unit := #[]
@@ -182,7 +203,7 @@ def suite : InstrSuite where
       #[q0, intV 0, intV (-1)]
       (progSetThenJmp #[.pushInt (.num 999)])
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec setContVarArgsId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile setContVarArgsId setContVarArgsFuzzProfile 500 ]
 
 initialize registerSuite suite
 

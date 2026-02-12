@@ -301,6 +301,28 @@ private def mkTwoPushRefContCallccCase
     (fuel : Nat := 1_000_000) : OracleCase :=
   mkCase name stack (mkTwoPushRefContCallccCode targetA targetB tail) fuel
 
+private def callccFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/direct/program/",
+      "err/direct/program/",
+      "ok/ref/",
+      "err/ref/",
+      "ok/setcontargs/",
+      "err/setcontargs/",
+      "err/decode/",
+      "ok/dispatch/"
+    ]
+    mutationModes := #[
+      0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Direct CALLCC from assembled program.
   mkProgramCase "ok/direct/program/basic-empty-below" #[q0] #[.callcc],
@@ -452,7 +474,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"raw/jump-captured: expected cc=capturedCont, got {reprStr st.cc}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callccId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile callccId callccFuzzProfile 500 ]
 
 initialize registerSuite suite
 

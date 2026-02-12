@@ -281,6 +281,31 @@ private def mkPrefixedIfrefElseRefCase
     (fuel : Nat := 1_000_000) : OracleCase :=
   mkCase name stack (mkPrefixedIfrefElseRefCodeCell pre t f tail) gasLimits fuel
 
+private def ifrefElseRefOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "ok/call-tail/",
+    "ok/branch/",
+    "err/popbool/",
+    "err/special/",
+    "err/decode/",
+    "err/branch/"
+  ]
+
+private def ifrefElseRefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifrefElseRefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifrefElseRefId
   unit := #[
@@ -554,7 +579,7 @@ def suite : InstrSuite where
     mkCase "err/branch/false-selected-add-underflow" #[intV 0] codeFalseAddTail,
     mkCase "ok/branch/true-skips-false-add" #[intV 1] codeFalseAddTail
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifrefElseRefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifrefElseRefId ifrefElseRefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

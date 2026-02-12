@@ -244,6 +244,31 @@ private def atExitGasExact : Int :=
 private def atExitGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne atExitInstr
 
+private def atExitFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/observe-c0/",
+      "ok/control/",
+      "err/control/",
+      "err/underflow/",
+      "err/type/",
+      "err/order/",
+      "ok/decode/",
+      "err/decode/",
+      "gas/"
+    ]
+    -- Bias toward continuation-composition perturbations around the popped top item.
+    mutationModes := #[
+      0, 0, 0,
+      1, 1, 1, 1,
+      2, 2, 2, 2,
+      3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   mkCase "ok/basic/q0-only" #[q0V],
   mkCase "ok/basic/q0-over-int" #[intV 1, q0V],
@@ -357,7 +382,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec atExitId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile atExitId atExitFuzzProfile 500 ]
 
 initialize registerSuite suite
 

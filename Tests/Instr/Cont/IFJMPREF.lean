@@ -149,6 +149,29 @@ private def regsEq (x y : Regs) : Bool :=
   x.c0 == y.c0 && x.c1 == y.c1 && x.c2 == y.c2 && x.c3 == y.c3 &&
   x.c4 == y.c4 && x.c5 == y.c5 && x.c7 == y.c7
 
+private def ifjmprefOracleFamilies : Array String :=
+  #[
+    "taken/",
+    "not-taken/",
+    "underflow/",
+    "type/",
+    "intov/",
+    "decode/"
+  ]
+
+private def ifjmprefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifjmprefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := ifjmprefId
   unit := #[
@@ -341,7 +364,7 @@ def suite : InstrSuite where
     mkCase "decode/one-byte-prefix" #[] oneBytePrefixCode,
     mkCase "decode/empty-code" #[intV 1] emptyCode
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifjmprefId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifjmprefId ifjmprefFuzzProfile 500 ]
 
 initialize registerSuite suite
 

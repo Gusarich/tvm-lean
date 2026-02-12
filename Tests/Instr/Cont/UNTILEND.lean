@@ -186,6 +186,24 @@ private def noiseB : Array Value :=
 private def noiseLong : Array Value :=
   #[intV 1, .null, intV (-1), .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
 
+private def untilEndOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/body/",
+    "ok/after/",
+    "err/body-",
+    "err/after/",
+    "brk/ok/",
+    "brk/err/"
+  ]
+
+private def untilEndFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := untilEndOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := untilEndId
   unit := #[
@@ -389,7 +407,7 @@ def suite : InstrSuite where
     mkCase "brk/err/body-null-type" #[] (progBodyNull untilEndBrkInstr),
     mkCase "brk/err/body-nan-intov" #[] (progBodyNaN untilEndBrkInstr)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec untilEndId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile untilEndId untilEndFuzzProfile 500 ]
 
 initialize registerSuite suite
 

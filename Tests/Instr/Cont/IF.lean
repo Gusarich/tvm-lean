@@ -105,6 +105,24 @@ private def ifSetGasExact : Int :=
 private def ifSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifInstr
 
+private def ifOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "err/underflow/",
+    "err/type/",
+    "err/intov/",
+    "gas/"
+  ]
+
+private def ifFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifOracleFamilies
+    -- Bias toward stack-shape perturbations while still exercising all mutation modes.
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def preboundC0Cont : Continuation :=
   .ordinary (Slice.ofCell Cell.empty) (.quit 0)
     { OrdCregs.empty with c0 := some (.quit 23) }
@@ -248,7 +266,7 @@ def suite : InstrSuite where
     mkCase "gas/exact-true-succeeds" (withIfArgs #[] (.num 1))
       #[.pushInt (.num ifSetGasExact), .tonEnvOp .setGasLimit, ifInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifId ifFuzzProfile 500 ]
 
 initialize registerSuite suite
 

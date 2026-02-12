@@ -168,6 +168,27 @@ private def expectDecodePopSave
   | .error e =>
       throw (IO.userError s!"{label}: expected successful decode, got {e}")
 
+private def popSaveOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/noise/",
+    "ok/program/",
+    "ok/duplicate-save/",
+    "ok/raw/",
+    "gas/",
+    "err/underflow/",
+    "err/type/",
+    "err/raw/",
+    "err/decode/"
+  ]
+
+private def popSaveFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := popSaveOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Baseline valid updates.
   mkCase "ok/basic/idx0-cont-q0" #[q0V] #[popSaveInstr 0],
@@ -323,7 +344,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec popSaveId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile popSaveId popSaveFuzzProfile 500 ]
 
 initialize registerSuite suite
 

@@ -127,6 +127,26 @@ private def progSetRet (idx : Nat) (tail : Array Instr := #[]) : Array Instr :=
 private def progSetRet2 (idx1 idx2 : Nat) (tail : Array Instr := #[]) : Array Instr :=
   #[setRetCtrInstr idx1, setRetCtrInstr idx2] ++ tail
 
+private def setRetCtrOracleFamilies : Array String :=
+  #[
+    "ok/index/",
+    "ok/flow/",
+    "ok/reapply/",
+    "ok/raw/",
+    "err/underflow/",
+    "err/value-type/",
+    "err/redefine/",
+    "err/order/",
+    "err/raw/"
+  ]
+
+private def setRetCtrFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setRetCtrOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def oracleCases : Array OracleCase := #[
   -- Success matrix.
   mkCase "ok/index/idx0-basic" #[q0] (progSetRet 0),
@@ -306,7 +326,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setRetCtrId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile setRetCtrId setRetCtrFuzzProfile 500 ]
 
 initialize registerSuite suite
 

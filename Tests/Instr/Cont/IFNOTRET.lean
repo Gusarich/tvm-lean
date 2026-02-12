@@ -123,6 +123,23 @@ private def ifnotretSetGasExact : Int :=
 private def ifnotretSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifnotretInstr
 
+private def ifnotretOracleFamilies : Array String :=
+  #[
+    "branch/observable/",
+    "ok/no-tail/",
+    "err/underflow/",
+    "err/type/",
+    "err/intov/",
+    "gas/"
+  ]
+
+private def ifnotretFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifnotretOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 private def needOneArgCont : Continuation :=
   .ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty { stack := #[], nargs := 1 }
 
@@ -331,7 +348,7 @@ def suite : InstrSuite where
     mkCase "gas/exact/zero-succeeds" (withCond #[] (.num 0))
       #[.pushInt (.num ifnotretSetGasExact), .tonEnvOp .setGasLimit, ifnotretInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnotretId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile ifnotretId ifnotretFuzzProfile 500 ]
 
 initialize registerSuite suite
 

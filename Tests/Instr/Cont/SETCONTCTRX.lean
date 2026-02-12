@@ -203,6 +203,26 @@ private def oracleCases : Array OracleCase := #[
   mkCase "ok/branch/execute-after-set-c3" (stackFor q0 q0 3) (progSetContCtrX #[.execute])
 ]
 
+private def setContCtrXOracleFamilies : Array String :=
+  #[
+    "ok/index/",
+    "ok/branch/",
+    "ok/raw/",
+    "err/underflow/",
+    "err/index/",
+    "err/cont/",
+    "err/value/",
+    "err/order/",
+    "err/raw/"
+  ]
+
+private def setContCtrXFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setContCtrXOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
 def suite : InstrSuite where
   id := setContCtrXId
   unit := #[
@@ -333,7 +353,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setContCtrXId 500 ]
+  fuzz := #[ mkContMutationFuzzSpecWithProfile setContCtrXId setContCtrXFuzzProfile 500 ]
 
 initialize registerSuite suite
 
