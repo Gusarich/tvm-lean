@@ -112,6 +112,116 @@ private def ifnotretaltSetGasExact : Int :=
 private def ifnotretaltSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifnotretaltInstr
 
+private def fuzzBoolPool : Array Int :=
+  #[0, 1, -1, 2, -2, 255, -255, maxInt257, minInt257]
+
+private def fuzzBelowPool : Array Value :=
+  #[
+    .null,
+    intV 0,
+    intV 7,
+    intV (-9),
+    .cell refLeafA,
+    .cell refLeafB,
+    .builder Builder.empty,
+    .tuple #[],
+    .slice fullSliceA,
+    .slice fullSliceB,
+    q0
+  ]
+
+private def fuzzBadTopNonIntPool : Array Value :=
+  #[.null, .cell refLeafA, .builder Builder.empty, .tuple #[], .slice fullSliceA, q0]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool fuzzBelowPool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfnotretaltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 14
+  let (base, rng2) :=
+    if shape = 0 then
+      (mkIfnotretaltCase "ok/taken/fuzz/zero-empty" #[intV 0], rng1)
+    else if shape = 1 then
+      let (depth, rng3) := randNat rng1 1 4
+      let (below, rng4) := genBelowStack depth rng3
+      (mkIfnotretaltCase s!"ok/taken/fuzz/zero-deep-{depth}" (below ++ #[intV 0]), rng4)
+    else if shape = 2 then
+      let (depth, rng3) := randNat rng1 1 4
+      let (below, rng4) := genBelowStack depth rng3
+      (mkIfnotretaltCase s!"ok/taken/fuzz/tail-skipped-{depth}"
+        (below ++ #[intV 0])
+        #[ifnotretaltInstr, .pushInt (.num 777)],
+        rng4)
+    else if shape = 3 then
+      (mkIfnotretaltCase "ok/not-taken/fuzz/one" #[intV 1], rng1)
+    else if shape = 4 then
+      let (depth, rng3) := randNat rng1 1 4
+      let (below, rng4) := genBelowStack depth rng3
+      let (b, rng5) := pickFromPool fuzzBoolPool rng4
+      let b' := if b = 0 then -1 else b
+      (mkIfnotretaltCase s!"ok/not-taken/fuzz/deep-{depth}" (below ++ #[intV b']), rng5)
+    else if shape = 5 then
+      let (b, rng3) := pickFromPool fuzzBoolPool rng1
+      let b' := if b = 0 then 1 else b
+      (mkIfnotretaltCase s!"ok/not-taken/fuzz/tail-exec-{b'}"
+        #[intV 9, intV b']
+        #[ifnotretaltInstr, .pushInt (.num 777)],
+        rng3)
+    else if shape = 6 then
+      (mkIfnotretaltCase "underflow/fuzz/empty" #[], rng1)
+    else if shape = 7 then
+      let (bad, rng3) := pickFromPool fuzzBadTopNonIntPool rng1
+      (mkIfnotretaltCase "type/fuzz/top-non-int" #[bad], rng3)
+    else if shape = 8 then
+      let (depth, rng3) := randNat rng1 1 4
+      let (below, rng4) := genBelowStack depth rng3
+      let (bad, rng5) := pickFromPool fuzzBadTopNonIntPool rng4
+      (mkIfnotretaltCase s!"type/fuzz/deep-{depth}" (below ++ #[bad]), rng5)
+    else if shape = 9 then
+      (mkIfnotretaltCase "intov/fuzz/nan-via-program"
+        #[]
+        #[.pushInt .nan, ifnotretaltInstr],
+        rng1)
+    else if shape = 10 then
+      let (depth, rng3) := randNat rng1 1 3
+      let (below, rng4) := genBelowStack depth rng3
+      (mkIfnotretaltCase s!"intov/fuzz/nan-with-below-{depth}"
+        below
+        #[.pushInt .nan, ifnotretaltInstr],
+        rng4)
+    else if shape = 11 then
+      (mkIfnotretaltCase "gas/fuzz/exact/taken"
+        #[intV 0]
+        #[.pushInt (.num ifnotretaltSetGasExact), .tonEnvOp .setGasLimit, ifnotretaltInstr],
+        rng1)
+    else if shape = 12 then
+      (mkIfnotretaltCase "gas/fuzz/exact-minus-one/taken"
+        #[intV 0]
+        #[.pushInt (.num ifnotretaltSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretaltInstr],
+        rng1)
+    else if shape = 13 then
+      (mkIfnotretaltCase "gas/fuzz/exact/not-taken"
+        #[intV 1]
+        #[.pushInt (.num ifnotretaltSetGasExact), .tonEnvOp .setGasLimit, ifnotretaltInstr],
+        rng1)
+    else
+      (mkIfnotretaltCase "gas/fuzz/exact-minus-one/not-taken"
+        #[intV 1]
+        #[.pushInt (.num ifnotretaltSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretaltInstr],
+        rng1)
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng3)
+
 def suite : InstrSuite where
   id := ifnotretaltId
   unit := #[
@@ -375,7 +485,11 @@ def suite : InstrSuite where
       #[intV 1]
       #[.pushInt (.num ifnotretaltSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretaltInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnotretaltId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifnotretaltId
+      count := 500
+      gen := genIfnotretaltFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -65,6 +65,10 @@ private def popSaveTruncated15Code : Cell :=
 
 private def popSaveGasProbeInstr : Instr := popSaveInstr 1
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def popSaveGasExact : Int :=
   computeExactGasBudget popSaveGasProbeInstr
 
@@ -167,6 +171,81 @@ private def expectDecodePopSave
         pure ()
   | .error e =>
       throw (IO.userError s!"{label}: expected successful decode, got {e}")
+
+private def popSaveOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/noise/",
+    "ok/program/",
+    "ok/duplicate-save/",
+    "ok/raw/",
+    "gas/",
+    "err/underflow/",
+    "err/type/",
+    "err/raw/",
+    "err/decode/"
+  ]
+
+private def popSaveFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := popSaveOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def fuzzValidIdxPool : Array Nat := #[0, 1, 2, 3, 4, 5, 7]
+
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB]
+
+private def valueForIdx (idx : Nat) : Value :=
+  if idx ≤ 3 then q0V
+  else if idx = 4 then .cell cellA
+  else if idx = 5 then .cell cellB
+  else .tuple #[]
+
+private def badValueForIdx (idx : Nat) : Array Value :=
+  if idx ≤ 3 then #[intV 11, .null, .cell cellA]
+  else if idx = 4 then #[intV 13, .builder Builder.empty, q0V]
+  else if idx = 5 then #[q0V, .tuple #[], .null]
+  else #[intV 14, .cell cellA, q0V, .slice fullSliceA]
+
+private def genPopSaveFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let (idx, rng2) := pickFromPool fuzzValidIdxPool rng1
+  let (noise, rng3) := pickFromPool fuzzNoisePool rng2
+  let okValue := valueForIdx idx
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/idx{idx}" (withTop noise okValue) #[popSaveInstr idx], rng3)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/program/idx{idx}-pushctr" #[okValue] #[popSaveInstr idx, .pushCtr idx], rng3)
+    else if shape = 2 then
+      let (badV, rng4) := pickFromPool (badValueForIdx idx) rng3
+      (mkCase s!"fuzz/err/type/idx{idx}" #[badV] #[popSaveInstr idx], rng4)
+    else if shape = 3 then
+      let (underflowStack, rng4) := pickFromPool #[#[], #[intV 1]] rng3
+      (mkCase "fuzz/err/underflow/entry" underflowStack #[popSaveInstr idx], rng4)
+    else if shape = 4 then
+      let (rawCode, rng4) := pickFromPool
+        #[popSaveCode0, popSaveCode5, popSaveCode7] rng3
+      (mkCaseCode "fuzz/ok/raw" #[okValue] rawCode, rng4)
+    else if shape = 5 then
+      let (rawCode, rng4) := pickFromPool
+        #[popSaveCodeHole6, popSaveCodeUnassigned98, popSaveTruncated8Code, popSaveTruncated15Code] rng3
+      (mkCaseCode "fuzz/err/raw" #[okValue] rawCode, rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/gas/exact-budget"
+        #[q0V]
+        #[.pushInt (.num popSaveGasExact), .tonEnvOp .setGasLimit, popSaveGasProbeInstr], rng3)
+    else if shape = 7 then
+      (mkCase "fuzz/gas/exact-minus-one"
+        #[q0V]
+        #[.pushInt (.num popSaveGasExactMinusOne), .tonEnvOp .setGasLimit, popSaveGasProbeInstr], rng3)
+    else
+      (mkCase "fuzz/ok/duplicate-save"
+        #[okValue, okValue] #[popSaveInstr idx, popSaveInstr idx, .pushCtr idx], rng3)
+  let (tag, rng4) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
 
 private def oracleCases : Array OracleCase := #[
   -- Baseline valid updates.
@@ -323,7 +402,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec popSaveId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr popSaveId
+      count := 500
+      gen := genPopSaveFuzzCase }
+  ]
 
 initialize registerSuite suite
 

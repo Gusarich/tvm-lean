@@ -112,6 +112,127 @@ private def ifbitjmpSetGasExact : Int :=
 private def ifbitjmpSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne (ifbitjmpInstr 0)
 
+private def ifbitjmpTakenPairPool : Array (Nat × Int) :=
+  #[
+    (0, 1),
+    (0, -1),
+    (1, 2),
+    (1, -2),
+    (5, pow2 5),
+    (5, (pow2 5) + 3),
+    (31, pow2 31),
+    (31, -2)
+  ]
+
+private def ifbitjmpNotTakenPairPool : Array (Nat × Int) :=
+  #[
+    (0, 0),
+    (0, 2),
+    (1, 1),
+    (5, pow2 4),
+    (5, 0),
+    (31, (pow2 31) - 1),
+    (31, minInt257)
+  ]
+
+private def ifbitjmpIdxPool : Array Nat :=
+  #[0, 1, 5, 31]
+
+private def ifbitjmpBadTopNonContPool : Array Value :=
+  #[intV 0, .null, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[]]
+
+private def ifbitjmpBadIntNonIntPool : Array Value :=
+  #[.null, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[]]
+
+private def ifbitjmpBelowNoisePool : Array Value :=
+  #[
+    .null,
+    intV 0,
+    intV 7,
+    intV (-9),
+    .cell refCellA,
+    .slice fullSliceA,
+    .slice fullSliceB,
+    .builder Builder.empty,
+    .tuple #[]
+  ]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool ifbitjmpBelowNoisePool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfbitjmpFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 17
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (base, rng4) :=
+    if shape = 0 then
+      let ((idx, x), rng4) := pickFromPool ifbitjmpTakenPairPool rng3
+      (mkCase s!"fuzz/branch/taken/basic/idx{idx}" idx (mkIfbitStack #[] x) (branchProbeProgram idx), rng4)
+    else if shape = 1 then
+      let ((idx, x), rng4) := pickFromPool ifbitjmpTakenPairPool rng3
+      (mkCase s!"fuzz/branch/taken/deep-{depth}/idx{idx}" idx (mkIfbitStack below x) (branchProbeProgram idx), rng4)
+    else if shape = 2 then
+      let ((idx, x), rng4) := pickFromPool ifbitjmpNotTakenPairPool rng3
+      (mkCase s!"fuzz/branch/not-taken/basic/idx{idx}" idx (mkIfbitStack #[] x) (branchProbeProgram idx), rng4)
+    else if shape = 3 then
+      let ((idx, x), rng4) := pickFromPool ifbitjmpNotTakenPairPool rng3
+      (mkCase s!"fuzz/branch/not-taken/deep-{depth}/idx{idx}" idx (mkIfbitStack below x) (branchProbeProgram idx), rng4)
+    else if shape = 4 then
+      let ((idx, x), rng4) := pickFromPool ifbitjmpTakenPairPool rng3
+      (mkCase s!"fuzz/ok/no-tail/taken/deep-{depth}/idx{idx}" idx (mkIfbitStack below x), rng4)
+    else if shape = 5 then
+      let ((idx, x), rng4) := pickFromPool ifbitjmpNotTakenPairPool rng3
+      (mkCase s!"fuzz/ok/no-tail/not-taken/deep-{depth}/idx{idx}" idx (mkIfbitStack below x), rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/underflow/empty" 0 #[], rng3)
+    else if shape = 7 then
+      let ((_, x), rng4) := pickFromPool ifbitjmpTakenPairPool rng3
+      (mkCase "fuzz/underflow/one-int" 0 #[intV x], rng4)
+    else if shape = 8 then
+      (mkCase "fuzz/underflow/one-cont" 0 #[q0], rng3)
+    else if shape = 9 then
+      (mkCase "fuzz/underflow/one-null" 0 #[.null], rng3)
+    else if shape = 10 then
+      let (badTop, rng4) := pickFromPool ifbitjmpBadTopNonContPool rng3
+      let (idx, rng5) := pickFromPool ifbitjmpIdxPool rng4
+      (mkCase s!"fuzz/type/popcont/deep-{depth}/idx{idx}" idx (below ++ #[intV 1, badTop]), rng5)
+    else if shape = 11 then
+      let ((_, x), rng4) := pickFromPool ifbitjmpTakenPairPool rng3
+      (mkCase "fuzz/error-order/popcont-before-popint-type" 0 #[.null, intV x], rng4)
+    else if shape = 12 then
+      let (idx, rng4) := pickFromPool ifbitjmpIdxPool rng3
+      let ((_, x), rng5) := pickFromPool ifbitjmpTakenPairPool rng4
+      (mkCase s!"fuzz/error-order/popcont-before-popint-intov/idx{idx}" idx #[intV x] (popContBeforeNanProgram idx), rng5)
+    else if shape = 13 then
+      let (idx, rng4) := pickFromPool ifbitjmpIdxPool rng3
+      let (badInt, rng5) := pickFromPool ifbitjmpBadIntNonIntPool rng4
+      (mkCase s!"fuzz/type/popint/deep-{depth}/idx{idx}" idx (below ++ #[badInt, q0]), rng5)
+    else if shape = 14 then
+      let (idx, rng4) := pickFromPool ifbitjmpIdxPool rng3
+      let ((_, x), rng5) := pickFromPool ifbitjmpTakenPairPool rng4
+      (mkCase s!"fuzz/intov/popint/nan/idx{idx}" idx #[intV x, q0] (nanOperandProgram idx), rng5)
+    else if shape = 15 then
+      (mkCase "fuzz/gas/exact-cost-succeeds" 0 (mkIfbitStack #[] 1)
+        #[.pushInt (.num ifbitjmpSetGasExact), .tonEnvOp .setGasLimit, ifbitjmpInstr 0], rng3)
+    else if shape = 16 then
+      (mkCase "fuzz/gas/exact-minus-one-out-of-gas" 0 (mkIfbitStack #[] 1)
+        #[.pushInt (.num ifbitjmpSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifbitjmpInstr 0], rng3)
+    else
+      let ((idx, x), rng4) := pickFromPool ifbitjmpNotTakenPairPool rng3
+      (mkProbeCase s!"fuzz/branch/not-taken/probe-deep-{depth}/idx{idx}" idx x below, rng4)
+  let (tag, rng5) := randNat rng4 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng5)
+
 def suite : InstrSuite where
   id := ifbitjmpId
   unit := #[
@@ -366,7 +487,11 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" 0 (mkIfbitStack #[] 1)
       #[.pushInt (.num ifbitjmpSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifbitjmpInstr 0]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifbitjmpId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifbitjmpId
+      count := 500
+      gen := genIfbitjmpFuzzCase }
+  ]
 
 initialize registerSuite suite
 

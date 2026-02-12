@@ -195,6 +195,102 @@ private def runIfrefLean (code : Cell) (initStack : Array Value) (fuel : Nat := 
   let st0 : VmState := { (VmState.initial code) with stack := initStack }
   VmState.run nativeHost fuel st0
 
+private def ifrefOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "ok/call-tail/",
+    "ok/branch/",
+    "err/underflow/",
+    "err/type/",
+    "err/decode/",
+    "err/branch/"
+  ]
+
+private def ifrefFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifrefOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def ifrefCondPool : Array Int :=
+  #[0, 1, -1, 2, -2, 7, -7, 255, maxInt257, minInt257]
+
+private def ifrefBodyPool : Array Cell :=
+  #[bodyEmpty, bodyBits, bodyDeep, bodyPush7, bodyAdd]
+
+private def ifrefTailPool : Array (Array Instr) :=
+  #[#[], #[.pushInt (.num 9)], #[.pushInt (.num 9), .add]]
+
+private def ifrefBadBoolNonIntPool : Array Value :=
+  #[.null, .cell refLeafA, .slice sliceNoiseB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value := noiseA ++ noiseB ++ noiseC
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfrefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 15
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (cond, rng4) := pickFromPool ifrefCondPool rng3
+  let (body, rng5) := pickFromPool ifrefBodyPool rng4
+  let (tail, rng6) := pickFromPool ifrefTailPool rng5
+  let (badBool, rng7) := pickFromPool ifrefBadBoolNonIntPool rng6
+  let base :=
+    if shape = 0 then
+      mkIfrefOracleCase s!"fuzz/ok/true/deep-{depth}" (withCond below (if cond = 0 then 1 else cond)) body tail
+    else if shape = 1 then
+      mkIfrefOracleCase s!"fuzz/ok/false/deep-{depth}" (withCond below 0) body tail
+    else if shape = 2 then
+      mkIfrefOracleCase "fuzz/ok/call-tail/true-empty-body" #[intV 1] bodyEmpty #[.pushInt (.num 9)]
+    else if shape = 3 then
+      mkIfrefOracleCase "fuzz/ok/call-tail/false-empty-body" #[intV 0] bodyEmpty #[.pushInt (.num 9)]
+    else if shape = 4 then
+      mkIfrefOracleCase "fuzz/ok/call-tail/true-body-push7" #[intV 1] bodyPush7 #[.pushInt (.num 9)]
+    else if shape = 5 then
+      mkIfrefOracleCase "fuzz/ok/call-tail/false-body-push7" #[intV 0] bodyPush7 #[.pushInt (.num 9)]
+    else if shape = 6 then
+      mkIfrefOracleCase "fuzz/err/branch/true-body-add-underflow" #[intV 1] bodyAdd #[.pushInt (.num 9)]
+    else if shape = 7 then
+      mkIfrefOracleCase "fuzz/ok/branch/false-skips-body-add" #[intV 0] bodyAdd #[.pushInt (.num 9)]
+    else if shape = 8 then
+      mkIfrefOracleCase "fuzz/err/underflow/empty" #[] bodyBits
+    else if shape = 9 then
+      mkIfrefOracleCase s!"fuzz/err/type/bool-non-int/deep-{depth}" (withCondRaw below badBool) bodyBits
+    else if shape = 10 then
+      mkMissingRefOracleCase "fuzz/err/decode/missing-ref-empty" #[]
+    else if shape = 11 then
+      mkMissingRefOracleCase "fuzz/err/decode/missing-ref-cond-1" #[intV 1]
+    else if shape = 12 then
+      mkTruncatedOracleCase "fuzz/err/decode/truncated-15-empty" #[]
+    else if shape = 13 then
+      mkTruncatedOracleCase "fuzz/err/decode/truncated-15-cond-1" #[intV 1]
+    else if shape = 14 then
+      -- Ensure false branch can preserve deep below-stack content.
+      mkIfrefOracleCase "fuzz/ok/false/preserve-below" (withCond (noiseC ++ #[.builder Builder.empty]) 0) bodyDeep
+    else
+      mkIfrefOracleCase "fuzz/ok/true/preserve-below" (withCond (noiseB ++ #[intV 33]) 9) bodyEmpty
+  let (tag, rng8) := randNat rng7 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng8)
+
 private def expectExit (label : String) (expectedExit : Int) (res : StepResult) : IO VmState := do
   match res with
   | .halt exitCode st =>
@@ -419,7 +515,11 @@ def suite : InstrSuite where
     mkIfrefOracleCase "err/branch/true-body-add-underflow" #[intV 1] bodyAdd #[.pushInt (.num 9)],
     mkIfrefOracleCase "ok/branch/false-skips-body-add" #[intV 0] bodyAdd #[.pushInt (.num 9)]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifrefId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifrefId
+      count := 500
+      gen := genIfrefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

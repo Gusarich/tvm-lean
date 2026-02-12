@@ -245,6 +245,131 @@ private def progDefineC0ThenSet : Array Instr :=
 private def progDefineC0ThenSetRetAlt : Array Instr :=
   #[.pushCtr 0, .pushRefCont refContCell, .setContCtr 0, setExitAltInstr, .retAlt]
 
+private def setExitAltGasExact : Int :=
+  computeExactGasBudget setExitAltInstr
+
+private def setExitAltGasExactMinusOne : Int :=
+  computeExactGasBudgetMinusOne setExitAltInstr
+
+private def setExitAltBasicStackPool : Array (Array Value) :=
+  #[
+    #[q0V],
+    #[intV 1, q0V],
+    #[.null, q0V],
+    #[.cell cellA, q0V],
+    #[.slice fullSliceA, q0V],
+    #[.builder Builder.empty, q0V],
+    #[.tuple #[], q0V],
+    #[q0V, q0V],
+    #[intV 7, .cell cellA, q0V],
+    noiseA ++ #[q0V],
+    noiseB ++ #[q0V]
+  ]
+
+private def setExitAltTypeErrStackPool : Array (Array Value) :=
+  #[
+    #[intV 1],
+    #[.null],
+    #[.cell cellA],
+    #[.cell cellB],
+    #[.slice fullSliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genSetExitAltOrderFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 5
+  let (okStack, rng2) := pickFromPool setExitAltBasicStackPool rng1
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/order/tail-runs-push-c1" okStack progSetThenPushC1
+    else if shape = 1 then
+      mkCase "fuzz/ok/order/tail-runs-push-c0" okStack progSetThenPushC0
+    else if shape = 2 then
+      mkCase "fuzz/ok/order/tail-runs-add/basic" #[intV 3, q0V] (progSetThenAdd 2)
+    else if shape = 3 then
+      mkCase "fuzz/ok/order/tail-runs-add/noise" #[.null, intV 4, q0V] (progSetThenAdd (-1))
+    else if shape = 4 then
+      mkCase "fuzz/ok/order/set-then-retalt" #[q0V] progSetThenRetAlt
+    else if shape = 5 then
+      mkCase "fuzz/ok/order/set-then-retalt-tail-skipped" #[q0V] progSetThenRetAltTail
+    else
+      mkCase "fuzz/ok/order/tail-runs-push-c1/noise-b" (noiseB ++ #[q0V]) progSetThenPushC1
+  (case0, rng2)
+
+private def genSetExitAltUnderflowFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 4
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 1 then
+      mkCase "fuzz/err/underflow/program-drop-before-set" #[q0V] #[.pop 0, setExitAltInstr]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/second-setexitalt" #[q0V] #[setExitAltInstr, setExitAltInstr]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/push-pop-then-set" #[] #[.pushInt (.num 9), .pop 0, setExitAltInstr]
+    else
+      mkCase "fuzz/err/underflow/set-pop-set" #[q0V] #[setExitAltInstr, .pop 0, setExitAltInstr]
+  (case0, rng1)
+
+private def genSetExitAltTypeFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 5
+  let (typeErrStack, rng2) := pickFromPool setExitAltTypeErrStackPool rng1
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/err/type/top-non-cont" typeErrStack
+    else if shape = 1 then
+      mkCase "fuzz/err/type/program-pushint" #[] #[.pushInt (.num 7), setExitAltInstr]
+    else if shape = 2 then
+      mkCase "fuzz/err/type/program-add-result" #[intV 3, intV 4] #[.add, setExitAltInstr]
+    else if shape = 3 then
+      mkCase "fuzz/err/type/program-pushnan" #[] #[.pushInt .nan, setExitAltInstr]
+    else if shape = 4 then
+      mkCase "fuzz/err/type/order-top-popped-before-type" #[intV 77, .null]
+    else
+      mkCase "fuzz/err/type/order-top-popped-before-type-cell" #[intV 5, .cell cellA]
+  (case0, rng2)
+
+private def genSetExitAltDecodeFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 2
+  let case0 :=
+    if shape = 0 then
+      mkCaseCode "fuzz/err/decode/truncated-8-prefix" #[] setExitAltTruncated8Code
+    else if shape = 1 then
+      mkCaseCode "fuzz/err/decode/truncated-15-prefix" #[intV 1] setExitAltTruncated15Code
+    else
+      mkCaseCode "fuzz/err/decode/truncated-15-prefix-with-cont" #[q0V] setExitAltTruncated15Code
+  (case0, rng1)
+
+private def genSetExitAltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (family, rng1) := randNat rng0 0 6
+  let (case0, rng2) :=
+    if family = 0 then
+      let (okStack, rng') := pickFromPool setExitAltBasicStackPool rng1
+      (mkCase "fuzz/ok/basic" okStack, rng')
+    else if family = 1 then
+      genSetExitAltOrderFuzzCase rng1
+    else if family = 2 then
+      (mkCase "fuzz/ok/gas/exact-budget"
+        #[q0V]
+        #[.pushInt (.num setExitAltGasExact), .tonEnvOp .setGasLimit, setExitAltInstr], rng1)
+    else if family = 3 then
+      (mkCase "fuzz/err/gas/exact-minus-one"
+        #[q0V]
+        #[.pushInt (.num setExitAltGasExactMinusOne), .tonEnvOp .setGasLimit, setExitAltInstr], rng1)
+    else if family = 4 then
+      genSetExitAltUnderflowFuzzCase rng1
+    else if family = 5 then
+      genSetExitAltTypeFuzzCase rng1
+    else
+      genSetExitAltDecodeFuzzCase rng1
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 private def oracleCases : Array OracleCase := #[
   -- Basic direct SETEXITALT coverage.
   mkCase "ok/basic/q0-only" #[q0V],
@@ -387,7 +512,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setExitAltId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr setExitAltId
+      count := 500
+      gen := genSetExitAltFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -244,6 +244,115 @@ private def atExitGasExact : Int :=
 private def atExitGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne atExitInstr
 
+private def atExitBasicStackPool : Array (Array Value) :=
+  #[
+    #[q0V],
+    #[intV 1, q0V],
+    #[.null, q0V],
+    #[.cell cellA, q0V],
+    #[.slice fullSliceA, q0V],
+    #[.builder Builder.empty, q0V],
+    #[.tuple #[], q0V],
+    #[q0V, q0V],
+    #[intV 7, .cell cellA, q0V],
+    #[.null, .builder Builder.empty, .tuple #[], q0V],
+    noiseA ++ #[q0V],
+    noiseB ++ #[q0V]
+  ]
+
+private def atExitObserveStackPool : Array (Array Value) :=
+  #[
+    #[q0V],
+    #[intV 3, q0V],
+    #[.null, .cell cellA, q0V],
+    noiseA ++ #[q0V],
+    noiseB ++ #[q0V]
+  ]
+
+private def atExitTypeTopPool : Array Value :=
+  #[
+    intV 0,
+    .null,
+    .cell cellA,
+    .slice fullSliceA,
+    .builder Builder.empty,
+    .tuple #[]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genAtExitFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 17
+  -- Bias toward stack-top continuation rewrite/order perturbations around `popCont`.
+  let (case0, rng2) :=
+    if shape ≤ 3 then
+      let (stack, rng') := pickFromPool atExitBasicStackPool rng1
+      (mkCase "fuzz/ok/basic" stack, rng')
+    else if shape = 4 then
+      let (stack, rng') := pickFromPool atExitObserveStackPool rng1
+      (mkCase "fuzz/ok/observe-c0/pushctr0" stack (progAtExitThenPushC0), rng')
+    else if shape = 5 then
+      let (stack, rng') := pickFromPool atExitObserveStackPool rng1
+      (mkCase "fuzz/ok/observe-c0/replay-1" stack (progAtExitThenPushC0), rng')
+    else if shape = 6 then
+      let (stack, rng') := pickFromPool atExitBasicStackPool rng1
+      (mkCase "fuzz/ok/basic/replay-1" stack, rng')
+    else if shape = 7 then
+      (mkCase "fuzz/ok/control/tail-runs-after-atexit" #[q0V] #[atExitInstr, .pushInt (.num 7)], rng1)
+    else if shape = 8 then
+      (mkCase "fuzz/ok/control/tail-runs-add"
+        #[q0V]
+        #[atExitInstr, .pushInt (.num 2), .pushInt (.num 3), .add], rng1)
+    else if shape = 9 then
+      (mkCase "fuzz/err/control/tail-underflow-after-atexit" #[q0V] #[atExitInstr, .add], rng1)
+    else if shape = 10 then
+      let (variant, rng') := randNat rng1 0 2
+      if variant = 0 then
+        (mkCase "fuzz/err/underflow/empty" #[], rng')
+      else if variant = 1 then
+        (mkCase "fuzz/err/underflow/second-atexit" #[q0V] #[atExitInstr, atExitInstr], rng')
+      else
+        (mkCase "fuzz/err/underflow/third-atexit-chain"
+          #[q0V, q0V]
+          #[atExitInstr, atExitInstr, atExitInstr], rng')
+    else if shape = 11 then
+      let (badTop, rng') := pickFromPool atExitTypeTopPool rng1
+      (mkCase "fuzz/err/type/top-non-cont" #[badTop], rng')
+    else if shape = 12 then
+      (mkCase "fuzz/err/type/top-nan-via-program" #[] #[.pushInt .nan, atExitInstr], rng1)
+    else if shape = 13 then
+      let (variant, rng') := randNat rng1 0 2
+      if variant = 0 then
+        (mkCase "fuzz/err/order/type-before-below-cont" #[q0V, .null], rng')
+      else if variant = 1 then
+        (mkCase "fuzz/err/order/type-before-below-cont-via-program"
+          #[q0V]
+          #[.pushInt (.num 42), atExitInstr], rng')
+      else
+        (mkCase "fuzz/err/order/type-before-below-cont-via-program-nan"
+          #[q0V]
+          #[.pushInt .nan, atExitInstr], rng')
+    else if shape = 14 then
+      (mkCaseCode "fuzz/ok/decode/raw-opcode-edf3" #[q0V] atExitRawCode, rng1)
+    else if shape = 15 then
+      let (variant, rng') := randNat rng1 0 1
+      if variant = 0 then
+        (mkCaseCode "fuzz/err/decode/truncated-8" #[] atExitTruncated8Code, rng')
+      else
+        (mkCaseCode "fuzz/err/decode/truncated-15" #[q0V] atExitTruncated15Code, rng')
+    else if shape = 16 then
+      (mkCase "fuzz/gas/exact-cost-succeeds"
+        #[q0V]
+        #[.pushInt (.num atExitGasExact), .tonEnvOp .setGasLimit, atExitInstr], rng1)
+    else
+      (mkCase "fuzz/gas/exact-minus-one-out-of-gas"
+        #[q0V]
+        #[.pushInt (.num atExitGasExactMinusOne), .tonEnvOp .setGasLimit, atExitInstr], rng1)
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 private def oracleCases : Array OracleCase := #[
   mkCase "ok/basic/q0-only" #[q0V],
   mkCase "ok/basic/q0-over-int" #[intV 1, q0V],
@@ -357,7 +466,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec atExitId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr atExitId
+      count := 500
+      gen := genAtExitFuzzCase }
+  ]
 
 initialize registerSuite suite
 

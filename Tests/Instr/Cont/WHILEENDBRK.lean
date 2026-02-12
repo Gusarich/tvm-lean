@@ -163,6 +163,36 @@ private def whileEndBrkGasExact : Int :=
 private def whileEndBrkGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne whileEndBrkInstr
 
+private def whileEndBrkOracleFamilies : Array String :=
+  #[
+    "ok/direct/no-tail/",
+    "ok/direct/tail-skipped/",
+    "ok/ctr",
+    "ok/cond-has-c0/",
+    "err/underflow-",
+    "err/type-",
+    "err/pop-order-",
+    "gas/"
+  ]
+
+private def pickNoise (rng0 : StdGen) : Array Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 3
+  match choice with
+  | 0 => (#[], rng1)
+  | 1 => (noiseA, rng1)
+  | 2 => (noiseB, rng1)
+  | _ => (noiseLong, rng1)
+
+private def pickNonCont (rng0 : StdGen) : Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 5
+  match choice with
+  | 0 => (intV 7, rng1)
+  | 1 => (.null, rng1)
+  | 2 => (.cell cellA, rng1)
+  | 3 => (.slice sliceA, rng1)
+  | 4 => (.builder Builder.empty, rng1)
+  | _ => (.tuple #[], rng1)
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -175,6 +205,33 @@ private def mkCase
     initStack := stack
     gasLimits := gasLimits
     fuel := fuel }
+
+private def genWhileEndBrkFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 6
+  match shape with
+  | 0 =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/no-tail" (noise ++ #[q0]), rng2)
+  | 1 =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/tail" (noise ++ #[q0]) whileEndBrkTailProgram, rng2)
+  | 2 =>
+      (mkCase "fuzz/err/underflow" #[], rng1)
+  | 3 =>
+      let (bad, rng2) := pickNonCont rng1
+      (mkCase "fuzz/err/type/top" #[bad], rng2)
+  | 4 =>
+      let (useExact, rng2) := randBool rng1
+      let gas := if useExact then whileEndBrkGasExact else whileEndBrkGasExactMinusOne
+      let name := if useExact then "fuzz/gas/exact" else "fuzz/gas/minus-one"
+      let program := #[.pushInt (.num gas), .tonEnvOp .setGasLimit, whileEndBrkInstr]
+      (mkCase name #[q0] program, rng2)
+  | 5 =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/basic" (noise ++ #[q0]), rng2)
+  | _ =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/alt" (noise ++ #[q0]), rng2)
 
 def suite : InstrSuite where
   id := whileEndBrkId
@@ -469,7 +526,11 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[q0] #[whileEndBrkInstr]
       (oracleGasLimitsExact whileEndBrkGasExactMinusOne)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec whileEndBrkId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr whileEndBrkId
+      count := 500
+      gen := genWhileEndBrkFuzzCase }
+  ]
 
 initialize registerSuite suite
 

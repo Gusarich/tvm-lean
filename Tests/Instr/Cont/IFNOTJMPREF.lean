@@ -63,6 +63,10 @@ private def assembleNoRefBits! (label : String) (program : Array Instr) : BitStr
 private def mkIfnotjmprefCode (target : Cell) (tail : Array Instr := #[]) : Cell :=
   Cell.mkOrdinary (opcodeBits ++ assembleNoRefBits! "ifnotjmpref/tail" tail) #[target]
 
+private def mkPushNanIfnotjmprefCode (target : Cell) (tail : Array Instr := #[]) : Cell :=
+  -- 0x83ff = PUSHNAN
+  Cell.mkOrdinary (natToBits 0x83ff 16 ++ opcodeBits ++ assembleNoRefBits! "ifnotjmpref/nan-tail" tail) #[target]
+
 private def targetMarkerCell : Cell :=
   assembleNoRefCell! "ifnotjmpref/target-marker" #[.pushInt (.num jumpMarker)]
 
@@ -74,6 +78,12 @@ private def noTailCode : Cell :=
 
 private def specialBranchCode : Cell :=
   mkIfnotjmprefCode specialTargetCell #[.pushInt (.num tailMarker)]
+
+private def nanBranchObservableCode : Cell :=
+  mkPushNanIfnotjmprefCode targetMarkerCell #[.pushInt (.num tailMarker)]
+
+private def nanSpecialBranchCode : Cell :=
+  mkPushNanIfnotjmprefCode specialTargetCell #[.pushInt (.num tailMarker)]
 
 private def missingRefCode : Cell :=
   Cell.mkOrdinary opcodeBits #[]
@@ -214,6 +224,81 @@ private def mkCase
     initStack := stack
     gasLimits := gasLimits
     fuel := fuel }
+
+private def ifnotjmprefNonzeroBoolPool : Array Int :=
+  #[
+    1, -1, 2, -2,
+    pow2 120, -(pow2 120),
+    maxInt257, minInt257
+  ]
+
+private def ifnotjmprefBadBoolPool : Array Value :=
+  #[.null, .cell noiseCell, .slice emptySlice, .builder Builder.empty, .tuple #[], q0]
+
+private def ifnotjmprefBelowValuePool : Array Value :=
+  #[.null, intV 9, .cell noiseCell, .slice emptySlice, .builder Builder.empty, .tuple #[]]
+
+private def withBool (below : Array Value) (b : Int) : Array Value :=
+  below ++ #[intV b]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genIfnotjmprefBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool ifnotjmprefBelowValuePool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfnotjmprefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 17
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genIfnotjmprefBelowStack depth rng2
+  let (nonzeroBool, rng4) := pickFromPool ifnotjmprefNonzeroBoolPool rng3
+  let (badBool, rng5) := pickFromPool ifnotjmprefBadBoolPool rng4
+  let base :=
+    if shape = 0 then
+      mkCase s!"fuzz/branch/observable/jump-zero/deep-{depth}" (withBool below 0) branchObservableCode
+    else if shape = 1 then
+      mkCase s!"fuzz/branch/observable/nojump-nonzero/deep-{depth}" (withBool below nonzeroBool) branchObservableCode
+    else if shape = 2 then
+      mkCase s!"fuzz/ok/no-tail/jump-zero/deep-{depth}" (withBool below 0) noTailCode
+    else if shape = 3 then
+      mkCase s!"fuzz/ok/no-tail/nojump-nonzero/deep-{depth}" (withBool below nonzeroBool) noTailCode
+    else if shape = 4 then
+      mkCase "fuzz/underflow/empty" #[] branchObservableCode
+    else if shape = 5 then
+      mkCase s!"fuzz/type/bool-non-int/deep-{depth}" (below ++ #[badBool]) branchObservableCode
+    else if shape = 6 then
+      mkCase s!"fuzz/special/taken-zero-cellund/deep-{depth}" (withBool below 0) specialBranchCode
+    else if shape = 7 then
+      mkCase s!"fuzz/special/not-taken-nonzero/deep-{depth}" (withBool below nonzeroBool) specialBranchCode
+    else if shape = 8 then
+      mkCase s!"fuzz/special/error-order/type-before-cellund/deep-{depth}" (below ++ #[badBool]) specialBranchCode
+    else if shape = 9 then
+      mkCase "fuzz/special/error-order/underflow-before-cellund" #[] specialBranchCode
+    else if shape = 10 then
+      mkCase "fuzz/decode/missing-ref/empty-stack" #[] missingRefCode
+    else if shape = 11 then
+      mkCase s!"fuzz/decode/missing-ref/deep-{depth}" (withBool below 0) missingRefCode
+    else if shape = 12 then
+      mkCase s!"fuzz/decode/missing-ref/with-tail/deep-{depth}" (withBool below 0) missingRefWithTailCode
+    else if shape = 13 then
+      mkCase s!"fuzz/decode/truncated-8bit/deep-{depth}" (withBool below nonzeroBool) truncated8Code
+    else if shape = 14 then
+      mkCase s!"fuzz/decode/truncated-15bit/deep-{depth}" (withBool below nonzeroBool) truncated15Code
+    else if shape = 15 then
+      mkCase s!"fuzz/intov/bool-nan-via-prefix/deep-{depth}" below nanBranchObservableCode
+    else if shape = 16 then
+      mkCase s!"fuzz/special/error-order/intov-before-cellund/deep-{depth}" below nanSpecialBranchCode
+    else
+      mkCase s!"fuzz/type/bool-non-int-with-below/deep-{depth}" (below ++ #[intV 11, badBool]) branchObservableCode
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
 
 def suite : InstrSuite where
   id := ifnotjmprefId
@@ -371,7 +456,11 @@ def suite : InstrSuite where
     mkCase "decode/truncated-8bit-prefix" #[intV 0] truncated8Code,
     mkCase "decode/truncated-15bit-prefix" #[intV 0] truncated15Code
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnotjmprefId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifnotjmprefId
+      count := 500
+      gen := genIfnotjmprefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

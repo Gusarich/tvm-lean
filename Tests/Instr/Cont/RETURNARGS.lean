@@ -171,6 +171,70 @@ private def returnArgsTruncated11Code : Cell :=
 private def returnArgsTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xed00 >>> 1) 15) #[]
 
+private def returnArgsOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/order/",
+    "ok/c0-from-c1/",
+    "ok/c0-nargs",
+    "err/c0-nargs",
+    "ok/captured/",
+    "err/captured/",
+    "err/underflow/",
+    "err/decode-"
+  ]
+
+private def returnArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := returnArgsOracleFamilies
+    -- Bias toward stack-shape/count perturbations while still covering all mutation modes.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def returnArgsNoisePool : Array (Array Value) :=
+  #[
+    #[],
+    #[intV 1],
+    #[.null],
+    #[.cell cellA],
+    #[.slice sliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genReturnArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (noise, rng2) := pickFromPool returnArgsNoisePool rng1
+  let (cap, rng3) := pickSigned257ish rng2
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/pass0" noise #[returnArgsInstr 0]
+    else if shape = 1 then
+      mkCase "fuzz/ok/pass1" #[intV 7] #[returnArgsInstr 1]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow-pass2" #[intV 7] #[returnArgsInstr 2]
+    else if shape = 3 then
+      mkCase "fuzz/ok/c0-from-c1" #[intV 9] (progSetC0FromC1 1)
+    else if shape = 4 then
+      mkCase "fuzz/err/c0-nargs-stkov" #[intV 11, intV 12] (progSetC0Nargs 1 0)
+    else if shape = 5 then
+      mkCase "fuzz/ok/captured-more1" #[intV 9] (progSetC0Captured cap 1 0)
+    else if shape = 6 then
+      mkCase "fuzz/err/captured-more0" #[intV 9] (progSetC0Captured cap 0 0)
+    else if shape = 7 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] returnArgsTruncated8Code
+    else if shape = 8 then
+      mkCaseCode "fuzz/err/decode-truncated-11" #[] returnArgsTruncated11Code
+    else
+      mkCaseCode "fuzz/err/decode-truncated-15" #[] returnArgsTruncated15Code
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase := #[
   -- Basic stack reshape behavior.
   mkCaseI "ok/basic/pass0-empty" #[] 0,
@@ -369,7 +433,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec returnArgsId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr returnArgsId
+      count := 500
+      gen := genReturnArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

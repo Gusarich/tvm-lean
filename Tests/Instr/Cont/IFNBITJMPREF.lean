@@ -98,6 +98,103 @@ private def mkProbeCase
     (target : Cell := bodyEmpty) : OracleCase :=
   mkCase name idx (mkStack below x) target #[0x71]
 
+private def ifnbitjmprefIdxPool : Array Nat :=
+  #[0, 1, 5, 31]
+
+private def ifnbitjmprefNoisePool : Array Value :=
+  #[
+    .null,
+    .cell refCellA,
+    .cell refCellB,
+    .slice fullSliceA,
+    .slice fullSliceB,
+    .builder Builder.empty,
+    .tuple #[],
+    intV 7,
+    intV (-3)
+  ]
+
+private def ifnbitjmprefBadTopPool : Array Value :=
+  #[.null, .cell refCellA, .builder Builder.empty, .slice fullSliceA, .tuple #[]]
+
+private def ifnbitTakenOperandPool (idx : Nat) : Array Int :=
+  if idx = 0 then
+    #[0, 2, -2]
+  else if idx = 1 then
+    #[1, 0]
+  else if idx = 5 then
+    #[pow2 4, 0]
+  else if idx = 31 then
+    #[(pow2 31) - 1, minInt257, 0]
+  else
+    #[0]
+
+private def ifnbitNotTakenOperandPool (idx : Nat) : Array Int :=
+  if idx = 0 then
+    #[1, -1]
+  else if idx = 1 then
+    #[2, -2]
+  else if idx = 5 then
+    #[pow2 5, (pow2 5) + 3]
+  else if idx = 31 then
+    #[pow2 31, -1]
+  else
+    #[pow2 idx]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool ifnbitjmprefNoisePool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfnbitjmprefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  let (idx, rng2) := pickFromPool ifnbitjmprefIdxPool rng1
+  let (depth, rng3) := randNat rng2 0 4
+  let (below, rng4) := genBelowStack depth rng3
+  let (xTaken, rng5) := pickFromPool (ifnbitTakenOperandPool idx) rng4
+  let (xNotTaken, rng6) := pickFromPool (ifnbitNotTakenOperandPool idx) rng5
+  let (badTop, rng7) := pickFromPool ifnbitjmprefBadTopPool rng6
+  let base :=
+    if shape = 0 then
+      mkProbeCase s!"fuzz/branch/taken/deep-{depth}/idx-{idx}" idx xTaken below
+    else if shape = 1 then
+      mkProbeCase s!"fuzz/branch/not-taken/deep-{depth}/idx-{idx}" idx xNotTaken below
+    else if shape = 2 then
+      mkProbeCase "fuzz/branch/taken/idx31/min257/deep-cell" 31 minInt257 #[.cell refCellA]
+    else if shape = 3 then
+      mkProbeCase "fuzz/branch/not-taken/idx31/pow31/deep-builder-tuple"
+        31 (pow2 31) #[.builder Builder.empty, .tuple #[]]
+    else if shape = 4 then
+      mkCase s!"fuzz/ok/no-tail/taken/deep-{depth}/idx-{idx}" idx (mkStack below xTaken)
+    else if shape = 5 then
+      mkCase s!"fuzz/ok/no-tail/not-taken/deep-{depth}/idx-{idx}" idx (mkStack below xNotTaken)
+    else if shape = 6 then
+      mkCase s!"fuzz/target/push7/taken/deep-{depth}/idx-{idx}" idx (mkStack below xTaken) bodyPush7
+    else if shape = 7 then
+      mkCase s!"fuzz/target/push7/not-taken/deep-{depth}/idx-{idx}" idx (mkStack below xNotTaken) bodyPush7
+    else if shape = 8 then
+      mkCase s!"fuzz/target/push9/taken/deep-{depth}/idx-{idx}" idx (mkStack below xTaken) bodyPush9
+    else if shape = 9 then
+      mkCase s!"fuzz/target/push9/not-taken/deep-{depth}/idx-{idx}" idx (mkStack below xNotTaken) bodyPush9
+    else if shape = 10 then
+      mkCase s!"fuzz/type/top-non-int/deep-{depth}/idx-{idx}" idx (below ++ #[badTop])
+    else if shape = 11 then
+      mkCase s!"fuzz/type/pop-removes-top/deep-{depth}/idx-{idx}" idx (below ++ #[intV 9, badTop])
+    else if shape = 12 then
+      mkCase "fuzz/underflow/empty/idx0" 0 #[]
+    else
+      mkCase s!"fuzz/ok/no-tail/deep-signed-edge/idx-{idx}" idx (mkStack below xTaken)
+  let (tag, rng8) := randNat rng7 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng8)
+
 private def runIfnbitjmprefDirect
     (idx : Nat)
     (stack : Array Value)
@@ -348,7 +445,11 @@ def suite : InstrSuite where
     mkCase "type/pop-removes-top-null-with-below" 0 #[intV 9, .null],
     mkCase "type/pop-removes-top-cell-with-below" 0 #[intV 9, .cell refCellA]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnbitjmprefId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifnbitjmprefId
+      count := 500
+      gen := genIfnbitjmprefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -46,6 +46,10 @@ private def progPopX (tail : Array Instr := #[]) : Array Instr :=
 private def rawOp16 (w : Nat) : Cell :=
   Cell.mkOrdinary (natToBits w 16) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -89,6 +93,79 @@ private def expectRawErr
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
   | .ok _ =>
       throw (IO.userError s!"{label}: expected error {expected}, got success")
+
+private def popCtrXOracleFamilies : Array String :=
+  #[
+    "ok/index/",
+    "ok/roundtrip/",
+    "err/type-probe/",
+    "err/value-type/",
+    "err/index-validity/",
+    "err/index-pop/",
+    "ok/raw-opcode/",
+    "err/raw-opcode/"
+  ]
+
+private def popCtrXFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := popCtrXOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def fuzzValidIdxPool : Array Int := #[0, 1, 2, 3, 4, 5, 7]
+
+private def fuzzInvalidIdxPool : Array Int := #[6, 8, 16, -1]
+
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB]
+
+private def valueForIdx (idx : Int) : Value :=
+  if idx ≤ 3 then q0
+  else if idx = 4 then .cell cellA
+  else if idx = 5 then .cell cellB
+  else .tuple #[]
+
+private def badValueForIdx (idx : Int) : Array Value :=
+  if idx ≤ 3 then #[intV 11, .cell cellA, .null]
+  else if idx = 4 then #[intV 12, .builder Builder.empty, q0]
+  else if idx = 5 then #[.null, q0, .builder Builder.empty]
+  else #[intV 13, .cell cellA, q0, .slice fullSliceA]
+
+private def genPopCtrXFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let (idx, rng2) := pickFromPool fuzzValidIdxPool rng1
+  let (badIdx, rng3) := pickFromPool fuzzInvalidIdxPool rng2
+  let (noise, rng4) := pickFromPool fuzzNoisePool rng3
+  let okValue := valueForIdx idx
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/index/idx{idx}" (withValueIdx noise okValue idx) (progPopX), rng4)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/roundtrip/idx{idx}"
+        (withValueIdx #[] okValue idx) (progPopX #[.pushCtr (Int.toNat idx), .popCtr (Int.toNat idx)]), rng4)
+    else if shape = 2 then
+      let (badV, rng5) := pickFromPool (badValueForIdx idx) rng4
+      (mkCase s!"fuzz/err/value-type/idx{idx}" (withValueIdx #[] badV idx) (progPopX), rng5)
+    else if shape = 3 then
+      (mkCase s!"fuzz/err/index/range-{badIdx}" (withValueIdx #[] okValue badIdx) (progPopX), rng4)
+    else if shape = 4 then
+      let (badTop, rng5) := pickFromPool
+        #[.null, .cell cellA, .slice fullSliceA, .builder Builder.empty, .tuple #[]] rng4
+      (mkCase "fuzz/err/index/type" (withValueTop #[] okValue badTop) (progPopX), rng5)
+    else if shape = 5 then
+      let (underflowStack, rng5) := pickFromPool #[#[], #[q0]] rng4
+      (mkCase "fuzz/err/underflow/entry" underflowStack (progPopX), rng5)
+    else if shape = 6 then
+      let (rawCode, rng5) := pickFromPool #[rawOp16 0xede1] rng4
+      (mkRawCase "fuzz/ok/raw-opcode" (withValueIdx noise okValue idx) rawCode, rng5)
+    else if shape = 7 then
+      let (rawCode, rng5) := pickFromPool #[rawOp16 0xeddf, rawOp16 0xede5, rawOp16 0xede3] rng4
+      (mkRawCase "fuzz/err/raw-opcode" (withValueIdx #[] okValue idx) rawCode, rng5)
+    else
+      (mkCase "fuzz/err/type-probe/add-after-set-c4"
+        (withValueIdx #[intV 21] (.cell cellA) 4) (progPopX #[.pushCtr 4, .add]), rng4)
+  let (tag, rng5) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng5)
 
 private def oracleCases : Array OracleCase := #[
   -- Valid index/type matrix.
@@ -219,7 +296,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec popCtrXId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr popCtrXId
+      count := 500
+      gen := genPopCtrXFuzzCase }
+  ]
 
 initialize registerSuite suite
 

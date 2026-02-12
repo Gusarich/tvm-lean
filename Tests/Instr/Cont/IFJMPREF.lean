@@ -149,6 +149,73 @@ private def regsEq (x y : Regs) : Bool :=
   x.c0 == y.c0 && x.c1 == y.c1 && x.c2 == y.c2 && x.c3 == y.c3 &&
   x.c4 == y.c4 && x.c5 == y.c5 && x.c7 == y.c7
 
+private def ifjmprefBelowPool : Array (Array Value) :=
+  #[
+    #[],
+    #[.null, intV 9],
+    #[.cell refBranch],
+    #[.slice fullSliceBranch],
+    #[.builder Builder.empty, .tuple #[]],
+    #[intV maxInt257],
+    #[intV (minInt257 + 1)]
+  ]
+
+private def ifjmprefTakenFlagPool : Array Int :=
+  #[1, -1, 2, -2, 42, minInt257, maxInt257, pow2 255]
+
+private def ifjmprefBadBoolPool : Array Value :=
+  #[.null, .cell refBranch, .builder Builder.empty, .slice fullSliceBranch, .tuple #[], .cont (.quit 0)]
+
+private def ifjmprefTargetPool : Array Cell :=
+  #[targetEmpty, targetPush1, targetPush2]
+
+private def ifjmprefTightGas : OracleGasLimits :=
+  oracleGasLimitsExact 99
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genIfjmprefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 14
+  let (below, rng2) := pickFromPool ifjmprefBelowPool rng1
+  let (takenFlag, rng3) := pickFromPool ifjmprefTakenFlagPool rng2
+  let (badBool, rng4) := pickFromPool ifjmprefBadBoolPool rng3
+  let (target, rng5) := pickFromPool ifjmprefTargetPool rng4
+  let case0 :=
+    if shape = 0 then
+      mkIfjmprefCase s!"fuzz/taken/default/deep-{below.size}" takenFlag below target tailPush1
+    else if shape = 1 then
+      mkIfjmprefCase s!"fuzz/not-taken/default/deep-{below.size}" 0 below target tailPush1
+    else if shape = 2 then
+      mkIfjmprefCase "fuzz/taken/no-tail" takenFlag below target
+    else if shape = 3 then
+      mkIfjmprefCase "fuzz/not-taken/no-tail" 0 below target
+    else if shape = 4 then
+      mkIfjmprefCase "fuzz/taken/tail-add-skipped" 1 #[intV 2, intV 3] targetEmpty tailAdd
+    else if shape = 5 then
+      mkIfjmprefCase "fuzz/not-taken/tail-add-exec" 0 #[intV 2, intV 3] targetEmpty tailAdd
+    else if shape = 6 then
+      mkCase "fuzz/underflow/empty" #[] (mkIfjmprefCodeCell targetEmpty)
+    else if shape = 7 then
+      mkCase "fuzz/type/bool-non-int" (below ++ #[badBool]) (mkIfjmprefCodeCell targetEmpty)
+    else if shape = 8 then
+      mkCase "fuzz/intov/bool-nan-via-program" below (mkIfjmprefNanCodeCell targetEmpty)
+    else if shape = 9 then
+      mkCase "fuzz/decode/missing-ref" below missingRefCode
+    else if shape = 10 then
+      mkCase "fuzz/decode/truncated-15bits" below truncated15Code
+    else if shape = 11 then
+      mkCase "fuzz/decode/one-byte-prefix" below oneBytePrefixCode
+    else if shape = 12 then
+      mkCase "fuzz/decode/empty-code" below emptyCode
+    else if shape = 13 then
+      mkIfjmprefCase "fuzz/taken/replay-tight" 1 #[intV 4] targetPush1
+    else
+      mkIfjmprefCase "fuzz/not-taken/replay-tight" 0 #[intV 4] targetPush1
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng6)
+
 def suite : InstrSuite where
   id := ifjmprefId
   unit := #[
@@ -341,7 +408,11 @@ def suite : InstrSuite where
     mkCase "decode/one-byte-prefix" #[] oneBytePrefixCode,
     mkCase "decode/empty-code" #[intV 1] emptyCode
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifjmprefId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifjmprefId
+      count := 500
+      gen := genIfjmprefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

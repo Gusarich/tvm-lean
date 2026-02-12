@@ -196,6 +196,63 @@ private def progInvertThenBoolAnd : Array Instr :=
 private def progInvertThenPop : Array Instr :=
   #[invertInstr, .pop 0]
 
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value :=
+    #[.null, intV 0, intV 1, intV (-1), intV 7, intV maxInt257, intV minInt257,
+      .cell refCellA, .cell refCellB, .slice sliceA, .slice sliceB,
+      .builder Builder.empty, .tuple #[], q0V]
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genInvertFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  let (depth, rng2) := randNat rng1 0 6
+  let (below, rng3) := genBelowStack depth rng2
+  let (x, rng4) := pickSigned257ish rng3
+  let (y, rng5) := pickSigned257ish rng4
+  let (base, rng6) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/deep-{depth}" below, rng5)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/program/nop/deep-{depth}" below #[invertInstr, .nop, .nop], rng5)
+    else if shape = 2 then
+      (mkCase s!"fuzz/ok/program/pushint/deep-{depth}" below #[invertInstr, .pushInt (.num x)], rng5)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/program/add" #[intV x] #[invertInstr, .pushInt (.num y), .add], rng5)
+    else if shape = 4 then
+      (mkCase "fuzz/ok/observe/pushctr0-default" #[] #[invertInstr, .pushCtr 0], rng5)
+    else if shape = 5 then
+      (mkCase "fuzz/ok/observe/pushctr1-default" #[] #[invertInstr, .pushCtr 1], rng5)
+    else if shape = 6 then
+      (mkCase "fuzz/ok/observe/replay-pushctr0" #[] #[invertInstr, .pushCtr 0], rng5)
+    else if shape = 7 then
+      (mkCase "fuzz/ok/observe/replay-pushctr1" #[] #[invertInstr, .pushCtr 1], rng5)
+    else if shape = 8 then
+      let (s, rng7) := pickFromPool #[.slice sliceA, .slice sliceB] rng5
+      (mkCase s!"fuzz/ok/observe/bless-setc1-invert/slice" #[s] progBlessSetC1InvertPushC0, rng7)
+    else if shape = 9 then
+      (mkCase "fuzz/ok/program/triple-invert-tail-push" below progTripleInvertTailPush, rng5)
+    else if shape = 10 then
+      (mkCase "fuzz/err/tail/atexit-after-invert" below progInvertThenAtexit, rng5)
+    else if shape = 11 then
+      (mkCase "fuzz/err/tail/booland-after-invert" below progInvertThenBoolAnd, rng5)
+    else if shape = 12 then
+      (mkCodeCase "fuzz/ok/decode/raw-opcode" below invertRawCode, rng5)
+    else
+      let (code, rng7) := pickFromPool #[invertTruncated8Code, invertTruncated15Code] rng5
+      (mkCodeCase "fuzz/err/decode/truncated" below code, rng7)
+  let (tag, rng7) := randNat rng6 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng7)
+
 private def oracleCases : Array OracleCase := #[
   -- Basic success: stack must be untouched.
   mkCase "ok/basic/empty-stack" #[],
@@ -329,7 +386,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec invertId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr invertId
+      count := 500
+      gen := genInvertFuzzCase }
+  ]
 
 initialize registerSuite suite
 

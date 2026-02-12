@@ -223,6 +223,76 @@ private def retArgsTruncated8Code : Cell :=
 private def retArgsTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xdb20 >>> 1) 15) #[]
 
+private def retArgsOracleFamilies : Array String :=
+  #[
+    "ok/default/",
+    "err/default/",
+    "ok/c0-from-c1/",
+    "err/c0-from-c1/",
+    "ok/nargs",
+    "err/nargs",
+    "ok/captured/",
+    "err/captured/",
+    "err/decode/"
+  ]
+
+private def retArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := retArgsOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def retArgsNoisePool : Array (Array Value) :=
+  #[
+    #[],
+    #[intV 1],
+    #[.null],
+    #[.cell cellA],
+    #[.slice fullSliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]],
+    noiseA,
+    noiseB,
+    noiseC
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRetArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (noise, rng2) := pickFromPool retArgsNoisePool rng1
+  let (cap, rng3) := pickSigned257ish rng2
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/pass0" noise #[retArgsInstr 0]
+    else if shape = 1 then
+      mkCase "fuzz/ok/pass1" #[intV 7] #[retArgsInstr 1]
+    else if shape = 2 then
+      mkCase "fuzz/err/pass2-underflow" #[intV 7] #[retArgsInstr 2]
+    else if shape = 3 then
+      mkCase "fuzz/ok/c0-from-c1-pass1" #[intV 9] (progSetC0FromC1 1)
+    else if shape = 4 then
+      mkCase "fuzz/err/c0-from-c1-underflow" #[intV 9] (progSetC0FromC1 2)
+    else if shape = 5 then
+      mkCase "fuzz/ok/nargs2-pass2" #[intV 1, intV 2] (progSetC0Nargs 2 2)
+    else if shape = 6 then
+      mkCase "fuzz/err/nargs2-pass1" #[intV 1] (progSetC0Nargs 2 1)
+    else if shape = 7 then
+      mkCase "fuzz/ok/captured-more1-pass1" #[intV 7] (progSetC0Captured cap 1 1)
+    else if shape = 8 then
+      mkCase "fuzz/err/captured-more2-pass1" #[intV 7] (progSetC0Captured cap 2 1)
+    else if shape = 9 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] retArgsTruncated8Code
+    else if shape = 10 then
+      mkCaseCode "fuzz/err/decode-truncated-15" #[] retArgsTruncated15Code
+    else
+      mkCase "fuzz/ok/trailing-skipped" #[intV 9] #[retArgsInstr 1, .pushInt (.num 777)]
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Basic RETARGS with default c0=quit0.
@@ -380,7 +450,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"decode/raw-end: expected exhausted bits, got {s4.bitsRemaining}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec retArgsId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr retArgsId
+      count := 500
+      gen := genRetArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

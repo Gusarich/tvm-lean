@@ -219,7 +219,9 @@ def execInstrChildNoRunvm (host : Host) (i : Instr) : VM Unit :=
 def outOfGasHalt (st : VmState) : ChildStepResult :=
   let consumed := st.gas.gasConsumed
   let st' := { st with stack := #[.int (.num consumed)] }
-  ChildStepResult.halt (~~~ Excno.outOfGas.toInt) st'
+  -- Match C++ `VmState::run`: unhandled OOG returns raw errno (no `~`),
+  -- then parent `restore_parent_vm(~res)` applies the inversion once.
+  ChildStepResult.halt Excno.outOfGas.toInt st'
 
 /-- Mirror C++ gas.check() → throw_exception(out_of_gas) for child VM. -/
 private def gasCheckFailed (st : VmState) : ChildStepResult :=

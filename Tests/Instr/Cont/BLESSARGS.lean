@@ -23,6 +23,8 @@ private def cellB : Cell :=
 private def sliceA : Slice := Slice.ofCell cellA
 private def sliceB : Slice := Slice.ofCell cellB
 
+private instance : Inhabited Slice := ⟨Slice.ofCell Cell.empty⟩
+
 private def intStackAsc (n : Nat) : Array Value :=
   (Array.range n).map (fun i => intV (Int.ofNat (i + 1)))
 
@@ -194,6 +196,148 @@ private def progBlessArgsCallxVarArgs (copy : Nat) (more params retVals : Int) :
 private def progBlessArgsJmpxVarArgs (copy : Nat) (more params : Int) : Array Instr :=
   #[.blessArgs copy more, .pushInt (.num params), .jmpxVarArgs]
 
+private def blessArgsCopyPool : Array Nat := #[0, 1, 2, 3, 4, 7, 15]
+private def blessArgsMorePool : Array Int := #[-1, 0, 1, 2, 3, 14]
+private def blessArgsTypeCopyPool : Array Nat := #[0, 1, 2, 3]
+private def blessArgsTypeOrderCopyPool : Array Nat := #[1, 2, 3]
+private def blessArgsUnderflowCopyPool : Array Nat := #[1, 2, 3, 4, 7, 15]
+private def blessArgsUnderflowOrderCopyPool : Array Nat := #[2, 3, 15]
+private def blessArgsSlicePool : Array Slice := #[sliceA, sliceB]
+
+private def blessArgsPrefixPool : Array Value :=
+  #[intV 1, intV 7, .null, .cell cellA, .builder Builder.empty, .tuple #[]]
+
+private def blessArgsBadTopPool : Array Value :=
+  #[intV 1, .null, .cell cellA, .builder Builder.empty, .tuple #[], q0]
+
+private def blessArgsOrderProgramPool : Array (String × Array Value × Array Instr) := #[
+  ("fuzz/order/program-prelude-push-swap-capture",
+    #[.slice sliceA],
+    #[.pushInt (.num 99), .xchg0 1, .blessArgs 1 0]),
+  ("fuzz/order/program-tail-continues-after-blessargs",
+    #[intV 7, .slice sliceA],
+    #[.blessArgs 1 0, .pushInt (.num 777)]),
+  ("fuzz/order/program-large-copy15-tail-push",
+    (intStackAsc 15 ++ #[.slice sliceB]),
+    #[.blessArgs 15 14, .pushInt (.num 88)])
+]
+
+private def blessArgsDecodeOkPool : Array (Nat × Int × Array Value) := #[
+  (0, -1, #[.slice sliceA]),
+  (7, 3, intStackAsc 7 ++ #[.slice sliceA]),
+  (15, 14, intStackAsc 15 ++ #[.slice sliceB])
+]
+
+private def blessArgsDecodeErrPool : Array (String × Array Value × Cell) := #[
+  ("fuzz/err/decode/truncated8", #[], blessArgsTruncated8Code),
+  ("fuzz/err/decode/truncated15", #[intV 1], blessArgsTruncated15Code)
+]
+
+private def blessArgsInteractionOkPool : Array (String × Array Value × Array Instr) := #[
+  ("fuzz/ok/interaction/c1-more1-callx-pass1-ret0",
+    #[intV 9, .slice sliceA],
+    progBlessArgsCallxVarArgs 1 1 1 0),
+  ("fuzz/ok/interaction/c1-more-neg1-callx-pass0-ret0",
+    #[intV 9, .slice sliceA],
+    progBlessArgsCallxVarArgs 1 (-1) 0 0),
+  ("fuzz/ok/interaction/c2-more2-callx-pass2-ret0",
+    #[intV 1, intV 2, .slice sliceA],
+    progBlessArgsCallxVarArgs 2 2 2 0),
+  ("fuzz/ok/interaction/c1-more0-jmpx-pass0",
+    #[intV 9, .slice sliceA],
+    progBlessArgsJmpxVarArgs 1 0 0)
+]
+
+private def blessArgsInteractionErrPool : Array (String × Array Value × Array Instr) := #[
+  ("fuzz/err/interaction/c1-more1-callx-pass0-ret0",
+    #[intV 9, .slice sliceA],
+    progBlessArgsCallxVarArgs 1 1 0 0),
+  ("fuzz/err/interaction/c2-more2-callx-pass1-ret0",
+    #[intV 1, intV 2, .slice sliceA],
+    progBlessArgsCallxVarArgs 2 2 1 0),
+  ("fuzz/err/interaction/c1-more1-jmpx-pass0",
+    #[intV 9, .slice sliceA],
+    progBlessArgsJmpxVarArgs 1 1 0)
+]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBlessArgsPrefix (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool blessArgsPrefixPool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genBlessArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  -- Branch-aware families mirroring the BLESSARGS oracle map:
+  -- ok/basic, order/program, err/underflow, err/type, err/order,
+  -- ok/decode, err/decode, ok/interaction, err/interaction.
+  let (shape, rng1) := randNat rng0 0 11
+  let (copy, rng2) := pickFromPool blessArgsCopyPool rng1
+  let (more, rng3) := pickFromPool blessArgsMorePool rng2
+  let (slice, rng4) := pickFromPool blessArgsSlicePool rng3
+  let (badTop, rng5) := pickFromPool blessArgsBadTopPool rng4
+  let (case0, rng6) :=
+    if shape = 0 then
+      let (extraDepth, rng6) := randNat rng5 0 2
+      let prefixDepth := copy + extraDepth
+      let stack := intStackAsc prefixDepth ++ #[.slice slice]
+      (mkCase s!"fuzz/ok/basic/intstack-c{copy}-m{more}-d{prefixDepth}" stack copy more, rng6)
+    else if shape = 1 then
+      let (extraDepth, rng6) := randNat rng5 0 2
+      let prefixDepth := copy + extraDepth
+      let (preVals, rng7) := genBlessArgsPrefix prefixDepth rng6
+      (mkCase s!"fuzz/ok/basic/mixed-c{copy}-m{more}-d{prefixDepth}" (preVals ++ #[.slice slice]) copy more, rng7)
+    else if shape = 2 then
+      let (cfg, rng6) := pickFromPool blessArgsOrderProgramPool rng5
+      let (name, stack, program) := cfg
+      (mkCaseProg name stack program, rng6)
+    else if shape = 3 then
+      let (kind, rng6) := randNat rng5 0 1
+      if kind = 0 then
+        (mkCase "fuzz/err/underflow/empty" #[] 0 0, rng6)
+      else
+        let (copyU, rng7) := pickFromPool blessArgsUnderflowCopyPool rng6
+        let stack := intStackAsc (copyU - 1) ++ #[.slice slice]
+        (mkCase s!"fuzz/err/underflow/copy{copyU}" stack copyU 0, rng7)
+    else if shape = 4 then
+      let (copyT, rng6) := pickFromPool blessArgsTypeCopyPool rng5
+      let stack := intStackAsc copyT ++ #[badTop]
+      (mkCase s!"fuzz/err/type/top-not-slice-c{copyT}" stack copyT 0, rng6)
+    else if shape = 5 then
+      let (copyO, rng6) := pickFromPool blessArgsUnderflowOrderCopyPool rng5
+      let stack := intStackAsc (copyO - 1) ++ #[badTop]
+      (mkCase s!"fuzz/err/order/underflow-before-slice-type-c{copyO}" stack copyO 0, rng6)
+    else if shape = 6 then
+      let (copyO, rng6) := pickFromPool blessArgsTypeOrderCopyPool rng5
+      let stack := intStackAsc copyO ++ #[badTop]
+      (mkCase s!"fuzz/err/order/type-after-underflow-check-c{copyO}" stack copyO 0, rng6)
+    else if shape = 7 then
+      let (cfg, rng6) := pickFromPool blessArgsDecodeOkPool rng5
+      let (copyD, moreD, stack) := cfg
+      (mkCaseCode s!"fuzz/ok/decode/raw-c{copyD}-m{moreD}" stack (rawBlessArgsCode copyD moreD), rng6)
+    else if shape = 8 then
+      let (cfg, rng6) := pickFromPool blessArgsDecodeErrPool rng5
+      let (name, stack, code) := cfg
+      (mkCaseCode name stack code, rng6)
+    else if shape = 9 then
+      let (cfg, rng6) := pickFromPool blessArgsInteractionOkPool rng5
+      let (name, stack, program) := cfg
+      (mkCaseProg name stack program, rng6)
+    else if shape = 10 then
+      let (cfg, rng6) := pickFromPool blessArgsInteractionErrPool rng5
+      let (name, stack, program) := cfg
+      (mkCaseProg name stack program, rng6)
+    else
+      (mkCase "fuzz/ok/basic/c15-more14-depth16" (intStackAsc 16 ++ #[.slice sliceB]) 15 14, rng5)
+  let (tag, rng7) := randNat rng6 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng7)
+
 private def oracleCases : Array OracleCase := #[
   -- Success boundaries for copy/more and stack splitting.
   mkCase "ok/basic/c0-more-neg1-empty" #[.slice sliceA] 0 (-1),
@@ -343,7 +487,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec blessArgsId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr blessArgsId
+      count := 500
+      gen := genBlessArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

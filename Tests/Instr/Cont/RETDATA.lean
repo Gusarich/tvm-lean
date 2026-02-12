@@ -153,6 +153,70 @@ private def retDataTruncated8Code : Cell :=
 private def retDataTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xdb3f >>> 1) 15) #[]
 
+private def retDataOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/c0-from-c1/",
+    "ok/nargs",
+    "err/nargs",
+    "ok/captured/",
+    "err/captured/",
+    "err/decode/"
+  ]
+
+private def retDataFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := retDataOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def retDataNoisePool : Array (Array Value) :=
+  #[
+    #[],
+    #[intV 1],
+    #[.null],
+    #[.cell cellA],
+    #[.slice fullSliceB],
+    #[.builder Builder.empty],
+    #[.tuple #[]],
+    noiseA,
+    noiseB,
+    noiseC
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRetDataFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (noise, rng2) := pickFromPool retDataNoisePool rng1
+  let (cap, rng3) := pickSigned257ish rng2
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic" noise
+    else if shape = 1 then
+      mkCase "fuzz/ok/c0-from-c1" noise (progSetC0FromC1)
+    else if shape = 2 then
+      mkCase "fuzz/ok/nargs1" #[] (progSetC0Nargs 1)
+    else if shape = 3 then
+      mkCase "fuzz/err/nargs2-underflow" #[] (progSetC0Nargs 2)
+    else if shape = 4 then
+      mkCase "fuzz/ok/nargs2" #[intV 1] (progSetC0Nargs 2)
+    else if shape = 5 then
+      mkCase "fuzz/ok/captured-more1" #[] (progSetC0Captured cap 1)
+    else if shape = 6 then
+      mkCase "fuzz/err/captured-more2-underflow" #[] (progSetC0Captured cap 2)
+    else if shape = 7 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] retDataTruncated8Code
+    else if shape = 8 then
+      mkCaseCode "fuzz/err/decode-truncated-15" #[] retDataTruncated15Code
+    else
+      mkCase "fuzz/ok/trailing-skipped" #[] #[retDataInstr, .pushInt (.num 999)]
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 def suite : InstrSuite where
   id := retDataId
   unit := #[
@@ -305,7 +369,11 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8-prefix" #[] retDataTruncated8Code,
     mkCaseCode "err/decode/truncated-15-prefix" #[intV 1] retDataTruncated15Code
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec retDataId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr retDataId
+      count := 500
+      gen := genRetDataFuzzCase }
+  ]
 
 initialize registerSuite suite
 

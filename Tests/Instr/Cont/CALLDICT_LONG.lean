@@ -252,6 +252,61 @@ private def mkCodeCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private def callDictLongOracleFamilies : Array String :=
+  #[
+    "long/default-c3/",
+    "long/set-c3/",
+    "long/dict-call/",
+    "long/dict-call-z/",
+    "long/dict-jump/",
+    "long/dict-errors/"
+  ]
+
+private def callDictLongFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := callDictLongOracleFamilies
+    -- Bias toward call/jump stack-shape perturbations while exercising all mutation modes.
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def callDictLongIdxPool : Array Nat := #[0, 1, 42, 255, 256, 1024, 4095, 16383]
+private def callDictLongStackPool : Array (Array Value) := #[#[], deepStackA, deepStackB, deepStackC]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCallDictLongFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let (idx, rng2) := pickFromPool callDictLongIdxPool rng1
+  let (stack, rng3) := pickFromPool callDictLongStackPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkCodeCase "fuzz/ok/long/default-c3" stack (mkCallDictLongCode! "fuzz/default" idx)
+    else if shape = 1 then
+      mkCodeCase "fuzz/ok/long/set-c3/c0" stack (mkSetC3FromCtrAndCallLongCode! "fuzz/set-c3" 0 idx)
+    else if shape = 2 then
+      mkCodeCase "fuzz/ok/long/dict-call/n8-hit" #[] (mkCallDictLongViaC3Code! "fuzz/n8-hit" c3CallN8 7)
+    else if shape = 3 then
+      mkCodeCase "fuzz/ok/long/dict-call-z/n8-miss" #[] (mkCallDictLongViaC3Code! "fuzz/n8z-miss" c3CallN8PushZ 6)
+    else if shape = 4 then
+      mkCodeCase "fuzz/ok/long/dict-jump/n14-hit" #[] (mkCallDictLongViaC3Code! "fuzz/n14j-hit" c3JumpN14 300)
+    else if shape = 5 then
+      mkCodeCase "fuzz/err/long/type-n-null" #[] (mkCallDictLongViaC3Code! "fuzz/type-n-null" c3TypeNNull 7)
+    else if shape = 6 then
+      mkCodeCase "fuzz/err/long/range-n-too-large" #[] (mkCallDictLongViaC3Code! "fuzz/range-n" c3RangeNTooLarge 7)
+    else
+      mkCodeCase "fuzz/err/long/type-dict-from-idx" #[] (mkCallDictLongViaC3Code! "fuzz/type-dict" c3TypeDictFromIdx 7)
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Default c3 (quit 11): CALLDICT_LONG pushes idx then calls c3; trailing caller code is not reached.
@@ -432,7 +487,11 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callDictLongId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callDictLongId
+      count := 500
+      gen := genCallDictLongFuzzCase }
+  ]
 
 initialize registerSuite suite
 

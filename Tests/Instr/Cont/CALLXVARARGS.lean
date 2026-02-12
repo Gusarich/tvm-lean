@@ -18,6 +18,13 @@ private def cellA : Cell := Cell.ofUInt 8 0xa5
 
 private def fullSliceA : Slice := Slice.ofCell cellA
 
+private def intStackAsc (n : Nat) : Array Value :=
+  Id.run do
+    let mut out : Array Value := #[]
+    for i in [0:n] do
+      out := out.push (intV (Int.ofNat (i + 1)))
+    out
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -36,6 +43,71 @@ private def progSetNumCallxVarArgs (nargs params retVals : Int) : Array Instr :=
 private def progSetContVarCallxVarArgs (copy more params retVals : Int) : Array Instr :=
   #[.pushCtr 0, .pushInt (.num copy), .pushInt (.num more), .setContVarArgs,
     .pushInt (.num params), .pushInt (.num retVals), callxVarArgsInstr]
+
+private def callxVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/call/",
+      "err/underflow/",
+      "err/bounds/",
+      "err/call/",
+      "err/order/",
+      "err/type/",
+      "err/rangemap/"
+    ]
+    -- Bias toward argument/order perturbations while still covering all mutation families.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def callxVarArgsParamPool : Array Int := #[-1, 0, 1, 2, 3, 254]
+private def callxVarArgsRetPool : Array Int := #[-1, 0, 1, 254]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def mkOkStack (params retVals : Int) : Array Value :=
+  let need : Nat :=
+    if params < 0 then
+      3
+    else
+      params.toNat + 1
+  let below := intStackAsc need
+  below ++ #[q0, intV params, intV retVals]
+
+private def genCallxVarArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (params, rng2) := pickFromPool callxVarArgsParamPool rng1
+  let (retVals, rng3) := pickFromPool callxVarArgsRetPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic" (mkOkStack params retVals)
+    else if shape = 1 then
+      mkCase "fuzz/ok/order/tail-skipped" #[intV 11, q0, intV 1, intV 0]
+        #[callxVarArgsInstr, .pushInt (.num 999)]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/need-after-pop" #[q0, intV 1, intV 0]
+    else if shape = 4 then
+      mkCase "fuzz/err/bounds/params-255" #[q0, intV 255, intV 0]
+    else if shape = 5 then
+      mkCase "fuzz/err/bounds/retvals-255" #[q0, intV 0, intV 255]
+    else if shape = 6 then
+      mkCase "fuzz/err/type/retvals-null" #[q0, intV 0, .null]
+    else if shape = 7 then
+      mkCase "fuzz/err/order/params-range-before-cont-type" #[.null, intV 255, intV 0]
+    else if shape = 8 then
+      mkCase "fuzz/err/rangemap/params-nan" #[]
+        #[.pushCtr 0, .pushInt .nan, .pushInt (.num 0), callxVarArgsInstr]
+    else if shape = 9 then
+      mkCase "fuzz/ok/call/setnum-nargs1" #[intV 9] (progSetNumCallxVarArgs 1 1 0)
+    else
+      mkCase "fuzz/err/call/setnum-nargs2" #[intV 9] (progSetNumCallxVarArgs 2 0 0)
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
 
 def suite : InstrSuite where
   id := callxVarArgsId
@@ -170,7 +242,11 @@ def suite : InstrSuite where
       #[intV 10, intV 11]
       (progSetContVarCallxVarArgs 1 (-1) (-1) 0)
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec callxVarArgsId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callxVarArgsId
+      count := 500
+      gen := genCallxVarArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

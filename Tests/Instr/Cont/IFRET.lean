@@ -143,6 +143,95 @@ private def ifretSetGasExact : Int :=
 private def ifretSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifretInstr
 
+private def ifretOracleFamilies : Array String :=
+  #[
+    "ok/true/",
+    "ok/false/",
+    "err/underflow/",
+    "err/type/",
+    "err/intov/",
+    "gas/"
+  ]
+
+private def ifretFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifretOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def ifretBoolPool : Array Int :=
+  #[
+    0, 1, -1, 2, -2, 3, -3,
+    maxInt257, minInt257
+  ]
+
+private def ifretBadBoolNonIntPool : Array Value :=
+  #[.null, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[], q0]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value := noiseA ++ noiseB ++ noiseC ++ noiseD
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfretFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (bRaw, rng4) := pickFromPool ifretBoolPool rng3
+  let b := if bRaw = 0 then 0 else bRaw
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkIfretCase s!"fuzz/ok/true/deep-{depth}" (withBool below (.num (if b = 0 then 1 else b))), rng4)
+    else if shape = 1 then
+      (mkIfretCase s!"fuzz/ok/false/deep-{depth}" (withBool below (.num 0)), rng4)
+    else if shape = 2 then
+      (mkIfretCase "fuzz/ok/true/basic" (withBool #[] (.num 1)), rng4)
+    else if shape = 3 then
+      (mkIfretCase "fuzz/ok/false/basic" (withBool #[] (.num 0)), rng4)
+    else if shape = 4 then
+      (mkIfretCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 5 then
+      let (bad, rng6) := pickFromPool ifretBadBoolNonIntPool rng4
+      (mkIfretCase s!"fuzz/type/top-non-int/deep-{depth}" (withRawBool below bad), rng6)
+    else if shape = 6 then
+      (mkIfretCase "fuzz/type/order-top-first" #[intV 19, .null], rng4)
+    else if shape = 7 then
+      (mkIfretCase "fuzz/intov/pushnan" #[] #[.pushInt .nan, ifretInstr], rng4)
+    else if shape = 8 then
+      (mkIfretCase "fuzz/intov/pushnan-with-noise" noiseA #[.pushInt .nan, ifretInstr], rng4)
+    else if shape = 9 then
+      (mkIfretCase "fuzz/gas/exact/true"
+        (withBool #[] (.num 1))
+        #[.pushInt (.num ifretSetGasExact), .tonEnvOp .setGasLimit, ifretInstr], rng4)
+    else if shape = 10 then
+      (mkIfretCase "fuzz/gas/exact-minus-one/true"
+        (withBool #[] (.num 1))
+        #[.pushInt (.num ifretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifretInstr], rng4)
+    else if shape = 11 then
+      (mkIfretCase "fuzz/gas/exact/false"
+        (withBool #[] (.num 0))
+        #[.pushInt (.num ifretSetGasExact), .tonEnvOp .setGasLimit, ifretInstr], rng4)
+    else if shape = 12 then
+      (mkIfretCase "fuzz/gas/exact-minus-one/false"
+        (withBool #[] (.num 0))
+        #[.pushInt (.num ifretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifretInstr], rng4)
+    else
+      (mkIfretCase "fuzz/order/not-taken-tail-exec"
+        (withBool #[intV 2, intV 3] (.num 0))
+        #[ifretInstr, .add], rng4)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
+
 def suite : InstrSuite where
   id := ifretId
   unit := #[
@@ -348,7 +437,11 @@ def suite : InstrSuite where
     mkIfretCase "gas/exact-minus-one-false-out-of-gas" (withBool #[] (.num 0))
       #[.pushInt (.num ifretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifretInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifretId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifretId
+      count := 500
+      gen := genIfretFuzzCase }
+  ]
 
 initialize registerSuite suite
 

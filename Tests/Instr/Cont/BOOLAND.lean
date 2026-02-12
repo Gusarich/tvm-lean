@@ -142,6 +142,82 @@ private def k0 : Continuation := .quit 0
 private def mkK0Stack (below : Array Value := #[]) : Array Value :=
   mkBoolAndStack below k0 k0
 
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value :=
+    noiseA ++ noiseB ++ noiseC ++ noiseD ++ #[intV 0, intV 1, intV (-1), .tuple #[]]
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def boolAndBadValPool : Array Value :=
+  #[.null, intV 1, .cell refCellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
+
+private def genBoolAndFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 15
+  let (depth, rng2) := randNat rng1 0 5
+  let (below, rng3) := genBelowStack depth rng2
+  let (x, rng4) := pickSigned257ish rng3
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/deep-{depth}" (mkK0Stack below), rng4)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/program-tail/nop-chain/deep-{depth}" (mkK0Stack below)
+        #[boolAndInstr, .nop, .nop], rng4)
+    else if shape = 2 then
+      (mkCase s!"fuzz/ok/program-tail/pushint/deep-{depth}" (mkK0Stack below)
+        #[boolAndInstr, .pushInt (.num x)], rng4)
+    else if shape = 3 then
+      -- Branch: create ordinary target from slice, then BOOLAND.
+      let (s, rng6) := pickFromPool #[.slice sliceA, .slice sliceB] rng4
+      (mkCase "fuzz/ok/branch/ordinary-target-via-bless" (below ++ #[.cont k0, s])
+        #[.bless, .xchg0 1, boolAndInstr], rng6)
+    else if shape = 4 then
+      -- Branch: create value continuation from slice via bless, then BOOLAND.
+      let (s, rng6) := pickFromPool #[.slice sliceA, .slice sliceB] rng4
+      (mkCase "fuzz/ok/branch/value-from-bless" (below ++ #[.cont k0, s])
+        #[.bless, boolAndInstr], rng6)
+    else if shape = 5 then
+      (mkCase "fuzz/ok/branch/value-and-target-from-bless" (below ++ #[.cont k0, .slice sliceA, .slice sliceB])
+        #[.bless, .xchg0 1, .bless, boolAndInstr], rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 7 then
+      let (single, rng6) := pickFromPool (noiseA ++ noiseB ++ noiseC ++ noiseD) rng4
+      (mkCase "fuzz/err/underflow/one" #[single], rng6)
+    else if shape = 8 then
+      let (badTop, rng6) := pickFromPool boolAndBadValPool rng4
+      (mkCase s!"fuzz/err/type/top/deep-{depth}" (mkTopTypeStack below k0 badTop), rng6)
+    else if shape = 9 then
+      let (badSecond, rng6) := pickFromPool boolAndBadValPool rng4
+      (mkCase s!"fuzz/err/type/second/deep-{depth}" (mkSecondTypeStack below badSecond k0), rng6)
+    else if shape = 10 then
+      (mkCase "fuzz/err/order/top-type-before-second-type" #[.cell refCellA, .null] #[boolAndInstr], rng4)
+    else if shape = 11 then
+      (mkCase "fuzz/ok/order/two-successive-booland" #[.cont k0, .cont k0, .cont k0] #[boolAndInstr, boolAndInstr], rng4)
+    else if shape = 12 then
+      (mkCase "fuzz/err/type/top-with-tail-skipped"
+        (mkTopTypeStack below k0 (.cell refCellA))
+        #[boolAndInstr, .pushInt (.num 999)], rng4)
+    else if shape = 13 then
+      (mkCase "fuzz/err/type/second-with-tail-skipped"
+        (mkSecondTypeStack below (.slice sliceA) k0)
+        #[boolAndInstr, .pushInt (.num 999)], rng4)
+    else if shape = 14 then
+      (mkCase "fuzz/ok/noise/max-min-int-preserved" (mkK0Stack #[intV maxInt257, intV minInt257, .null]), rng4)
+    else
+      (mkCase "fuzz/ok/program-tail/add-after-booland"
+        (mkK0Stack #[]) #[boolAndInstr, .pushInt (.num 2), .pushInt (.num 3), .add], rng4)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
+
 def suite : InstrSuite where
   id := boolAndId
   unit := #[
@@ -395,7 +471,11 @@ def suite : InstrSuite where
     mkCase "ok/noise/max-min-int-preserved"
       (mkK0Stack #[intV maxInt257, intV minInt257, .null])
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec boolAndId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr boolAndId
+      count := 500
+      gen := genBoolAndFuzzCase }
+  ]
 
 initialize registerSuite suite
 

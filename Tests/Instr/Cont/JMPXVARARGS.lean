@@ -48,6 +48,78 @@ private def mkCase
 private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrFlowJmpxVarArgs jmpxVarArgsInstr stack
 
+private def jmpxVarArgsOracleFamilies : Array String :=
+  #[
+    "ok/pass-minus1/",
+    "ok/pass0/",
+    "ok/pass1/",
+    "ok/pass2/",
+    "ok/pass3/",
+    "ok/pass254/",
+    "order/",
+    "err/underflow/",
+    "err/type/",
+    "err/range/",
+    "err/order/"
+  ]
+
+private def jmpxVarArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmpxVarArgsOracleFamilies
+    -- Bias toward parameter/order perturbations while still covering all mutation families.
+    mutationModes := #[
+      0, 0, 0, 0,
+      2, 2, 2,
+      4, 4,
+      1, 1,
+      3
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def jmpxVarArgsParamPool : Array Int := #[-1, 0, 1, 2, 3, 254]
+private def jmpxVarArgsNoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell cellA], #[.slice sliceA], #[.builder Builder.empty]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genJmpxVarArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (params, rng2) := pickFromPool jmpxVarArgsParamPool rng1
+  let (noise, rng3) := pickFromPool jmpxVarArgsNoisePool rng2
+  let okBelow :=
+    if params < 0 then
+      intStackAsc 3
+    else
+      intStackAsc (params.toNat + 1)
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/pass" (mkStack (okBelow ++ noise) params)
+    else if shape = 1 then
+      mkCase "fuzz/ok/order/tail-skipped" (mkStack #[] 0) #[jmpxVarArgsInstr, .pushInt (.num 77)]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/need-after-pop" (mkStack #[] 1)
+    else if shape = 4 then
+      mkCase "fuzz/err/type/params-null" #[q0, .null]
+    else if shape = 5 then
+      mkCase "fuzz/err/type/cont-after-need" #[intV 7, intV 8, intV 1]
+    else if shape = 6 then
+      mkCase "fuzz/err/range/params-255" (mkStack #[] 255)
+    else if shape = 7 then
+      mkCase "fuzz/err/range/params-minus2" (mkStack #[] (-2))
+    else if shape = 8 then
+      mkCase "fuzz/err/order/range-before-cont-type" #[.null] #[.pushInt (.num 255), jmpxVarArgsInstr]
+    else if shape = 9 then
+      mkCase "fuzz/err/range/nan-via-program" #[q0] #[.pushInt .nan, jmpxVarArgsInstr]
+    else
+      mkCase "fuzz/ok/pass2-mixed" (mkStack (noise ++ #[intV 7, intV 8]) 2)
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase := #[
   -- Success and pass-args behavior.
   mkCase "ok/pass-minus1/empty" (mkStack #[] (-1)),
@@ -156,7 +228,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec jmpxVarArgsId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr jmpxVarArgsId
+      count := 500
+      gen := genJmpxVarArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

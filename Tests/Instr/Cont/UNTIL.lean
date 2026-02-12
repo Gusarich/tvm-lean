@@ -138,6 +138,57 @@ private def noiseB : Array Value :=
 private def noiseLong : Array Value :=
   #[intV 1, .null, intV (-1), .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
 
+private def untilOracleFamilies : Array String :=
+  #[
+    "ok/direct/tail-skipped/",
+    "ok/direct/no-tail/",
+    "err/underflow/",
+    "err/type/",
+    "gas/"
+  ]
+
+private def pickNoise (rng0 : StdGen) : Array Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 3
+  match choice with
+  | 0 => (#[], rng1)
+  | 1 => (noiseA, rng1)
+  | 2 => (noiseB, rng1)
+  | _ => (noiseLong, rng1)
+
+private def pickNonCont (rng0 : StdGen) : Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 5
+  match choice with
+  | 0 => (intV 7, rng1)
+  | 1 => (.null, rng1)
+  | 2 => (.cell cellA, rng1)
+  | 3 => (.slice sliceA, rng1)
+  | 4 => (.builder Builder.empty, rng1)
+  | _ => (.tuple #[], rng1)
+
+private def genUntilFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 5
+  match shape with
+  | 0 =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/no-tail" (noise ++ #[q0]), rng2)
+  | 1 =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/tail" (noise ++ #[q0]) untilTailProgram, rng2)
+  | 2 =>
+      (mkCase "fuzz/err/underflow" #[], rng1)
+  | 3 =>
+      let (bad, rng2) := pickNonCont rng1
+      (mkCase "fuzz/err/type/top" #[bad], rng2)
+  | 4 =>
+      let (useExact, rng2) := randBool rng1
+      let gas := if useExact then untilSetGasExact else untilSetGasExactMinusOne
+      let name := if useExact then "fuzz/gas/exact" else "fuzz/gas/minus-one"
+      let program := #[.pushInt (.num gas), .tonEnvOp .setGasLimit, untilInstr]
+      (mkCase name #[q0] program, rng2)
+  | _ =>
+      let (noise, rng2) := pickNoise rng1
+      (mkCase "fuzz/ok/basic" (noise ++ #[q0]), rng2)
+
 def suite : InstrSuite where
   id := untilId
   unit := #[
@@ -294,7 +345,11 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[q0]
       #[.pushInt (.num untilSetGasExactMinusOne), .tonEnvOp .setGasLimit, untilInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec untilId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr untilId
+      count := 500
+      gen := genUntilFuzzCase }
+  ]
 
 initialize registerSuite suite
 

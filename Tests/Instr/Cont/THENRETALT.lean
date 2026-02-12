@@ -241,6 +241,74 @@ private def thenRetAltGasExact : Int :=
 private def thenRetAltGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne thenRetAltInstr
 
+private def thenRetAltOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/program/",
+    "ok/control/",
+    "err/underflow/",
+    "err/type/",
+    "err/order/",
+    "ok/decode/",
+    "err/decode/",
+    "gas/"
+  ]
+
+private def thenRetAltFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := thenRetAltOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def thenRetAltNoisePool : Array (Array Value) :=
+  #[
+    #[q0V],
+    #[intV 1, q0V],
+    #[.null, q0V],
+    #[.cell cellA, q0V],
+    #[.slice fullSliceA, q0V],
+    #[.builder Builder.empty, q0V],
+    #[.tuple #[], q0V]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genThenRetAltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 10
+  let (noise, rng2) := pickFromPool thenRetAltNoisePool rng1
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic" noise
+    else if shape = 1 then
+      mkCase "fuzz/ok/program-pushctr0" #[q0V] #[thenRetAltInstr, .pushCtr 0]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow-empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/type-top-int" #[intV 0]
+    else if shape = 4 then
+      mkCase "fuzz/err/order-type-before-below-cont" #[q0V, .null]
+    else if shape = 5 then
+      mkCaseCode "fuzz/ok/decode-raw-opcode" #[q0V] thenRetAltRawCode
+    else if shape = 6 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] thenRetAltTruncated8Code
+    else if shape = 7 then
+      mkCaseCode "fuzz/err/decode-truncated-15" #[q0V] thenRetAltTruncated15Code
+    else if shape = 8 then
+      mkCase "fuzz/gas/exact-cost-succeeds"
+        #[q0V]
+        #[.pushInt (.num thenRetAltGasExact), .tonEnvOp .setGasLimit, thenRetAltInstr]
+    else if shape = 9 then
+      mkCase "fuzz/gas/exact-minus-one-out-of-gas"
+        #[q0V]
+        #[.pushInt (.num thenRetAltGasExactMinusOne), .tonEnvOp .setGasLimit, thenRetAltInstr]
+    else
+      mkCase "fuzz/ok/control-tail" #[q0V] #[thenRetAltInstr, .pushInt (.num 7)]
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 private def oracleCases : Array OracleCase := #[
   mkCase "ok/basic/q0-only" #[q0V],
   mkCase "ok/basic/q0-over-int" #[intV 1, q0V],
@@ -372,7 +440,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec thenRetAltId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr thenRetAltId
+      count := 500
+      gen := genThenRetAltFuzzCase }
+  ]
 
 initialize registerSuite suite
 

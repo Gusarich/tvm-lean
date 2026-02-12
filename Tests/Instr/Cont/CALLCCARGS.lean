@@ -183,6 +183,65 @@ private def progSetNumCallccArgs (nargs : Int) (params : Nat) (retVals : Int) : 
 private def progSetContVarCallccArgs (copy more : Int) (params : Nat) (retVals : Int) : Array Instr :=
   #[.pushCtr 0, .pushInt (.num copy), .pushInt (.num more), .setContVarArgs, .callccArgs params retVals]
 
+private def callccArgsFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := #[
+      "ok/basic/",
+      "ok/order/",
+      "err/underflow/",
+      "err/type/",
+      "err/order/",
+      "ok/jump/",
+      "err/jump/",
+      "ok/decode/",
+      "err/decode/"
+    ]
+    -- Bias toward argument-shape, ordering, and jump/decode interaction perturbations.
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def callccArgsParamPool : Array Nat := #[0, 1, 2, 3, 15]
+private def callccArgsRetPool : Array Int := #[-1, 0, 1, 14]
+private def callccArgsNoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell cellA], #[.slice sliceA], #[.builder Builder.empty]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCallccArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (params, rng2) := pickFromPool callccArgsParamPool rng1
+  let (retVals, rng3) := pickFromPool callccArgsRetPool rng2
+  let (noise, rng4) := pickFromPool callccArgsNoisePool rng3
+  let baseBelow := intStackAsc (params + 1)
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic/params-retvals" (mkStack baseBelow) params retVals
+    else if shape = 1 then
+      mkCase "fuzz/ok/order/mixed-stack" (mkStack (noise ++ #[intV 7])) 1 0
+    else if shape = 2 then
+      mkCaseProg "fuzz/ok/order/tail-skipped" (mkStack #[]) #[.callccArgs 0 0, .pushInt (.num 77)]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/empty" #[] 0 0
+    else if shape = 4 then
+      mkCase "fuzz/err/underflow/pass2" (mkStack #[intV 7]) 2 0
+    else if shape = 5 then
+      mkCase "fuzz/err/type/cont-null" #[.null] 0 0
+    else if shape = 6 then
+      mkCase "fuzz/err/order/type-before-underflow" #[q0, intV 1] 2 0
+    else if shape = 7 then
+      mkCaseProg "fuzz/ok/jump/setnum-nargs1" #[] (progSetNumCallccArgs 1 0 0)
+    else if shape = 8 then
+      mkCaseProg "fuzz/err/jump/setnum-nargs2" #[] (progSetNumCallccArgs 2 0 0)
+    else if shape = 9 then
+      mkCaseCode "fuzz/ok/decode/raw" (mkStack #[]) (rawCallccArgsCode 0 14)
+    else
+      mkCaseCode "fuzz/err/decode/truncated16" #[] callccArgsTruncated16Code
+  let (tag, rng5) := randNat rng4 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng5)
+
 private def oracleCases : Array OracleCase := #[
   -- params/retvals boundaries.
   mkCase "ok/basic/p0-r-1-empty" (mkStack #[]) 0 (-1),
@@ -353,7 +412,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec callccArgsId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callccArgsId
+      count := 500
+      gen := genCallccArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

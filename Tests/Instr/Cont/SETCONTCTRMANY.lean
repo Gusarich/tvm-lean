@@ -199,6 +199,10 @@ private def nearEde2Code : Cell :=
 private def nearEde5Code : Cell :=
   Cell.mkOrdinary (natToBits 0xede5 16) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def oracleCases : Array OracleCase := #[
   -- Success masks over all allowed ctr bits.
   mkMaskCase "ok/basic/mask0/quit0" (mkStack #[] q0) 0,
@@ -267,6 +271,63 @@ private def oracleCases : Array OracleCase := #[
   mkCodeCase "err/raw/opcode-near-ede2" (mkStack #[] q0) nearEde2Code,
   mkCodeCase "err/raw/opcode-near-ede5" (mkStack #[] q0) nearEde5Code
 ]
+
+private def setContCtrManyOracleFamilies : Array String :=
+  #[
+    "ok/basic/",
+    "ok/noise/",
+    "ok/nonordinary/",
+    "ok/flow/",
+    "ok/reapply/",
+    "ok/raw/",
+    "err/reapply/",
+    "err/underflow/",
+    "err/cont-type/",
+    "err/mask-range/",
+    "err/order/",
+    "err/raw/"
+  ]
+
+private def setContCtrManyFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := setContCtrManyOracleFamilies
+    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def fuzzOkMaskPool : Array Nat := #[0, 1, 2, 3, 4, 5, 8, 16, 32, 33, 63, 128, 160, 187]
+
+private def fuzzBadMaskPool : Array Nat := #[64, 96, 192]
+
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB, noiseC]
+
+private def genSetContCtrManyFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  let (mask, rng2) := pickFromPool fuzzOkMaskPool rng1
+  let (badMask, rng3) := pickFromPool fuzzBadMaskPool rng2
+  let (noise, rng4) := pickFromPool fuzzNoisePool rng3
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkMaskCase s!"fuzz/ok/basic/mask{mask}" (mkStack noise q0) mask, rng4)
+    else if shape = 1 then
+      (mkMaskCase s!"fuzz/ok/flow/mask{mask}-tail-push"
+        (mkStack #[] q0) mask #[.pushInt (.num 777)], rng4)
+    else if shape = 2 then
+      (mkMaskCase "fuzz/err/underflow/empty" #[] mask, rng4)
+    else if shape = 3 then
+      (mkMaskCase s!"fuzz/err/mask/bit6-{badMask}" (mkStack #[] q0) badMask, rng4)
+    else if shape = 4 then
+      (mkCase "fuzz/err/reapply/mask1-then-mask1" (mkStack #[] q0) (progSetThenSet 1 1), rng4)
+    else if shape = 5 then
+      (mkCodeCase "fuzz/ok/raw-opcode" (mkStack #[] q0) (setContCtrManyCode mask), rng4)
+    else if shape = 6 then
+      let (rawCode, rng5) := pickFromPool
+        #[nearEde4Code, nearEde2Code, nearEde5Code, setContCtrManyTruncated8Code, setContCtrManyTruncated16Code] rng4
+      (mkCodeCase "fuzz/err/raw-opcode" (mkStack #[] q0) rawCode, rng5)
+    else
+      (mkMaskCase "fuzz/err/cont-type" #[.null] mask, rng4)
+  let (tag, rng5) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng5)
 
 def suite : InstrSuite where
   id := setContCtrManyId
@@ -411,7 +472,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkReplayOracleFuzzSpec setContCtrManyId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr setContCtrManyId
+      count := 500
+      gen := genSetContCtrManyFuzzCase }
+  ]
 
 initialize registerSuite suite
 

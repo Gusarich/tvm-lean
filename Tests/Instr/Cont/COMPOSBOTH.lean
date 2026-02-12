@@ -143,6 +143,69 @@ private def composBothTruncated8Code : Cell :=
 private def composBothTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xedf2 >>> 1) 15) #[]
 
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value :=
+    noiseA ++ noiseB ++ noiseC ++ #[intV 0, intV 1, intV (-1), intV maxInt257, intV minInt257, q0]
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def composBothBadValuePool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[]]
+
+private def genComposBothFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 14
+  let (depth, rng2) := randNat rng1 0 5
+  let (below, rng3) := genBelowStack depth rng2
+  let (x, rng4) := pickSigned257ish rng3
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/deep-{depth}" (mkStack below), rng4)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/program/tail-push/deep-{depth}" (mkStack below)
+        #[composBothInstr, .pushInt (.num x)], rng4)
+    else if shape = 2 then
+      (mkCase "fuzz/ok/program/pushctr0-then-composboth" #[q0] #[.pushCtr 0, composBothInstr], rng4)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/program/pushctr1-then-composboth" #[q0] #[.pushCtr 1, composBothInstr], rng4)
+    else if shape = 4 then
+      (mkCase "fuzz/ok/program/chain-two" #[q0, q0, q0] #[composBothInstr, composBothInstr], rng4)
+    else if shape = 5 then
+      (mkCase "fuzz/ok/program/setcontctr0-then-composboth"
+        #[q0, q0] #[.setContCtr 0, .pushCtr 0, composBothInstr], rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 7 then
+      let (single, rng6) := pickFromPool (noiseA ++ noiseB ++ noiseC) rng4
+      (mkCase "fuzz/err/underflow/one" #[single], rng6)
+    else if shape = 8 then
+      let (badTop, rng6) := pickFromPool composBothBadValuePool rng4
+      (mkCase s!"fuzz/err/type/first-pop/deep-{depth}" (below ++ #[q0, badTop]), rng6)
+    else if shape = 9 then
+      let (badSecond, rng6) := pickFromPool composBothBadValuePool rng4
+      (mkCase s!"fuzz/err/type/second-pop/deep-{depth}" (below ++ #[badSecond, q0]), rng6)
+    else if shape = 10 then
+      (mkCase "fuzz/err/order/first-pop-type-preserves-deeper" #[intV 7, q0, .null], rng4)
+    else if shape = 11 then
+      (mkCase "fuzz/err/order/second-pop-type-after-first-success" #[intV 7, .null, q0], rng4)
+    else if shape = 12 then
+      (mkCase "fuzz/err/type/nan-via-program/top" #[q0] #[.pushInt .nan, composBothInstr], rng4)
+    else if shape = 13 then
+      (mkCaseCode "fuzz/ok/decode/raw-opcode" (mkStack below) composBothCode, rng4)
+    else
+      let (code, rng6) := pickFromPool #[composBothTruncated8Code, composBothTruncated15Code] rng4
+      (mkCaseCode "fuzz/err/decode/truncated" below code, rng6)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
+
 def suite : InstrSuite where
   id := composBothId
   unit := #[
@@ -369,7 +432,11 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8bit-prefix" #[] composBothTruncated8Code,
     mkCaseCode "err/decode/truncated-15bit-prefix" #[q0] composBothTruncated15Code
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec composBothId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr composBothId
+      count := 500
+      gen := genComposBothFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -203,6 +203,67 @@ private def mkCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private def jmprefdataOracleFamilies : Array String :=
+  #[
+    "ok/branch/",
+    "ok/no-tail/",
+    "ok/alt-target/",
+    "ok/tail-add-",
+    "ok/tail-retalt-",
+    "ok/extra-refs/",
+    "special/cellund/",
+    "decode/missing-ref/",
+    "decode/truncated-",
+    "decode/empty-code/"
+  ]
+
+private def jmprefdataFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := jmprefdataOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
+
+private def jmprefdataNoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell noiseBranch], #[.slice noiseSlice], #[.builder Builder.empty], #[q0]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genJmprefdataFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 10
+  let (noise, rng2) := pickFromPool jmprefdataNoisePool rng1
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/branch" noise branchObservableCode
+    else if shape = 1 then
+      mkCase "fuzz/ok/no-tail" noise noTailCode
+    else if shape = 2 then
+      mkCase "fuzz/ok/alt-target" #[intV 6] altTargetCode
+    else if shape = 3 then
+      mkCase "fuzz/ok/extra-refs" noise extraRefsCode
+    else if shape = 4 then
+      mkCase "fuzz/err/special" noise specialBranchCode
+    else if shape = 5 then
+      mkCase "fuzz/err/decode/missing-ref" noise missingRefCode
+    else if shape = 6 then
+      mkCase "fuzz/err/decode/missing-ref-with-tail" noise missingRefWithTailCode
+    else if shape = 7 then
+      mkCase "fuzz/err/decode/truncated-8" noise truncated8Code
+    else if shape = 8 then
+      mkCase "fuzz/err/decode/truncated-15" noise truncated15Code
+    else
+      mkCase "fuzz/err/decode/empty-code" noise Cell.empty
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 def suite : InstrSuite where
   id := jmprefdataId
   unit := #[
@@ -385,7 +446,11 @@ def suite : InstrSuite where
     mkCase "decode/empty-code/empty-stack" #[] Cell.empty,
     mkCase "decode/empty-code/with-stack" #[intV 6] Cell.empty
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec jmprefdataId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr jmprefdataId
+      count := 500
+      gen := genJmprefdataFuzzCase }
+  ]
 
 initialize registerSuite suite
 

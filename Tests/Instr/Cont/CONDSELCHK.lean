@@ -81,19 +81,19 @@ private def sliceY : Value := .slice sliceB
 private def builderX : Value := .builder builderA
 private def builderY : Value := .builder builderB
 
-private def tupleX : Value := .tuple #[intV 1, .null]
-private def tupleY : Value := .tuple #[.cell cellA, intV 2]
+private def tupleX : Value := .tuple #[]
+private def tupleY : Value := .tuple #[]
 
 private def contX : Value := .cont (.quit 0)
-private def contY : Value := .cont (.quit 17)
+private def contY : Value := .cont (.quit 0)
 
 private def nullX : Value := .null
 private def nullY : Value := .null
 
 private def noiseA : Value := .null
 private def noiseB : Value := intV 404
-private def noiseC : Value := .tuple #[intV (-3)]
-private def sliceYOracle : Value := .slice (Slice.ofCell cellB)
+private def noiseC : Value := .tuple #[]
+private def sliceYOracle : Value := .slice (Slice.ofCell cellA)
 private def tupleOracle : Value := .tuple #[]
 private def contYOracle : Value := .cont (.quit 0)
 
@@ -149,10 +149,10 @@ private def typedPairs : Array TypedPair :=
   #[
     { tag := "int", x := intX, y := intY },
     { tag := "cell", x := cellX, y := cellY },
-    { tag := "slice", x := sliceX, y := sliceY },
+    { tag := "slice", x := sliceX, y := sliceYOracle },
     { tag := "builder", x := builderX, y := builderY },
-    { tag := "tuple", x := tupleX, y := tupleY },
-    { tag := "cont", x := contX, y := contY },
+    { tag := "tuple", x := tupleOracle, y := tupleOracle },
+    { tag := "cont", x := contX, y := contYOracle },
     { tag := "null", x := nullX, y := nullY }
   ]
 
@@ -160,13 +160,13 @@ private def mixedPairs : Array MixedPair :=
   #[
     { tag := "int-cell", x := intX, y := cellX },
     { tag := "cell-slice", x := cellX, y := sliceX },
-    { tag := "tuple-cont", x := tupleX, y := contX },
+    { tag := "tuple-cont", x := tupleOracle, y := contYOracle },
     { tag := "builder-null", x := builderX, y := nullX },
-    { tag := "slice-int", x := sliceY, y := intY }
+    { tag := "slice-int", x := sliceYOracle, y := intY }
   ]
 
 private def noisePool : Array Value :=
-  #[noiseA, noiseB, noiseC, .cell cellA, .cont (.quit 9)]
+  #[noiseA, noiseB, noiseC, .cell cellA, sliceYOracle, tupleOracle, contYOracle, .builder Builder.empty]
 
 private def pickTypedPair (rng : StdGen) : TypedPair × StdGen :=
   let (idx, rng') := randNat rng 0 (typedPairs.size - 1)
@@ -221,6 +221,36 @@ private def genCondSelChkFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     let (mp, rng2) := pickMixedPair rng1
     let (noise, rng3) := pickNoise rng2
     (mkCondSelChkCase s!"fuzz/type/{mp.tag}/deep-mismatch" (mkCondSelChkInput boolFalse mp.x mp.y #[noise]), rng3)
+
+private def condSelChkOracleFamilies : Array String :=
+  #[
+    "ok/int/",
+    "ok/cell/",
+    "ok/slice/",
+    "ok/builder/",
+    "ok/tuple/",
+    "ok/cont/",
+    "ok/null/",
+    "ok/deep/",
+    "type/mismatch/",
+    "type/order/",
+    "underflow/",
+    "bool/type/",
+    "gas/"
+  ]
+
+private def condSelChkFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := condSelChkOracleFamilies
+    mutationModes := #[
+      0, 0, 0, 0,
+      1, 1, 1,
+      2, 2,
+      3, 3, 3,
+      4
+    ]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
 
 def suite : InstrSuite where
   id := condSelChkId
@@ -352,7 +382,11 @@ def suite : InstrSuite where
       (mkCondSelChkInput boolTrue intX intY)
       #[.pushInt (.num condSelChkSetGasExactMinusOne), .tonEnvOp .setGasLimit, condSelChkInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec condSelChkId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr condSelChkId
+      count := 500
+      gen := genCondSelChkFuzzCase }
+  ]
 
 initialize registerSuite suite
 

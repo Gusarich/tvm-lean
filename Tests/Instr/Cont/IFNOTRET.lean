@@ -123,14 +123,32 @@ private def ifnotretSetGasExact : Int :=
 private def ifnotretSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne ifnotretInstr
 
-private def needOneArgCont : Continuation :=
-  .ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty { stack := #[], nargs := 1 }
+private def ifnotretOracleFamilies : Array String :=
+  #[
+    "branch/observable/",
+    "ok/no-tail/",
+    "err/underflow/",
+    "err/type/",
+    "err/intov/",
+    "gas/"
+  ]
 
-private def regsC0Quit9 : Regs :=
-  { Regs.initial with c0 := .quit 9 }
+private def ifnotretFuzzProfile : ContMutationProfile :=
+  { oracleNamePrefixes := ifnotretOracleFamilies
+    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+    minMutations := 1
+    maxMutations := 5
+    includeErrOracleSeeds := true }
 
-private def regsC0NeedOne : Regs :=
-  { Regs.initial with c0 := needOneArgCont }
+private def ifnotretBoolPool : Array Int :=
+  #[
+    0, 1, -1, 2, -2, 3, -3,
+    pow2 200, -(pow2 200),
+    maxInt257, minInt257
+  ]
+
+private def ifnotretBadCondNonIntPool : Array Value :=
+  #[.null, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[], q0]
 
 private def noiseA : Array Value :=
   #[.null, intV 9, .cell refCellA]
@@ -140,6 +158,88 @@ private def noiseB : Array Value :=
 
 private def noiseC : Array Value :=
   #[intV (-1), .null, .cell Cell.empty, .builder Builder.empty]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value := noiseA ++ noiseB ++ noiseC
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfnotretFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 15
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (bRaw, rng4) := pickFromPool ifnotretBoolPool rng3
+  let b := if bRaw = 0 then 0 else bRaw
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/branch/observable/deep-{depth}/cond-{b}"
+        (withCond below (.num b)) branchObservableProgram, rng4)
+    else if shape = 1 then
+      (mkCase "fuzz/ok/no-tail/zero" (withCond #[] (.num 0)), rng4)
+    else if shape = 2 then
+      (mkCase "fuzz/ok/no-tail/nonzero" (withCond #[] (.num 1)), rng4)
+    else if shape = 3 then
+      (mkCase s!"fuzz/ok/no-tail/deep-{depth}" (withCond below (.num b)), rng4)
+    else if shape = 4 then
+      (mkCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 5 then
+      let (bad, rng6) := pickFromPool ifnotretBadCondNonIntPool rng4
+      (mkCase s!"fuzz/type/top-non-int/deep-{depth}" (withCondRaw below bad), rng6)
+    else if shape = 6 then
+      (mkCase "fuzz/intov/nan-via-program" #[] nanProgram, rng4)
+    else if shape = 7 then
+      (mkCase "fuzz/intov/nan-via-program-deep" noiseA nanProgram, rng4)
+    else if shape = 8 then
+      (mkCase "fuzz/gas/exact/nonzero-succeeds"
+        (withCond #[] (.num 1))
+        #[.pushInt (.num ifnotretSetGasExact), .tonEnvOp .setGasLimit, ifnotretInstr], rng4)
+    else if shape = 9 then
+      (mkCase "fuzz/gas/exact-minus-one/nonzero-out-of-gas"
+        (withCond #[] (.num 1))
+        #[.pushInt (.num ifnotretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretInstr], rng4)
+    else if shape = 10 then
+      (mkCase "fuzz/gas/exact/zero-succeeds"
+        (withCond #[] (.num 0))
+        #[.pushInt (.num ifnotretSetGasExact), .tonEnvOp .setGasLimit, ifnotretInstr], rng4)
+    else if shape = 11 then
+      -- Non-ret branch should execute tail.
+      (mkCase "fuzz/order/tail-exec-on-nonzero"
+        (withCond #[] (.num (-5))) branchObservableProgram, rng4)
+    else if shape = 12 then
+      -- Ret-on-zero should skip tail (observable by absence of marker).
+      (mkCase "fuzz/order/tail-skipped-on-zero"
+        (withCond #[] (.num 0)) branchObservableProgram, rng4)
+    else if shape = 13 then
+      let (bad, rng6) := pickFromPool ifnotretBadCondNonIntPool rng4
+      (mkCase s!"fuzz/type/deep-order-top-first"
+        (below ++ #[intV 19, bad]) #[ifnotretInstr], rng6)
+    else if shape = 14 then
+      -- dispatch fallback exercise: different opcode must fall through.
+      (mkCase "fuzz/dispatch/fallback-add" #[intV 1] #[.add], rng4)
+    else
+      (mkCase "fuzz/gas/exact-minus-one/zero-out-of-gas"
+        (withCond #[] (.num 0))
+        #[.pushInt (.num ifnotretSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifnotretInstr], rng4)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
+
+private def needOneArgCont : Continuation :=
+  .ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty { stack := #[], nargs := 1 }
+
+private def regsC0Quit9 : Regs :=
+  { Regs.initial with c0 := .quit 9 }
+
+private def regsC0NeedOne : Regs :=
+  { Regs.initial with c0 := needOneArgCont }
 
 def suite : InstrSuite where
   id := ifnotretId
@@ -331,7 +431,11 @@ def suite : InstrSuite where
     mkCase "gas/exact/zero-succeeds" (withCond #[] (.num 0))
       #[.pushInt (.num ifnotretSetGasExact), .tonEnvOp .setGasLimit, ifnotretInstr]
   ]
-  fuzz := #[ mkReplayOracleFuzzSpec ifnotretId 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifnotretId
+      count := 500
+      gen := genIfnotretFuzzCase }
+  ]
 
 initialize registerSuite suite
 
