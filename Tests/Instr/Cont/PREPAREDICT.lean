@@ -207,6 +207,39 @@ private def prepareFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def prepareIdxPool : Array Nat := #[0, 1, 42, 255, 256, 1024, 4095, 16383]
+private def prepareStackPool : Array (Array Value) := #[#[], deepStackA, deepStackB, deepStackC]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genPrepareFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (idx, rng2) := pickFromPool prepareIdxPool rng1
+  let (stack, rng3) := pickFromPool prepareStackPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkProgCase "fuzz/ok/default/nojump" stack (progPrepareTail idx)
+    else if shape = 1 then
+      mkProgCase "fuzz/ok/set-c3/c1" stack (progSetC3FromCtrThenPrepare 1 idx)
+    else if shape = 2 then
+      mkProgCase "fuzz/ok/downstream/popctr3-add" stack (progPreparePopC3ThenAdd idx)
+    else if shape = 3 then
+      mkProgCase "fuzz/ok/snapshot/mutate-c3" stack (progPrepareThenMutateC3 idx 2)
+    else if shape = 4 then
+      mkProgCase "fuzz/ok/downstream/execute" stack (progSetC3ThenPrepareExecute 2 idx)
+    else if shape = 5 then
+      mkCodeCase "fuzz/ok/set-c3/ordinary" stack (mkPrepareViaC3Code! "fuzz/ord" c3OrdCode idx)
+    else if shape = 6 then
+      mkCodeCase "fuzz/ok/decode-seq/raw" stack rawBoundarySeqCode
+    else if shape = 7 then
+      mkProgCase "fuzz/ok/decode-seq/assembled" #[] progDecodeBoundarySeq
+    else
+      mkCodeCase "fuzz/ok/decode-seq/raw-c2" deepStackA rawBoundarySeqC2Code
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase :=
   #[
     -- default c3 (`quit 11`): no jump, tail must execute.
@@ -392,7 +425,11 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile prepareId prepareFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr prepareId
+      count := 500
+      gen := genPrepareFuzzCase }
+  ]
 
 initialize registerSuite suite
 

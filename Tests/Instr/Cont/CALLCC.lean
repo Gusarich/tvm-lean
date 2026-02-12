@@ -323,6 +323,46 @@ private def callccFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def callccNoisePool : Array (Array Value) :=
+  #[#[], noiseA, noiseB, noiseA ++ noiseB]
+
+private def callccTargetPool : Array Cell :=
+  #[bodyEmpty, bodyDrop, bodyAdd, bodyPush7, bodyImplicitJmpRef]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCallccFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 10
+  let (noise, rng2) := pickFromPool callccNoisePool rng1
+  let (target, rng3) := pickFromPool callccTargetPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkProgramCase "fuzz/ok/direct" (noise ++ #[q0]) #[.callcc]
+    else if shape = 1 then
+      mkProgramCase "fuzz/err/underflow/empty" #[] #[.callcc]
+    else if shape = 2 then
+      mkProgramCase "fuzz/err/type/top-int" #[intV 1] #[.callcc]
+    else if shape = 3 then
+      mkProgramCase "fuzz/err/type/top-null" #[.null] #[.callcc]
+    else if shape = 4 then
+      mkPushRefContCallccCase "fuzz/ok/ref/basic" noise target
+    else if shape = 5 then
+      mkPushRefContCallccCase "fuzz/err/ref/special-target" noise specialTargetCell
+    else if shape = 6 then
+      mkSetContArgsCallccCase "fuzz/ok/setcontargs/nargs1" #[] bodyDrop 0 1
+    else if shape = 7 then
+      mkSetContArgsCallccCase "fuzz/err/setcontargs/underflow" #[] bodyEmpty 0 2
+    else if shape = 8 then
+      mkCase "fuzz/err/decode/missing-ref" #[] missingContRefCode
+    else if shape = 9 then
+      mkCase "fuzz/err/decode/truncated15" #[] truncatedCallcc15Code
+    else
+      mkProgramCase "fuzz/ok/dispatch/no-callcc" #[] #[.ret]
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase := #[
   -- Direct CALLCC from assembled program.
   mkProgramCase "ok/direct/program/basic-empty-below" #[q0] #[.callcc],
@@ -474,7 +514,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"raw/jump-captured: expected cc=capturedCont, got {reprStr st.cc}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile callccId callccFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callccId
+      count := 500
+      gen := genCallccFuzzCase }
+  ]
 
 initialize registerSuite suite
 

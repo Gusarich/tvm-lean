@@ -304,6 +304,42 @@ private def callrefFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def callrefNoisePool : Array (Array Value) :=
+  #[#[], noiseA, noiseB, noiseC]
+
+private def callrefTargetPool : Array Cell :=
+  #[bodyEmpty, bodyPush7, bodyPushNeg2, bodyAdd, bodyImplicitJmpRef]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCallrefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (noise, rng2) := pickFromPool callrefNoisePool rng1
+  let (target, rng3) := pickFromPool callrefTargetPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkCallrefCase "fuzz/ok/basic" noise target
+    else if shape = 1 then
+      mkCallrefCase "fuzz/ok/tail/push9" noise bodyEmpty #[.pushInt (.num 9)]
+    else if shape = 2 then
+      mkCallrefCase "fuzz/ok/body/add" (noise ++ #[intV 2, intV 3]) bodyAdd
+    else if shape = 3 then
+      mkTwoCallrefCase "fuzz/ok/two-callrefs" #[] bodyPush7 bodyPushNeg2
+    else if shape = 4 then
+      mkCallrefCase "fuzz/err/body/underflow" #[] bodyAdd
+    else if shape = 5 then
+      mkCallrefCase "fuzz/err/special" noise specialTargetCell
+    else if shape = 6 then
+      mkCase "fuzz/err/decode/missing-ref" #[] missingRefCode
+    else if shape = 7 then
+      mkCase "fuzz/err/decode/truncated15" #[intV 1] truncated15Code
+    else
+      mkCase "fuzz/err/decode/one-byte-prefix" #[] oneBytePrefixCode
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase := #[
   -- Success paths.
   mkCallrefCase "ok/basic/empty-stack-empty-body" #[] bodyEmpty,
@@ -496,7 +532,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile callrefId callrefFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callrefId
+      count := 500
+      gen := genCallrefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

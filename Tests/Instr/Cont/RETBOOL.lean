@@ -177,6 +177,63 @@ private def retBoolFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def retBoolNoisePool : Array (Array Value) :=
+  #[
+    #[],
+    #[intV 1],
+    #[.null],
+    #[.cell refCellA],
+    #[.slice fullSliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]],
+    #[q0],
+    noiseA,
+    noiseB,
+    noiseC
+  ]
+
+private def retBoolTruePool : Array Int :=
+  #[1, -1, 2, -3, maxInt257, minInt257]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRetBoolFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 12
+  let (noise, rng2) := pickFromPool retBoolNoisePool rng1
+  let (condTrue, rng3) := pickFromPool retBoolTruePool rng2
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/true-basic" (withBool noise (.num condTrue))
+    else if shape = 1 then
+      mkCase "fuzz/ok/false-basic" (withBool noise (.num 0))
+    else if shape = 2 then
+      mkCase "fuzz/c0nargs/true-ok" (withBool #[intV 5] (.num condTrue)) (progSetC0Nargs 1)
+    else if shape = 3 then
+      mkCase "fuzz/c0nargs/true-underflow" (withBool #[] (.num condTrue)) (progSetC0Nargs 1)
+    else if shape = 4 then
+      mkCase "fuzz/c1nargs/false-ok" (withBool #[intV 5] (.num 0)) (progSetC1Nargs 1)
+    else if shape = 5 then
+      mkCase "fuzz/c1nargs/false-underflow" (withBool #[] (.num 0)) (progSetC1Nargs 1)
+    else if shape = 6 then
+      mkCase "fuzz/err/underflow-empty" #[]
+    else if shape = 7 then
+      mkCase "fuzz/err/type-top-null" (withRawBool #[] (.null : Value))
+    else if shape = 8 then
+      mkCase "fuzz/err/type-top-cell" (withRawBool #[] (.cell refCellA))
+    else if shape = 9 then
+      mkCase "fuzz/err/intov-nan-program" #[] (progPushNanRetBool)
+    else if shape = 10 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] retBoolTruncated8Code
+    else if shape = 11 then
+      mkCaseCode "fuzz/err/decode-truncated-15" #[] retBoolTruncated15Code
+    else
+      mkCase "fuzz/ok/branch-skip-tail" (withBool #[intV 2, intV 3] (.num condTrue))
+        #[retBoolInstr, .add]
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 def suite : InstrSuite where
   id := retBoolId
   unit := #[
@@ -392,7 +449,11 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8-prefix" #[] retBoolTruncated8Code,
     mkCaseCode "err/decode/truncated-15-prefix" #[intV 1] retBoolTruncated15Code
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile retBoolId retBoolFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr retBoolId
+      count := 500
+      gen := genRetBoolFuzzCase }
+  ]
 
 initialize registerSuite suite
 

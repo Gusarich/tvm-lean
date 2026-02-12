@@ -231,28 +231,127 @@ private def oracleCases : Array OracleCase :=
       (mkRunvmxInit 36 #[] childCodeRet (dataCell := dataPrunedMask1))
   ]
 
-private def runvmxOracleFamilies : Array String :=
-  #[
-    "ok/mode",
-    "ok/child/",
-    "ok/stack/",
-    "err/mode/",
-    "err/underflow/",
-    "err/type/",
-    "err/range/",
-    "err/full-flags/",
-    "err/child/",
-    "err/retvals/",
-    "err/commit/"
-  ]
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
 
-private def runvmxFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := runvmxOracleFamilies
-    -- Bias toward int perturbation, drops, and noise while preserving all mutation modes.
-    mutationModes := #[4, 4, 4, 0, 0, 0, 3, 3, 3, 1, 2]
-    minMutations := 1
-    maxMutations := 6
-    includeErrOracleSeeds := true }
+private def modePoolBasic : Array Nat := #[0, 1, 2, 3, 4, 8, 16, 24, 32, 36, 64, 72, 128]
+private def modePoolRet : Array Nat := #[256, 257, 511]
+private def modePoolData : Array Nat := #[4, 36, 511]
+private def modePoolC7 : Array Nat := #[16, 24, 511]
+private def modePoolGasLimit : Array Nat := #[8, 24, 72, 511]
+private def modePoolGasMax : Array Nat := #[64, 72, 511]
+
+private def childCodePoolOk : Array Cell :=
+  #[childCodeRet, childCodePush7Ret, childCodePush23Ret, childCodeImplicitJmpRef]
+
+private def dataPoolOk : Array Cell := #[dataOrdA, dataOrdB]
+private def gasLimitPool : Array Int := #[0, 1, 50_000, 500_000, 900_000]
+private def gasMaxPool : Array Int := #[0, 10_000, 150_000, 750_000, 1_500_000]
+
+private def genRunvmxFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 27
+  let (modeBasic, rng2) := pickFromPool modePoolBasic rng1
+  let (modeRet, rng3) := pickFromPool modePoolRet rng2
+  let (modeData, rng4) := pickFromPool modePoolData rng3
+  let (modeC7, rng5) := pickFromPool modePoolC7 rng4
+  let (modeGasLimit, rng6) := pickFromPool modePoolGasLimit rng5
+  let (modeGasMax, rng7) := pickFromPool modePoolGasMax rng6
+  let (childCode, rng8) := pickFromPool childCodePoolOk rng7
+  let (dataCell, rng9) := pickFromPool dataPoolOk rng8
+  let (gasLimit, rng10) := pickFromPool gasLimitPool rng9
+  let (gasMax, rng11) := pickFromPool gasMaxPool rng10
+  let (depth, rng12) := randNat rng11 0 4
+  let childItems := intStackAsc depth
+  let base :=
+    if shape = 0 then
+      mkRunvmxOracleCase "fuzz/ok/basic"
+        (mkRunvmxInit modeBasic childItems childCode)
+    else if shape = 1 then
+      mkRunvmxOracleCase "fuzz/ok/with-data"
+        (mkRunvmxInit modeData childItems childCode (dataCell := dataCell))
+    else if shape = 2 then
+      mkRunvmxOracleCase "fuzz/ok/with-c7-empty"
+        (mkRunvmxInit modeC7 childItems childCode (c7 := #[]))
+    else if shape = 3 then
+      mkRunvmxOracleCase "fuzz/ok/with-gas-limit"
+        (mkRunvmxInit modeGasLimit childItems childCode (gasLimit := gasLimit))
+    else if shape = 4 then
+      mkRunvmxOracleCase "fuzz/ok/with-gas-max"
+        (mkRunvmxInit modeGasMax childItems childCode (gasMax := gasMax))
+    else if shape = 5 then
+      mkRunvmxOracleCase "fuzz/ok/with-retvals-1"
+        (mkRunvmxInit modeRet #[intV 1] childCodePush7Ret (retVals := 1) (dataCell := dataCell) (c7 := #[])
+          (gasLimit := gasLimit) (gasMax := gasMax))
+    else if shape = 6 then
+      mkRunvmxOracleCase "fuzz/ok/implicit-jmpref"
+        (mkRunvmxInit 0 #[] childCodeImplicitJmpRef)
+    else if shape = 7 then
+      mkRunvmxOracleCase "fuzz/ok/preserve-below"
+        (mkRunvmxInitRaw 0 #[intV 999, intV 41, intV 42] 2 childCodeRet)
+    else if shape = 8 then
+      mkRunvmxOracleCase "fuzz/ok/deep-mixed"
+        (mkRunvmxInit 0 mixedChildStack childCodeRet)
+    else if shape = 9 then
+      mkRunvmxOracleCase "fuzz/err/mode/negative"
+        #[intV (-1)]
+    else if shape = 10 then
+      mkRunvmxOracleCase "fuzz/err/mode/too-large"
+        #[intV 512]
+    else if shape = 11 then
+      mkRunvmxOracleCase "fuzz/err/underflow/empty"
+        #[]
+    else if shape = 12 then
+      mkRunvmxOracleCase "fuzz/err/underflow/missing-code-and-stacksize"
+        #[intV 0]
+    else if shape = 13 then
+      mkRunvmxOracleCase "fuzz/err/type/code-not-slice"
+        #[intV 0, .null, intV 0]
+    else if shape = 14 then
+      mkRunvmxOracleCase "fuzz/err/range/stacksize-negative"
+        #[intV (-1), .slice (Slice.ofCell childCodeRet), intV 0]
+    else if shape = 15 then
+      mkRunvmxOracleCase "fuzz/err/range/stacksize-too-large"
+        #[intV 3, .slice (Slice.ofCell childCodeRet), intV 0]
+    else if shape = 16 then
+      mkRunvmxOracleCase "fuzz/err/type/data-not-cell"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), .null, intV 4]
+    else if shape = 17 then
+      mkRunvmxOracleCase "fuzz/err/type/c7-not-tuple"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), .null, intV 16]
+    else if shape = 18 then
+      mkRunvmxOracleCase "fuzz/err/range/gas-limit-negative"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), intV (-1), intV 8]
+    else if shape = 19 then
+      mkRunvmxOracleCase "fuzz/err/range/gas-limit-over-infty"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), intV gasOverInfty, intV 8]
+    else if shape = 20 then
+      mkRunvmxOracleCase "fuzz/err/range/gas-max-negative"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), intV 1000, intV (-1), intV 72]
+    else if shape = 21 then
+      mkRunvmxOracleCase "fuzz/err/range/retvals-negative"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), intV (-1), intV 256]
+    else if shape = 22 then
+      mkRunvmxOracleCase "fuzz/err/range/retvals-too-large"
+        #[intV 0, .slice (Slice.ofCell childCodeRet), intV retValsOverMax, intV 256]
+    else if shape = 23 then
+      mkRunvmxOracleCase "fuzz/err/child/add-underflow"
+        (mkRunvmxInit 0 #[] childCodeAdd)
+    else if shape = 24 then
+      mkRunvmxOracleCase "fuzz/err/child/decode-invalid-15bit"
+        (mkRunvmxInit 0 #[] childCodeInvalid15)
+    else if shape = 25 then
+      mkRunvmxOracleCase "fuzz/err/commit/level-nonzero-c4"
+        (mkRunvmxInit 4 #[] childCodeRet (dataCell := dataPrunedMask1))
+    else if shape = 26 then
+      mkRunvmxOracleCase "fuzz/err/commit/level-nonzero-c4-and-c5"
+        (mkRunvmxInit 36 #[] childCodeRet (dataCell := dataPrunedMask1))
+    else
+      mkRunvmxOracleCase "fuzz/ok/replay/basic"
+        (mkRunvmxInit 0 #[] childCodeRet)
+        #[runvmxInstr]
+  let (tag, rng13) := randNat rng12 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng13)
 
 def suite : InstrSuite where
   id := runvmxId
@@ -287,7 +386,7 @@ def suite : InstrSuite where
           #[intV 0, intV Excno.cellOv.toInt, .null] }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile runvmxId runvmxFuzzProfile 500 ]
+  fuzz := #[ { seed := fuzzSeedForInstr runvmxId, count := 500, gen := genRunvmxFuzzCase } ]
 
 initialize registerSuite suite
 

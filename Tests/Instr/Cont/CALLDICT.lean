@@ -275,6 +275,37 @@ private def callDictFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def callDictIdxPool : Array Nat := #[0, 1, 42, 255, 256, 1024, 4095, 16383]
+private def callDictStackPool : Array (Array Value) := #[#[], deepStackA, deepStackB, deepStackC]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCallDictFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let (idx, rng2) := pickFromPool callDictIdxPool rng1
+  let (stack, rng3) := pickFromPool callDictStackPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkProgCase "fuzz/ok/default-c3" stack (progCallOnly idx)
+    else if shape = 1 then
+      mkProgCase "fuzz/ok/set-c3/c0" stack (progSetC3FromCtr 0 idx)
+    else if shape = 2 then
+      mkCodeCase "fuzz/ok/dict-call/n8-hit" #[] (mkCallDictViaC3Code! "fuzz/n8-hit" c3CallN8 7)
+    else if shape = 3 then
+      mkCodeCase "fuzz/ok/dict-call-z/n8-miss" #[] (mkCallDictViaC3Code! "fuzz/n8z-miss" c3CallN8PushZ 6)
+    else if shape = 4 then
+      mkCodeCase "fuzz/ok/dict-jump/n14-hit" #[] (mkCallDictViaC3Code! "fuzz/n14j-hit" c3JumpN14 300)
+    else if shape = 5 then
+      mkCodeCase "fuzz/err/dict/type-n-null" #[] (mkCallDictViaC3Code! "fuzz/type-n-null" c3TypeNNull 7)
+    else if shape = 6 then
+      mkCodeCase "fuzz/err/dict/range-n-too-large" #[] (mkCallDictViaC3Code! "fuzz/range-n" c3RangeNTooLarge 7)
+    else
+      mkCodeCase "fuzz/err/dict/type-dict-from-idx" #[] (mkCallDictViaC3Code! "fuzz/type-dict" c3TypeDictFromIdx 7)
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Default c3 (quit 11): CALLDICT pushes idx then calls c3; trailing caller code is not reached.
@@ -447,7 +478,11 @@ def suite : InstrSuite where
           pure () }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile callDictId callDictFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callDictId
+      count := 500
+      gen := genCallDictFuzzCase }
+  ]
 
 initialize registerSuite suite
 

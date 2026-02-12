@@ -230,6 +230,47 @@ private def callxArgs1FuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def callxArgs1ParamPool : Array Nat := #[0, 1, 2, 3, 7, 15]
+private def callxArgs1NoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell cellA], #[.slice sliceA], #[.builder Builder.empty]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genCallxArgs1FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 12
+  let (params, rng2) := pickFromPool callxArgs1ParamPool rng1
+  let (noise, rng3) := pickFromPool callxArgs1NoisePool rng2
+  let baseBelow := intStackAsc (params + 1)
+  let case0 :=
+    if shape = 0 then
+      mkCallCase "fuzz/ok/pass" params baseBelow
+    else if shape = 1 then
+      mkCase "fuzz/ok/order/tail-skipped" (mkStack #[]) #[callxArgs1Instr 0, .pushInt (.num 777)]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[] #[callxArgs1Instr 0]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/pass2" (mkStack #[intV 7]) #[callxArgs1Instr 2]
+    else if shape = 4 then
+      mkCase "fuzz/err/type/top-null" #[.null] #[callxArgs1Instr 1]
+    else if shape = 5 then
+      mkCase "fuzz/err/order/type-before-underflow" #[q0, intV 1] #[callxArgs1Instr 2]
+    else if shape = 6 then
+      mkCase "fuzz/ok/nargs1" #[intV 9] (progSetNumCallxArgs 1 1)
+    else if shape = 7 then
+      mkCase "fuzz/err/nargs2" #[] (progSetNumCallxArgs 2 0)
+    else if shape = 8 then
+      mkCase "fuzz/ok/captured" (mkStack (noise ++ #[intV 7])) (progSetContArgsCallxArgs 1 (-1) 1)
+    else if shape = 9 then
+      mkCodeCase "fuzz/ok/decode/raw-param7" (intStackAsc 7 ++ #[q0]) callxArgs1Code7
+    else if shape = 10 then
+      mkCodeCase "fuzz/err/decode/truncated8" #[q0] callxArgs1Truncated8Code
+    else
+      mkCodeCase "fuzz/err/decode/empty" #[q0] emptyCode
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase := #[
   -- Pass-arg shaping for CALLXARGS p,-1.
   mkCallCase "ok/pass0/empty" 0 #[],
@@ -413,7 +454,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile callxArgs1Id callxArgs1FuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callxArgs1Id
+      count := 500
+      gen := genCallxArgs1FuzzCase }
+  ]
 
 initialize registerSuite suite
 

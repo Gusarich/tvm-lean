@@ -197,12 +197,59 @@ private def untilEndOracleFamilies : Array String :=
     "brk/err/"
   ]
 
-private def untilEndFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := untilEndOracleFamilies
-    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def untilEndSetGasExact : Int :=
+  computeExactGasBudget untilEndInstr
+
+private def untilEndSetGasExactMinusOne : Int :=
+  computeExactGasBudgetMinusOne untilEndInstr
+
+private def pickNoise (rng0 : StdGen) : Array Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 2
+  match choice with
+  | 0 => (#[], rng1)
+  | 1 => (noiseA, rng1)
+  | _ => (noiseB, rng1)
+
+private def pickProgramOk (rng0 : StdGen) (loopInstr : Instr) : Array Instr × StdGen :=
+  let (choice, rng1) := randNat rng0 0 3
+  match choice with
+  | 0 =>
+      let (x, rng2) := pickSigned257ish rng1
+      (progBodyPush loopInstr x, rng2)
+  | 1 =>
+      let (x, rng2) := pickSigned257ish rng1
+      let (b, rng3) := pickSigned257ish rng2
+      (progBodyPushPair loopInstr x b, rng3)
+  | 2 => (progBodyRetAlt loopInstr, rng1)
+  | _ => (progBodyRet loopInstr, rng1)
+
+private def genUntilEndFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 6
+  match shape with
+  | 0 =>
+      let (noise, rng2) := pickNoise rng1
+      let (program, rng3) := pickProgramOk rng2 untilEndInstr
+      (mkCase "fuzz/ok/basic" noise program, rng3)
+  | 1 =>
+      let (noise, rng2) := pickNoise rng1
+      let (program, rng3) := pickProgramOk rng2 untilEndBrkInstr
+      (mkCase "fuzz/ok/brk" noise program, rng3)
+  | 2 =>
+      (mkCase "fuzz/err/body-underflow" #[] #[untilEndInstr], rng1)
+  | 3 =>
+      (mkCase "fuzz/err/body-type" #[] (progBodyNull untilEndInstr), rng1)
+  | 4 =>
+      let (useExact, rng2) := randBool rng1
+      let gas := if useExact then untilEndSetGasExact else untilEndSetGasExactMinusOne
+      let name := if useExact then "fuzz/gas/exact" else "fuzz/gas/minus-one"
+      let program := #[.pushInt (.num gas), .tonEnvOp .setGasLimit, untilEndInstr]
+      (mkCase name #[] program, rng2)
+  | 5 =>
+      let (program, rng2) := pickProgramOk rng1 untilEndInstr
+      (mkCase "fuzz/ok/body" #[] program, rng2)
+  | _ =>
+      let (program, rng2) := pickProgramOk rng1 untilEndBrkInstr
+      (mkCase "fuzz/ok/body-brk" #[] program, rng2)
 
 def suite : InstrSuite where
   id := untilEndId
@@ -407,7 +454,11 @@ def suite : InstrSuite where
     mkCase "brk/err/body-null-type" #[] (progBodyNull untilEndBrkInstr),
     mkCase "brk/err/body-nan-intov" #[] (progBodyNaN untilEndBrkInstr)
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile untilEndId untilEndFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr untilEndId
+      count := 500
+      gen := genUntilEndFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -180,21 +180,58 @@ private def againBrkSetGasExact : Int :=
 private def againBrkSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne againBrkInstr
 
-private def againBrkFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/no-tail/",
-      "ok/tail-push-skipped/",
-      "ok/tail-add-skipped/",
-      "ok/tail-retalt-skipped/",
-      "err/underflow/",
-      "err/type/",
-      "gas/"
-    ]
-    -- Bias toward branch/underflow/order stress while still including all mutation modes.
-    mutationModes := #[0, 0, 0, 2, 2, 2, 3, 3, 1, 4]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def pickNoise (rng0 : StdGen) : Array Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 3
+  match choice with
+  | 0 => (#[], rng1)
+  | 1 => (noiseA, rng1)
+  | 2 => (noiseB, rng1)
+  | _ => (noiseLong, rng1)
+
+private def pickNonCont (rng0 : StdGen) : Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 5
+  match choice with
+  | 0 => (intV 7, rng1)
+  | 1 => (.null, rng1)
+  | 2 => (.cell refCellA, rng1)
+  | 3 => (.slice sliceA, rng1)
+  | 4 => (.builder Builder.empty, rng1)
+  | _ => (.tuple #[], rng1)
+
+private def pickTailProgram (rng0 : StdGen) : Array Instr × StdGen :=
+  let (choice, rng1) := randNat rng0 0 2
+  match choice with
+  | 0 => (againBrkTailPushProgram, rng1)
+  | 1 => (againBrkTailAddProgram, rng1)
+  | _ => (againBrkTailRetAltProgram, rng1)
+
+private def genAgainBrkFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 5
+  match shape with
+  | 0 =>
+      let (noise, rng2) := pickNoise rng1
+      let (x, rng3) := pickSigned257ish rng2
+      let (useInt, rng4) := randBool rng3
+      let preVals := if useInt then noise ++ #[intV x] else noise
+      (mkCase "fuzz/ok/no-tail" (preVals ++ #[kCont]), rng4)
+  | 1 =>
+      let (noise, rng2) := pickNoise rng1
+      let (program, rng3) := pickTailProgram rng2
+      (mkCase "fuzz/ok/tail" (noise ++ #[kCont]) program, rng3)
+  | 2 =>
+      (mkCase "fuzz/err/underflow" #[], rng1)
+  | 3 =>
+      let (bad, rng2) := pickNonCont rng1
+      (mkCase "fuzz/err/type/top" #[bad], rng2)
+  | 4 =>
+      let (bad, rng2) := pickNonCont rng1
+      (mkCase "fuzz/err/type/order" #[kCont, bad], rng2)
+  | _ =>
+      let (useExact, rng2) := randBool rng1
+      let gas := if useExact then againBrkSetGasExact else againBrkSetGasExactMinusOne
+      let name := if useExact then "fuzz/gas/exact" else "fuzz/gas/minus-one"
+      let program := #[.pushInt (.num gas), .tonEnvOp .setGasLimit, againBrkInstr]
+      (mkCase name #[kCont] program, rng2)
 
 def suite : InstrSuite where
   id := againBrkId
@@ -443,7 +480,11 @@ def suite : InstrSuite where
     mkCase "gas/exact-minus-one-out-of-gas" #[kCont]
       #[.pushInt (.num againBrkSetGasExactMinusOne), .tonEnvOp .setGasLimit, againBrkInstr]
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile againBrkId againBrkFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr againBrkId
+      count := 500
+      gen := genAgainBrkFuzzCase }
+  ]
 
 initialize registerSuite suite
 

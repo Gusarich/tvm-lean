@@ -299,32 +299,101 @@ private def mkCase
     gasLimits := gasLimits
     fuel := fuel }
 
-private def ifrefElseOracleFamilies : Array String :=
-  #[
-    "ok/true/",
-    "ok/false/",
-    "ok/branchadd/",
-    "ok/two-ifrefelse-noop/",
-    "ok/observe-tail/",
-    "err/underflow/",
-    "err/type/",
-    "err/intov/",
-    "err/decode/",
-    "err/branchadd/"
-  ]
+private def ifrefElseTrueCondPool : Array Int :=
+  #[1, -1, 2, -2, 7, -9, maxInt257, minInt257]
 
-private def ifrefElseFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := ifrefElseOracleFamilies
-    mutationModes := #[
-      0, 0, 0, 0,
-      1, 1, 1,
-      2, 2,
-      3, 3, 3,
-      4
-    ]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def ifrefElseFalseCondPool : Array Int :=
+  #[0]
+
+private def ifrefElseBadPopContPool : Array Value :=
+  #[intV 0, .null, .cell refLeafA, .slice sliceNoiseA, .builder Builder.empty, .tuple #[]]
+
+private def ifrefElseBadPopBoolPool : Array Value :=
+  #[.null, .cell refLeafA, .slice sliceNoiseB, .builder Builder.empty, .tuple #[], q0]
+
+private def ifrefElseNoisePool : Array Value :=
+  noiseA ++ noiseB ++ noiseC ++ #[intV maxInt257, intV minInt257]
+
+private def ifrefElseCodePool : Array Cell :=
+  #[codeNoop, codeDeep, codeObserveTail, codeBranchAddTail]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool ifrefElseNoisePool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfrefElseFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 20
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (condTrue, rng4) := pickFromPool ifrefElseTrueCondPool rng3
+  let (condFalse, rng5) := pickFromPool ifrefElseFalseCondPool rng4
+  let (badPopCont, rng6) := pickFromPool ifrefElseBadPopContPool rng5
+  let (badPopBool, rng7) := pickFromPool ifrefElseBadPopBoolPool rng6
+  let (code, rng8) := pickFromPool ifrefElseCodePool rng7
+  let base :=
+    if shape = 0 then
+      mkCase s!"fuzz/ok/true/observe-tail/deep-{depth}" (withCond below condTrue) codeObserveTail
+    else if shape = 1 then
+      mkCase s!"fuzz/ok/false/observe-tail/deep-{depth}" (withCond below condFalse) codeObserveTail
+    else if shape = 2 then
+      mkCase s!"fuzz/ok/true/deep-{depth}" (withCond below condTrue) codeDeep
+    else if shape = 3 then
+      mkCase s!"fuzz/ok/false/deep-{depth}" (withCond below condFalse) codeDeep
+    else if shape = 4 then
+      mkCase "fuzz/err/branchadd/true-underflow" (withCond #[] 1) codeBranchAddTail
+    else if shape = 5 then
+      mkCase "fuzz/ok/branchadd/false-skip-underflow" (withCond #[] 0) codeBranchAddTail
+    else if shape = 6 then
+      mkCase "fuzz/ok/branchadd/true-two-ints"
+        #[intV 5, intV 6, intV 1, q0]
+        codeBranchAddTail
+    else if shape = 7 then
+      mkCase "fuzz/ok/branchadd/false-preserve-two-ints"
+        #[intV 5, intV 6, intV 0, q0]
+        codeBranchAddTail
+    else if shape = 8 then
+      mkCase "fuzz/err/underflow/empty" #[] codeNoop
+    else if shape = 9 then
+      mkCase "fuzz/err/underflow/one-bool" #[intV 1] codeNoop
+    else if shape = 10 then
+      mkCase "fuzz/err/underflow/one-cont" #[q0] codeNoop
+    else if shape = 11 then
+      mkCase s!"fuzz/err/type/popcont/deep-{depth}" (below ++ #[intV condTrue, badPopCont]) codeNoop
+    else if shape = 12 then
+      mkCase s!"fuzz/err/type/popbool/deep-{depth}" (withCondRaw below badPopBool) codeNoop
+    else if shape = 13 then
+      mkCase "fuzz/err/intov/popbool-nan-from-prefix" #[] codePushNanThenIfrefElse
+    else if shape = 14 then
+      mkCase "fuzz/err/decode/missing-ref-empty" #[] codeMissingRefTail
+    else if shape = 15 then
+      mkCase s!"fuzz/err/decode/missing-ref/deep-{depth}" (withCond below condTrue) codeMissingRefTail
+    else if shape = 16 then
+      mkCase "fuzz/err/decode/truncated-15" (withCond #[] 1) ifrefElseTruncated15Code
+    else if shape = 17 then
+      mkCase "fuzz/err/decode/truncated-8-with-ref" (withCond #[] 1) ifrefElseTruncated8WithRefCode
+    else if shape = 18 then
+      mkCase "fuzz/err/decode/two-ifrefelse-one-ref/first-true"
+        #[intV 0, q0, intV 1, q0]
+        codeTwoIfrefElseOneRefTail
+    else if shape = 19 then
+      mkCase s!"fuzz/ok/two-ifrefelse-noop/deep-{depth}"
+        (below ++ #[intV 0, q0, intV condTrue, q0])
+        codeTwoIfrefElseNoopTail
+    else
+      mkCase s!"fuzz/random/branch-aware/deep-{depth}"
+        (withCond below condTrue)
+        code
+  let (tag, rng9) := randNat rng8 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng9)
 
 def suite : InstrSuite where
   id := ifrefElseId
@@ -558,7 +627,11 @@ def suite : InstrSuite where
       (withCond #[] 1)
       codeObserveTail
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile ifrefElseId ifrefElseFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifrefElseId
+      count := 500
+      gen := genIfrefElseFuzzCase }
+  ]
 
 initialize registerSuite suite
 

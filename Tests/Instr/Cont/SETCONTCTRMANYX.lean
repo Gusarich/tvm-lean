@@ -182,6 +182,10 @@ private def nearEde5Code : Cell :=
 private def nearEddfCode : Cell :=
   Cell.mkOrdinary (natToBits 0xeddf 16) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def oracleCases : Array OracleCase := #[
   -- Success matrix over supported masks.
   mkCase "ok/basic/mask0/quit0" (mkStack #[] q0 0),
@@ -293,6 +297,42 @@ private def setContCtrManyXFuzzProfile : ContMutationProfile :=
     minMutations := 1
     maxMutations := 5
     includeErrOracleSeeds := true }
+
+private def fuzzOkMaskPool : Array Int := #[0, 1, 2, 3, 4, 5, 8, 16, 32, 33, 128, 159, 191]
+
+private def fuzzBadMaskPool : Array Int := #[-1, -2, 64, 96, 192, 256]
+
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB, noiseC]
+
+private def genSetContCtrManyXFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  let (mask, rng2) := pickFromPool fuzzOkMaskPool rng1
+  let (badMask, rng3) := pickFromPool fuzzBadMaskPool rng2
+  let (noise, rng4) := pickFromPool fuzzNoisePool rng3
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/mask{mask}" (mkStack noise q0 mask), rng4)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/flow/mask{mask}-tail-push"
+        (mkStack #[] q0 mask) (progSetManyX #[.pushInt (.num 777)]), rng4)
+    else if shape = 2 then
+      (mkCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 3 then
+      (mkCase s!"fuzz/err/mask/range-{badMask}" (mkStack #[] q0 badMask), rng4)
+    else if shape = 4 then
+      (mkCase "fuzz/err/reapply/mask1-then-mask1" (mkStack #[] q0 1) (progSetThenSet 1), rng4)
+    else if shape = 5 then
+      let (rawCode, rng5) := pickFromPool #[setContCtrManyXCode] rng4
+      (mkCodeCase "fuzz/ok/raw-opcode" (mkStack #[] q0 mask) rawCode, rng5)
+    else if shape = 6 then
+      let (rawCode, rng5) := pickFromPool
+        #[setContCtrManyXTruncated8Code, setContCtrManyXTruncated15Code, setContCtrManyMissingArgCode,
+          nearEde5Code, nearEddfCode] rng4
+      (mkCodeCase "fuzz/err/raw-opcode" (mkStack #[] q0 mask) rawCode, rng5)
+    else
+      (mkCase "fuzz/err/mask-type/null" #[q0, .null], rng4)
+  let (tag, rng5) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng5)
 
 def suite : InstrSuite where
   id := setContCtrManyXId
@@ -440,7 +480,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile setContCtrManyXId setContCtrManyXFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr setContCtrManyXId
+      count := 500
+      gen := genSetContCtrManyXFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -72,6 +72,61 @@ private def callccVarArgsFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def callccVarArgsParamPool : Array Int := #[-1, 0, 1, 2, 3, 254]
+private def callccVarArgsRetPool : Array Int := #[-1, 0, 1, 254]
+private def callccVarArgsNoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell cellA], #[.slice fullSliceA], #[.builder Builder.empty]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def mkOkStack (params : Int) (noise : Array Value) : Array Value :=
+  let need : Nat :=
+    if params < 0 then
+      noise.size + 1
+    else
+      (params.toNat + 1)
+  mkStack (intStackAsc need ++ noise) params 0
+
+private def genCallccVarArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (params, rng2) := pickFromPool callccVarArgsParamPool rng1
+  let (retVals, rng3) := pickFromPool callccVarArgsRetPool rng2
+  let (noise, rng4) := pickFromPool callccVarArgsNoisePool rng3
+  let okBelow :=
+    if params < 0 then
+      intStackAsc 3
+    else
+      intStackAsc (params.toNat + 1)
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic" (mkStack okBelow params retVals)
+    else if shape = 1 then
+      mkCase "fuzz/ok/order/mixed-stack" (mkOkStack params noise)
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/need-after-pop" (mkStack #[] 2 0)
+    else if shape = 4 then
+      mkCase "fuzz/err/range/params-255" (mkStack #[] 255 0)
+    else if shape = 5 then
+      mkCase "fuzz/err/range/retvals-255" (mkStack #[] 0 255)
+    else if shape = 6 then
+      mkCase "fuzz/err/type/retvals-null" #[q0, intV 0, .null]
+    else if shape = 7 then
+      mkCase "fuzz/err/order/params-range-before-cont-type" #[.null, intV 255, intV 0]
+    else if shape = 8 then
+      mkCase "fuzz/err/rangemap/params-nan-rangechk"
+        #[]
+        #[.pushCtr 0, .pushInt .nan, .pushInt (.num 0), callccVarArgsInstr]
+    else if shape = 9 then
+      mkCase "fuzz/ok/jump/setnum-nargs1" #[intV 9] (progSetNumCallccVarArgs 1 1 0)
+    else
+      mkCase "fuzz/err/jump/setnum-nargs2" #[intV 9] (progSetNumCallccVarArgs 2 0 0)
+  let (tag, rng5) := randNat rng4 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng5)
+
 private def oracleCases : Array OracleCase := #[
   -- Success: params/retvals bounds and extraction stack-copy paths.
   mkCase "ok/basic/pass-minus1-ret-minus1-empty" (mkStack #[] (-1) (-1)),
@@ -199,7 +254,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile callccVarArgsId callccVarArgsFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr callccVarArgsId
+      count := 500
+      gen := genCallccVarArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

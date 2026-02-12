@@ -123,6 +123,83 @@ private def ifFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def ifBoolPool : Array Int :=
+  #[
+    0, 1, -1, 2, -2, 3, -3,
+    maxInt257, minInt257
+  ]
+
+private def ifBadTopNonContPool : Array Value :=
+  #[.null, intV 1, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[]]
+
+private def ifBadBoolNonIntPool : Array Value :=
+  #[.null, .cell refCellA, .slice fullSliceA, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value := noiseA ++ noiseB ++ noiseC
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (bRaw, rng4) := pickFromPool ifBoolPool rng3
+  let b := if bRaw = 0 then 0 else bRaw
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/true/deep-{depth}" (withIfArgs below (.num (if b = 0 then 1 else b))), rng4)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/false/deep-{depth}" (withIfArgs below (.num 0)), rng4)
+    else if shape = 2 then
+      (mkCase s!"fuzz/ok/true/basic" (withIfArgs #[] (.num 1)), rng4)
+    else if shape = 3 then
+      (mkCase s!"fuzz/ok/false/basic" (withIfArgs #[] (.num 0)), rng4)
+    else if shape = 4 then
+      let (badTop, rng6) := pickFromPool ifBadTopNonContPool rng4
+      (mkCase s!"fuzz/type/popcont/deep-{depth}" (below ++ #[intV 1, badTop]), rng6)
+    else if shape = 5 then
+      let (badBool, rng6) := pickFromPool ifBadBoolNonIntPool rng4
+      (mkCase s!"fuzz/type/popbool/deep-{depth}" (below ++ #[badBool, oracleCont]), rng6)
+    else if shape = 6 then
+      (mkCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 7 then
+      let (single, rng6) := pickFromPool (noiseA ++ noiseB ++ noiseC) rng4
+      (mkCase "fuzz/err/underflow/one" #[single], rng6)
+    else if shape = 8 then
+      (mkCase "fuzz/err/type/popbool-cont-quit0" #[oracleCont, oracleCont], rng4)
+    else if shape = 9 then
+      (mkCase "fuzz/gas/exact/true"
+        (withIfArgs #[] (.num 1))
+        #[.pushInt (.num ifSetGasExact), .tonEnvOp .setGasLimit, ifInstr], rng4)
+    else if shape = 10 then
+      (mkCase "fuzz/gas/exact-minus-one/true"
+        (withIfArgs #[] (.num 1))
+        #[.pushInt (.num ifSetGasExactMinusOne), .tonEnvOp .setGasLimit, ifInstr], rng4)
+    else if shape = 11 then
+      (mkCase "fuzz/order/tail-skipped"
+        (withIfArgs below (.num 1))
+        #[ifInstr, .pushInt (.num 999), .add], rng4)
+    else if shape = 12 then
+      (mkCase "fuzz/order/tail-exec"
+        (withIfArgs #[intV 2, intV 3] (.num 0))
+        #[ifInstr, .add], rng4)
+    else
+      (mkCase "fuzz/gas/exact/false"
+        (withIfArgs #[] (.num 0))
+        #[.pushInt (.num ifSetGasExact), .tonEnvOp .setGasLimit, ifInstr], rng4)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
+
 private def preboundC0Cont : Continuation :=
   .ordinary (Slice.ofCell Cell.empty) (.quit 0)
     { OrdCregs.empty with c0 := some (.quit 23) }
@@ -266,7 +343,11 @@ def suite : InstrSuite where
     mkCase "gas/exact-true-succeeds" (withIfArgs #[] (.num 1))
       #[.pushInt (.num ifSetGasExact), .tonEnvOp .setGasLimit, ifInstr]
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile ifId ifFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifId
+      count := 500
+      gen := genIfFuzzCase }
+  ]
 
 initialize registerSuite suite
 

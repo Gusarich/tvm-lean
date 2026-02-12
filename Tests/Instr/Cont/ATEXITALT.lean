@@ -244,24 +244,95 @@ private def atExitAltGasExact : Int :=
 private def atExitAltGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne atExitAltInstr
 
-private def atExitAltFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/basic/",
-      "ok/observe-c1/",
-      "ok/control/",
-      "err/control/",
-      "err/underflow/",
-      "err/type/",
-      "err/order/",
-      "ok/decode/",
-      "err/decode/",
-      "gas/"
-    ]
-    -- Bias towards branch/stack-shape failures while keeping all mutation modes reachable.
-    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 1, 1, 3, 3, 4]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def atExitAltOkStackPool : Array (Array Value) :=
+  #[
+    #[q0V],
+    #[intV 1, q0V],
+    #[.null, q0V],
+    #[.cell cellA, q0V],
+    #[.slice fullSliceA, q0V],
+    #[.builder Builder.empty, q0V],
+    #[.tuple #[], q0V],
+    #[q0V, q0V],
+    #[intV 7, .cell cellA, q0V],
+    #[.null, .builder Builder.empty, .tuple #[], q0V]
+  ]
+
+private def atExitAltObserveStackPool : Array (Array Value) :=
+  #[
+    #[q0V],
+    #[intV 3, q0V],
+    #[.null, .cell cellA, q0V],
+    noiseA ++ #[q0V],
+    noiseB ++ #[q0V]
+  ]
+
+private def atExitAltTypeErrStackPool : Array (Array Value) :=
+  #[
+    #[intV 0],
+    #[.null],
+    #[.cell cellA],
+    #[.slice fullSliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]]
+  ]
+
+private def atExitAltOrderErrStackPool : Array (Array Value) :=
+  #[
+    #[q0V, .null],
+    #[q0V, intV 42],
+    #[q0V, .builder Builder.empty]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genAtExitAltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 15
+  let (okStack, rng2) := pickFromPool atExitAltOkStackPool rng1
+  let (observeStack, rng3) := pickFromPool atExitAltObserveStackPool rng2
+  let (typeErrStack, rng4) := pickFromPool atExitAltTypeErrStackPool rng3
+  let (orderErrStack, rng5) := pickFromPool atExitAltOrderErrStackPool rng4
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic" okStack
+    else if shape = 1 then
+      mkCase "fuzz/ok/observe-c1" observeStack (progAtExitAltThenPushC1)
+    else if shape = 2 then
+      mkCase "fuzz/ok/observe-c1-replay-1" observeStack (progAtExitAltThenPushC1)
+    else if shape = 3 then
+      mkCase "fuzz/ok/basic/replay-1" okStack
+    else if shape = 4 then
+      mkCase "fuzz/ok/control-tail-push" #[q0V] #[atExitAltInstr, .pushInt (.num 7)]
+    else if shape = 5 then
+      mkCase "fuzz/ok/control-tail-add" #[q0V] #[atExitAltInstr, .pushInt (.num 2), .pushInt (.num 3), .add]
+    else if shape = 6 then
+      mkCase "fuzz/err/control-tail-underflow" #[q0V] #[atExitAltInstr, .add]
+    else if shape = 7 then
+      mkCase "fuzz/err/underflow-empty" #[]
+    else if shape = 8 then
+      mkCase "fuzz/err/underflow-second-atexitalt" #[q0V] #[atExitAltInstr, atExitAltInstr]
+    else if shape = 9 then
+      mkCase "fuzz/err/type-top-non-cont" typeErrStack
+    else if shape = 10 then
+      mkCase "fuzz/err/order-top-popped-before-type" orderErrStack
+    else if shape = 11 then
+      mkCaseCode "fuzz/ok/decode-raw-opcode" #[q0V] atExitAltRawCode
+    else if shape = 12 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] atExitAltTruncated8Code
+    else if shape = 13 then
+      mkCaseCode "fuzz/err/decode-truncated-15" #[q0V] atExitAltTruncated15Code
+    else if shape = 14 then
+      mkCase "fuzz/gas/exact-cost-succeeds"
+        #[q0V]
+        #[.pushInt (.num atExitAltGasExact), .tonEnvOp .setGasLimit, atExitAltInstr]
+    else
+      mkCase "fuzz/gas/exact-minus-one-out-of-gas"
+        #[q0V]
+        #[.pushInt (.num atExitAltGasExactMinusOne), .tonEnvOp .setGasLimit, atExitAltInstr]
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng6)
 
 private def oracleCases : Array OracleCase := #[
   mkCase "ok/basic/q0-only" #[q0V],
@@ -379,7 +450,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile atExitAltId atExitAltFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr atExitAltId
+      count := 500
+      gen := genAtExitAltFuzzCase }
+  ]
 
 initialize registerSuite suite
 

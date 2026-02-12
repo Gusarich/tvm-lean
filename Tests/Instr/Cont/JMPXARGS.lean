@@ -196,11 +196,56 @@ private def jmpxArgsFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def jmpxArgsParamPool : Array Nat := #[0, 1, 2, 3, 7, 15]
+private def jmpxArgsNoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell cellA], #[.slice sliceA], #[.builder Builder.empty]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def jmpxArgsGasExact : Int :=
   computeExactGasBudget (jmpxArgsInstr 0)
 
 private def jmpxArgsGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne (jmpxArgsInstr 0)
+
+private def genJmpxArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 13
+  let (params, rng2) := pickFromPool jmpxArgsParamPool rng1
+  let (noise, rng3) := pickFromPool jmpxArgsNoisePool rng2
+  let baseBelow := intStackAsc (params + 1)
+  let case0 :=
+    if shape = 0 then
+      mkJumpCase "fuzz/ok/pass" params baseBelow
+    else if shape = 1 then
+      mkJumpCase "fuzz/ok/order/tail-skipped" 0 #[] #[.pushInt (.num 777)]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[] #[.jmpxArgs 0]
+    else if shape = 3 then
+      mkCase "fuzz/err/type/top-null" #[.null] #[.jmpxArgs 1]
+    else if shape = 4 then
+      mkCase "fuzz/err/order/type-before-underflow" #[q0, intV 1] #[.jmpxArgs 2]
+    else if shape = 5 then
+      mkCase "fuzz/ok/nargs1" #[intV 7] (progSetNumThenJmp 1 1)
+    else if shape = 6 then
+      mkCase "fuzz/err/nargs2" #[] (progSetNumThenJmp 2 0)
+    else if shape = 7 then
+      mkCase "fuzz/ok/captured" (mkStack (noise ++ #[intV 7])) (progCaptureThenJmp 1 (-1) 1)
+    else if shape = 8 then
+      mkCodeCase "fuzz/ok/decode/param0" #[q0] jmpxArgsCode0
+    else if shape = 9 then
+      mkCodeCase "fuzz/err/decode/truncated8" #[q0] jmpxArgsTruncated8Code
+    else if shape = 10 then
+      mkCase "fuzz/gas/exact" #[q0]
+        #[.pushInt (.num jmpxArgsGasExact), .tonEnvOp .setGasLimit, .jmpxArgs 0]
+    else if shape = 11 then
+      mkCase "fuzz/gas/exact-minus-one" #[q0]
+        #[.pushInt (.num jmpxArgsGasExactMinusOne), .tonEnvOp .setGasLimit, .jmpxArgs 0]
+    else
+      mkJumpCase "fuzz/ok/deep" params (noise ++ #[intV 3, intV 4])
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
 
 private def oracleCases : Array OracleCase := #[
   -- Pass-args shaping for plain continuations.
@@ -366,7 +411,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpxArgsId jmpxArgsFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr jmpxArgsId
+      count := 500
+      gen := genJmpxArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -48,6 +48,10 @@ private def saveBothTruncated8Code : Cell :=
 private def saveBothTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xedc0 >>> 1) 15) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def progSaveBoth (idx : Nat) (tail : Array Instr := #[]) : Array Instr :=
   #[saveBothCtrInstr idx] ++ tail
 
@@ -231,6 +235,34 @@ private def saveBothCtrFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def fuzzValidIdxPool : Array Nat := #[0, 1, 2, 3, 4, 5, 7]
+
+private def genSaveBothCtrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 6
+  let (idx, rng2) := pickFromPool fuzzValidIdxPool rng1
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/idx{idx}" #[] (progSaveBoth idx), rng2)
+    else if shape = 1 then
+      (mkCase "fuzz/ok/flow/tail-push" #[] (progSaveBoth idx #[.pushInt (.num 7)]), rng2)
+    else if shape = 2 then
+      (mkCase "fuzz/err/order/c0-dup-still-updates-c1"
+        #[] (progC0DupThenCheckC1 (if idx = 7 then 0 else idx)), rng2)
+    else if shape = 3 then
+      let (rawCode, rng3) := pickFromPool #[saveBothCode0, saveBothCode5, saveBothCode7] rng2
+      (mkCodeCase "fuzz/ok/raw-opcode" #[] rawCode, rng3)
+    else if shape = 4 then
+      let (rawCode, rng3) := pickFromPool
+        #[saveBothCodeHole6, saveBothCodeUnassigned8, saveBothCodeBeforeRange,
+          saveBothTruncated8Code, saveBothTruncated15Code] rng2
+      (mkCodeCase "fuzz/err/raw-opcode" #[] rawCode, rng3)
+    else if shape = 5 then
+      (mkCase "fuzz/ok/redefine/idx7-allowed" #[] (progSaveBothTwice 7), rng2)
+    else
+      (mkCase "fuzz/ok/duplicate/idx4" #[] (progSaveBothTwice 4), rng2)
+  let (tag, rng3) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 private def oracleCases : Array OracleCase := #[
   -- Success matrix across all legal indices.
   mkCase "ok/basic/idx0-empty" #[] (progSaveBoth 0),
@@ -392,7 +424,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile saveBothCtrId saveBothCtrFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr saveBothCtrId
+      count := 500
+      gen := genSaveBothCtrFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -58,6 +58,8 @@ private def mkCase
     initStack := stack
     fuel := fuel }
 
+private instance : Inhabited OracleCase := ⟨mkCase "fuzz/fallback" #[]⟩
+
 private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrContBless blessVarArgsInstr stack
 
@@ -70,25 +72,6 @@ private def expectRawOk (label : String) (out : Except Excno Unit × VmState) : 
   match res with
   | .ok _ => pure st
   | .error e => throw (IO.userError s!"{label}: expected success, got {e}")
-
-private def blessVarArgsFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/copy",
-      "order/program-",
-      "err/underflow/",
-      "err/type/more-",
-      "err/range/more-",
-      "order/more-",
-      "err/type/copy-",
-      "err/range/copy-",
-      "err/type/slice-",
-      "order/copy-"
-    ]
-    -- Bias toward stack-shape/order and copy-more boundary perturbations.
-    mutationModes := #[0, 0, 0, 2, 2, 2, 4, 4, 1, 3]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
 
 private def oracleCases : Array OracleCase := #[
   -- Success coverage for copy/more bounds.
@@ -213,6 +196,116 @@ private def oracleCases : Array OracleCase := #[
     (mkStackRaw #[intV 42] (.slice sliceA) .null (intV 0))
 ]
 
+private def blessVarArgsOkFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/ok/copy0-more-minus1"
+    (mkStack #[] (.slice sliceA) 0 (-1)),
+  mkCase "fuzz/ok/copy2-more1-mixed"
+    (mkStack #[intV 11, intV 22] (.slice sliceB) 2 1),
+  mkCase "fuzz/ok/copy255-more255-exact-depth"
+    (mkStack (intStackAsc 255) (.slice sliceB) 255 255),
+  mkCase "fuzz/ok/program-tail-continues-after-bless"
+    (mkStack #[intV 9] (.slice sliceA) 1 0)
+    #[blessVarArgsInstr, .pushInt (.num 777)]
+]
+
+private def blessVarArgsUnderflowFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/err/underflow-empty" #[],
+  mkCase "fuzz/err/underflow-copy1-no-prefix"
+    (mkStack #[] (.slice sliceA) 1 0),
+  mkCase "fuzz/err/underflow-copy255-prefix254"
+    (mkStack (intStackAsc 254) (.slice sliceA) 255 0)
+]
+
+private def blessVarArgsMoreTypeFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/err/type/more-null"
+    (mkStackRaw #[] (.slice sliceA) (intV 0) .null),
+  mkCase "fuzz/err/type/more-cell"
+    (mkStackRaw #[] (.slice sliceA) (intV 0) (.cell cellA)),
+  mkCase "fuzz/err/type/more-cont"
+    (mkStackRaw #[] (.slice sliceA) (intV 0) q0)
+]
+
+private def blessVarArgsMoreRangeFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/err/range/more-minus2"
+    (mkStack #[] (.slice sliceA) 0 (-2)),
+  mkCase "fuzz/err/range/more-256"
+    (mkStack #[] (.slice sliceA) 0 256),
+  mkCase "fuzz/err/range/more-nan-via-program"
+    #[.slice sliceA, intV 0]
+    #[.pushInt .nan, blessVarArgsInstr]
+]
+
+private def blessVarArgsMoreOrderFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/order/more-range-before-copy-type"
+    (mkStackRaw #[] (.slice sliceA) .null (intV 256)),
+  mkCase "fuzz/order/more-type-before-copy-range"
+    (mkStackRaw #[] (.slice sliceA) (intV (-1)) .null)
+]
+
+private def blessVarArgsCopyTypeFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/err/type/copy-null"
+    (mkStackRaw #[] (.slice sliceA) .null (intV 0)),
+  mkCase "fuzz/err/type/copy-slice"
+    (mkStackRaw #[] (.slice sliceA) (.slice sliceB) (intV 0)),
+  mkCase "fuzz/err/type/copy-cont"
+    (mkStackRaw #[] (.slice sliceA) q0 (intV 0))
+]
+
+private def blessVarArgsCopyRangeFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/err/range/copy-minus1"
+    (mkStack #[] (.slice sliceA) (-1) 0),
+  mkCase "fuzz/err/range/copy-256"
+    (mkStack #[] (.slice sliceA) 256 0),
+  mkCase "fuzz/err/range/copy-nan-via-program"
+    #[.slice sliceA]
+    #[.pushInt .nan, .pushInt (.num 0), blessVarArgsInstr]
+]
+
+private def blessVarArgsSliceTypeFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/err/type/slice-null"
+    (mkStackRaw #[] .null (intV 0) (intV 0)),
+  mkCase "fuzz/err/type/slice-cell"
+    (mkStackRaw #[] (.cell cellA) (intV 0) (intV 0)),
+  mkCase "fuzz/err/type/slice-int"
+    (mkStackRaw #[] (intV 99) (intV 0) (intV 0))
+]
+
+private def blessVarArgsCopyOrderFuzzPool : Array OracleCase := #[
+  mkCase "fuzz/order/copy-underflow-before-slice-type"
+    (mkStackRaw #[] .null (intV 1) (intV 0)),
+  mkCase "fuzz/order/copy-type-after-more-pop-with-prefix"
+    (mkStackRaw #[intV 42] (.slice sliceA) .null (intV 0))
+]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBlessVarArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let pool :=
+    if shape = 0 then
+      blessVarArgsOkFuzzPool
+    else if shape = 1 then
+      blessVarArgsUnderflowFuzzPool
+    else if shape = 2 then
+      blessVarArgsMoreTypeFuzzPool
+    else if shape = 3 then
+      blessVarArgsMoreRangeFuzzPool
+    else if shape = 4 then
+      blessVarArgsMoreOrderFuzzPool
+    else if shape = 5 then
+      blessVarArgsCopyTypeFuzzPool
+    else if shape = 6 then
+      blessVarArgsCopyRangeFuzzPool
+    else if shape = 7 then
+      blessVarArgsSliceTypeFuzzPool
+    else
+      blessVarArgsCopyOrderFuzzPool
+  let (case0, rng2) := pickFromPool pool rng1
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 def suite : InstrSuite where
   id := blessVarArgsId
   unit := #[
@@ -270,7 +363,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile blessVarArgsId blessVarArgsFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr blessVarArgsId
+      count := 500
+      gen := genBlessVarArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

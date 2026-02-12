@@ -208,22 +208,77 @@ private def boolevalTruncated8Code : Cell :=
 private def boolevalTruncated15Code : Cell :=
   Cell.mkOrdinary ((natToBits 0xedf9 16).take 15) #[]
 
-private def boolevalFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/basic/",
-      "ok/order/",
-      "err/pop/",
-      "err/order/",
-      "ok/jump/",
-      "err/jump/",
-      "ok/decode/",
-      "err/decode/"
-    ]
-    -- Emphasize stack/continuation shape mutation while keeping ordering and decode paths active.
-    mutationModes := #[0, 0, 0, 2, 2, 1, 1, 3, 4]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value := noiseA ++ noiseB ++ #[intV 0, intV 1, intV (-1), intV maxInt257, intV minInt257]
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def boolevalBadTopPool : Array Value :=
+  #[.null, intV 0, intV 7, .cell refCellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
+
+private def genBoolevalFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 19
+  let (depth, rng2) := randNat rng1 0 5
+  let (below, rng3) := genBelowStack depth rng2
+  let (x, rng4) := pickSigned257ish rng3
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/deep-{depth}" (below ++ #[q0]), rng4)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/order/tail-skipped/deep-{depth}" (below ++ #[q0]) progTailPush, rng4)
+    else if shape = 2 then
+      (mkCase "fuzz/ok/order/prelude-push-before-booleval" #[q0] progPushBeforeBooleval, rng4)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/order/double-first-jumps" #[q0, q0] progDoubleBooleval, rng4)
+    else if shape = 4 then
+      (mkCase "fuzz/err/pop/underflow-empty" #[], rng4)
+    else if shape = 5 then
+      let (badTop, rng6) := pickFromPool boolevalBadTopPool rng4
+      (mkCase s!"fuzz/err/pop/type-top/deep-{depth}" (below ++ #[badTop]), rng6)
+    else if shape = 6 then
+      -- Type must be checked before looking at deeper stack items.
+      (mkCase "fuzz/err/order/type-before-below-cont" #[q0, .null], rng4)
+    else if shape = 7 then
+      (mkCase "fuzz/err/jump/nargs1-underflow-empty" #[] (progMakeNargsAndBooleval 1), rng4)
+    else if shape = 8 then
+      (mkCase "fuzz/ok/jump/nargs1-one-arg" #[intV x] (progMakeNargsAndBooleval 1), rng4)
+    else if shape = 9 then
+      (mkCase "fuzz/err/jump/nargs2-underflow-one-arg" #[intV x] (progMakeNargsAndBooleval 2), rng4)
+    else if shape = 10 then
+      (mkCase "fuzz/ok/jump/nargs2-two-arg" #[intV x, intV 9] (progMakeNargsAndBooleval 2), rng4)
+    else if shape = 11 then
+      (mkCase "fuzz/ok/jump/nargs0-drop-all" #[intV x, intV 9] (progMakeNargsAndBooleval 0), rng4)
+    else if shape = 12 then
+      -- Exercise capture path before jump.
+      (mkCase "fuzz/ok/jump/capture-copy0-more-0" #[q0] (progCaptureAndBooleval 0 0), rng4)
+    else if shape = 13 then
+      (mkCase "fuzz/err/jump/capture-underflow-copy2" #[] (progCaptureAndBooleval 2 0), rng4)
+    else if shape = 14 then
+      (mkCase "fuzz/ok/decode/raw-opcode-edf9" (below ++ #[q0]) #[boolevalInstr], rng4)
+    else if shape = 15 then
+      (mkCodeCase "fuzz/ok/decode/raw-codecell" (below ++ #[q0]) boolevalCode, rng4)
+    else if shape = 16 then
+      let (code, rng6) := pickFromPool #[boolevalTruncated8Code, boolevalTruncated15Code] rng4
+      (mkCodeCase "fuzz/err/decode/truncated" (below ++ #[q0]) code, rng6)
+    else if shape = 17 then
+      (mkCase "fuzz/ok/order/make-nargs1-tail-skipped"
+        #[intV x] (progMakeNargsAndBooleval 1 #[.pushInt (.num 42)]), rng4)
+    else if shape = 18 then
+      -- Mix in a deeper, noisier stack but still oracle-token encodable.
+      (mkCase "fuzz/ok/basic/deep-mixed" (noiseA ++ noiseB ++ #[q0]), rng4)
+    else
+      (mkCase "fuzz/ok/jump/nargs3-underflow-two-arg" #[intV x, intV 9] (progMakeNargsAndBooleval 3), rng4)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
 
 private def oracleCases : Array OracleCase := #[
   -- Direct success paths.
@@ -418,7 +473,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile boolevalId boolevalFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr boolevalId
+      count := 500
+      gen := genBoolevalFuzzCase }
+  ]
 
 initialize registerSuite suite
 

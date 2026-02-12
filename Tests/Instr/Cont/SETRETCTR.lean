@@ -32,6 +32,10 @@ private def setRetCtrTruncated8Code : Cell :=
 private def setRetCtrTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xed70 >>> 1) 15) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def runSetRetCtrDirect (idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrContChangeExt (setRetCtrInstr idx) stack
 
@@ -146,6 +150,49 @@ private def setRetCtrFuzzProfile : ContMutationProfile :=
     minMutations := 1
     maxMutations := 5
     includeErrOracleSeeds := true }
+
+private def fuzzValidIdxPool : Array Nat := #[0, 1, 2, 3, 4, 5, 7]
+
+private def valueForIdx (idx : Nat) : Value :=
+  if idx ≤ 3 then q0
+  else if idx = 4 then .cell cellA
+  else if idx = 5 then .cell cellB
+  else .tuple #[]
+
+private def badValueForIdx (idx : Nat) : Array Value :=
+  if idx ≤ 3 then #[intV 5, .null, .cell cellA]
+  else if idx = 4 then #[q0, intV 9, .builder Builder.empty]
+  else if idx = 5 then #[.null, .tuple #[], q0]
+  else #[.cell cellA, q0, intV 3]
+
+private def genSetRetCtrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  let (idx, rng2) := pickFromPool fuzzValidIdxPool rng1
+  let okValue := valueForIdx idx
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/index/idx{idx}" #[okValue] (progSetRet idx), rng2)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/flow/idx{idx}-tail-add"
+        #[intV 2, intV 3, okValue] (progSetRet idx #[.add]), rng2)
+    else if shape = 2 then
+      let (badV, rng3) := pickFromPool (badValueForIdx idx) rng2
+      (mkCase s!"fuzz/err/value-type/idx{idx}" #[badV] (progSetRet idx), rng3)
+    else if shape = 3 then
+      (mkCase "fuzz/err/underflow/empty" #[] (progSetRet idx), rng2)
+    else if shape = 4 then
+      (mkCase "fuzz/err/redefine/idx0" #[q0, q0] (progSetRet2 0 0), rng2)
+    else if shape = 5 then
+      let (rawCode, rng3) := pickFromPool #[rawOp16 0xed70, rawOp16 0xed75, rawOp16 0xed77] rng2
+      (mkCodeCase "fuzz/ok/raw-opcode" #[okValue] rawCode, rng3)
+    else if shape = 6 then
+      let (rawCode, rng3) := pickFromPool
+        #[rawOp16 0xed76, rawOp16 0xed78, rawOp16 0xed6f, setRetCtrTruncated8Code, setRetCtrTruncated15Code] rng2
+      (mkCodeCase "fuzz/err/raw-opcode" #[okValue] rawCode, rng3)
+    else
+      (mkCase "fuzz/err/value-type/idx0-nan-program" #[] #[.pushInt .nan, setRetCtrInstr 0], rng2)
+  let (tag, rng3) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
 
 private def oracleCases : Array OracleCase := #[
   -- Success matrix.
@@ -326,7 +373,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile setRetCtrId setRetCtrFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr setRetCtrId
+      count := 500
+      gen := genSetRetCtrFuzzCase }
+  ]
 
 initialize registerSuite suite
 

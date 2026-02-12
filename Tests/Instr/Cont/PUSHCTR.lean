@@ -29,6 +29,10 @@ private def noiseB : Array Value :=
 private def rawOp16 (w : Nat) : Cell :=
   Cell.mkOrdinary (natToBits w 16) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -68,6 +72,44 @@ private def pushCtrFuzzProfile : ContMutationProfile :=
     minMutations := 1
     maxMutations := 5
     includeErrOracleSeeds := true }
+
+private def fuzzValidIdxPool : Array Nat := #[0, 1, 2, 3, 4, 5, 7]
+
+private def fuzzNoisePool : Array (Array Value) :=
+  #[#[], noiseA, noiseB, #[intV 11], #[.cell cellA, .slice fullSliceA]]
+
+private def genPushCtrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  let (idx, rng2) := pickFromPool fuzzValidIdxPool rng1
+  let (noise, rng3) := pickFromPool fuzzNoisePool rng2
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/decode/idx{idx}" noise (progPush idx), rng3)
+    else if shape = 1 then
+      let (execIdx, rng4) := pickFromPool #[0, 1, 2, 3] rng3
+      let argStack := if execIdx = 2 then #[intV 17] else #[]
+      (mkCase s!"fuzz/ok/execute/idx{execIdx}" argStack (progPush execIdx #[.execute]), rng4)
+    else if shape = 2 then
+      let (addIdx, rng4) := pickFromPool #[4, 7] rng3
+      (mkCase s!"fuzz/err/type/add/idx{addIdx}" #[intV 5] (progPush addIdx #[.add]), rng4)
+    else if shape = 3 then
+      let (underflowStack, rng4) := pickFromPool #[#[], #[intV 1]] rng3
+      (mkCase "fuzz/err/underflow/after-popctr-add"
+        underflowStack (progPush 0 #[.popCtr 0, .add]), rng4)
+    else if shape = 4 then
+      let (rawCode, rng4) := pickFromPool #[rawOp16 0xed40, rawOp16 0xed45, rawOp16 0xed47] rng3
+      (mkRawCase "fuzz/ok/raw-opcode" noise rawCode, rng4)
+    else if shape = 5 then
+      let (rawCode, rng4) := pickFromPool #[rawOp16 0xed46, rawOp16 0xed48, rawOp16 0xed3f] rng3
+      (mkRawCase "fuzz/err/raw-opcode" noise rawCode, rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/err/order/top-first-popctr4"
+        (#[.cell cellB]) (progPush 0 #[.popCtr 4]), rng3)
+    else
+      (mkCase "fuzz/ok/roundtrip/popctr4"
+        #[] (progPush 4 #[.popCtr 4]), rng3)
+  let (tag, rng4) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
 
 def suite : InstrSuite where
   id := pushCtrId
@@ -121,7 +163,11 @@ def suite : InstrSuite where
     mkCase "err/underflow/after-roundtrip-add-one-int" #[intV 1] (progPush 0 #[.popCtr 0, .add]),
     mkCase "ok/edge/after-roundtrip-add-two-ints" #[intV 2, intV 3] (progPush 0 #[.popCtr 0, .add])
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile pushCtrId pushCtrFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr pushCtrId
+      count := 500
+      gen := genPushCtrFuzzCase }
+  ]
 
 initialize registerSuite suite
 

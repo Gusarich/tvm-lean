@@ -212,6 +212,90 @@ private def ifnotrefFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def ifnotrefCondPool : Array Int :=
+  #[0, 1, -1, 2, -2, 5, -9, maxInt257, minInt257]
+
+private def ifnotrefBadCondNonIntPool : Array Value :=
+  #[.null, .cell refLeafA, .slice sliceA, .builder Builder.empty, .tuple #[], q0]
+
+private def ifnotrefNoisePool : Array Value :=
+  #[.null, .cell refLeafB, .slice sliceA, .builder Builder.empty, .tuple #[], q0, intV 7, intV (-3)]
+
+private def ifnotrefCodePool : Array Cell :=
+  #[
+    codeObserveMarkerTail,
+    codeBranchAddTail,
+    codeMissingRefTail,
+    codeTruncated8WithRef,
+    codePushNanThenIfnotref,
+    codeTwoIfnotrefNoopTail,
+    codeTwoIfnotrefOneRefTail
+  ]
+
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool ifnotrefNoisePool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfnotrefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 17
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (cond, rng4) := pickFromPool ifnotrefCondPool rng3
+  let (bad, rng5) := pickFromPool ifnotrefBadCondNonIntPool rng4
+  let (code, rng6) := pickFromPool ifnotrefCodePool rng5
+  let base :=
+    if shape = 0 then
+      mkCase s!"fuzz/branch/observe/deep-{depth}/cond-{cond}"
+        (below ++ #[intV cond]) codeObserveMarkerTail
+    else if shape = 1 then
+      mkCase "fuzz/branch/taken/basic" #[intV 0] codeObserveMarkerTail
+    else if shape = 2 then
+      mkCase "fuzz/branch/skipped/basic" #[intV 1] codeObserveMarkerTail
+    else if shape = 3 then
+      -- Prove gating over failing body.
+      mkCase "fuzz/branch-add/taken-underflow" #[intV 0] codeBranchAddTail
+    else if shape = 4 then
+      mkCase "fuzz/branch-add/skipped-underflow-avoided" #[intV 1] codeBranchAddTail
+    else if shape = 5 then
+      mkCase "fuzz/branch-add/taken-two-ints" #[intV 5, intV 6, intV 0] codeBranchAddTail
+    else if shape = 6 then
+      mkCase "fuzz/branch-add/skipped-two-ints" #[intV 5, intV 6, intV 1] codeBranchAddTail
+    else if shape = 7 then
+      mkCase s!"fuzz/popbool/type-top-non-int/deep-{depth}" (below ++ #[bad]) codeObserveMarkerTail
+    else if shape = 8 then
+      mkCase "fuzz/popbool/underflow-empty" #[] codeObserveMarkerTail
+    else if shape = 9 then
+      mkCase "fuzz/popbool/intov-nan-from-prefix" #[] codePushNanThenIfnotref
+    else if shape = 10 then
+      mkCase "fuzz/decode/missing-ref-empty" #[] codeMissingRefTail
+    else if shape = 11 then
+      mkCase "fuzz/decode/missing-ref-deep" (below ++ #[intV cond]) codeMissingRefTail
+    else if shape = 12 then
+      mkCase "fuzz/decode/truncated-8bits-even-with-ref" #[intV 0] codeTruncated8WithRef
+    else if shape = 13 then
+      -- Two-opcode sequencing, both refs present (noop body).
+      mkCase "fuzz/two/noop/both-taken" #[intV 0, intV 0] codeTwoIfnotrefNoopTail
+    else if shape = 14 then
+      mkCase "fuzz/two/noop/both-skipped" #[intV 1, intV 1] codeTwoIfnotrefNoopTail
+    else if shape = 15 then
+      mkCase "fuzz/two/noop/deep-mixed" (below ++ #[intV 1, intV 0]) codeTwoIfnotrefNoopTail
+    else if shape = 16 then
+      mkCase "fuzz/two/one-ref/first-taken-second-missing" #[intV 1, intV 0] codeTwoIfnotrefOneRefTail
+    else
+      -- Randomized: occasionally hit less common code cell shapes too.
+      mkCase s!"fuzz/random/code" (below ++ #[intV cond]) code
+  let (tag, rng7) := randNat rng6 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng7)
+
 def suite : InstrSuite where
   id := ifnotrefId
   unit := #[
@@ -494,7 +578,11 @@ def suite : InstrSuite where
       #[intV maxInt257, intV minInt257, intV 1, intV 0]
       codeTwoIfnotrefNoopTail
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile ifnotrefId ifnotrefFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifnotrefId
+      count := 500
+      gen := genIfnotrefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -158,26 +158,92 @@ private def progSetNumThenSetCont (nargs : Int) (copy : Nat) (more : Int) (tail 
 private def progDoubleCaptureAppend : Array Instr :=
   #[.pushCtr 0, .setContArgs 1 (-1), .setContArgs 1 (-1), .jmpx]
 
-private def setContArgsOracleFamilies : Array String :=
+private def setContArgsCopyPool : Array Nat := #[0, 1, 2, 3, 15]
+
+private def setContArgsMorePool : Array Int := #[-1, 0, 1, 2, 14]
+
+private def setContArgsNoisePool : Array (Array Value) :=
   #[
-    "ok/direct/",
-    "err/underflow/",
-    "err/type/",
-    "err/order/",
-    "ok/jump/",
-    "err/jump/",
-    "err/stkov/",
-    "ok/order/",
-    "ok/decode/",
-    "err/decode/"
+    #[],
+    #[intV 9],
+    #[intV 1, intV 2],
+    #[.null],
+    #[.cell cellA],
+    #[.slice sliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]]
   ]
 
-private def setContArgsFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := setContArgsOracleFamilies
-    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def setContArgsBadContPool : Array Value :=
+  #[
+    .null,
+    intV 1,
+    .cell cellA,
+    .slice sliceA,
+    .builder Builder.empty,
+    .tuple #[]
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def mkDirectStack (copy : Nat) (below : Array Value := #[]) : Array Value :=
+  below ++ intStackAsc copy ++ #[q0]
+
+private def mkJumpReadyStack (copy : Nat) (more : Int) : Array Value :=
+  let jumpNeed : Nat := if more = -1 then 0 else more.toNat
+  intStackAsc jumpNeed ++ intStackAsc copy ++ #[q0]
+
+private def genSetContArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 14
+  let (copy, rng2) := pickFromPool setContArgsCopyPool rng1
+  let (more, rng3) := pickFromPool setContArgsMorePool rng2
+  let (noise, rng4) := pickFromPool setContArgsNoisePool rng3
+  let (badCont, rng5) := pickFromPool setContArgsBadContPool rng4
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/direct/basic-copy-more" (mkDirectStack copy noise) copy more
+    else if shape = 1 then
+      mkCase "fuzz/ok/direct/copy0-preserve-below" (noise ++ #[q0]) 0 (-1)
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/copy1-only-cont" #[q0] 1 0
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/copy15-short" #[intV 1, intV 2, q0] 15 0
+    else if shape = 4 then
+      mkCase "fuzz/err/type/top-not-cont" #[badCont] 0 (-1)
+    else if shape = 5 then
+      mkCase "fuzz/err/type/cont-after-need-pass2" #[intV 7, intV 8, intV 9] 2 0
+    else if shape = 6 then
+      mkCase "fuzz/err/order/underflow-before-cont-type" #[.null] 1 0
+    else if shape = 7 then
+      mkCase "fuzz/err/order/top-type-before-below-cont" #[q0, intV 1] 0 0
+    else if shape = 8 then
+      mkCase "fuzz/ok/jump/basic-copy-more"
+        (mkJumpReadyStack copy more) copy more
+        (progSetThenJmp copy more)
+    else if shape = 9 then
+      mkCase "fuzz/err/jump/copy0-more1-empty-underflow"
+        #[q0] 0 1
+        (progSetThenJmp 0 1)
+    else if shape = 10 then
+      mkCase "fuzz/err/stkov/setnum1-copy2"
+        #[intV 9, intV 8] 0 0
+        (progSetNumThenSetCont 1 2 0)
+    else if shape = 11 then
+      mkCase "fuzz/ok/order/jump-tail-skipped"
+        (noise ++ #[q0]) 0 (-1)
+        (progSetThenJmp 0 (-1) #[.pushInt (.num 999)])
+    else if shape = 12 then
+      mkCaseCode "fuzz/ok/decode/raw-copy-more"
+        (mkDirectStack copy noise)
+        (rawSetContArgsCode copy more)
+    else if shape = 13 then
+      mkCaseCode "fuzz/err/decode/truncated8-prefix" #[q0] setContArgsTruncated8Code
+    else
+      mkCase "fuzz/err/order/underflow-before-top-type-large-copy" #[q0, intV 1] 15 0
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng6)
 
 private def oracleCases : Array OracleCase := #[
   -- Success paths and immediate bounds.
@@ -355,7 +421,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile setContArgsId setContArgsFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr setContArgsId
+      count := 500
+      gen := genSetContArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

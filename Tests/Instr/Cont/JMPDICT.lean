@@ -270,6 +270,39 @@ private def jmpDictFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def jmpDictIdxPool : Array Nat := #[0, 1, 42, 255, 256, 1024, 4095, 16383]
+private def jmpDictStackPool : Array (Array Value) := #[#[], deepStackA, deepStackB, deepStackC]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genJmpDictFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (idx, rng2) := pickFromPool jmpDictIdxPool rng1
+  let (stack, rng3) := pickFromPool jmpDictStackPool rng2
+  let case0 :=
+    if shape = 0 then
+      mkProgCase "fuzz/ok/default-c3" stack (progJmpOnly idx)
+    else if shape = 1 then
+      mkProgCase "fuzz/ok/set-c3/c0" stack (progSetC3FromCtr 0 idx)
+    else if shape = 2 then
+      mkProgCase "fuzz/ok/setnum-c3/more1" stack (progSetNumC3ThenJmp 1 idx)
+    else if shape = 3 then
+      mkCodeCase "fuzz/ok/dict-call/n8-hit" #[] (mkJmpDictViaC3Code! "fuzz/n8-hit" c3CallN8 7)
+    else if shape = 4 then
+      mkCodeCase "fuzz/ok/dict-jump/n14-hit" #[] (mkJmpDictViaC3Code! "fuzz/n14j-hit" c3JumpN14 300)
+    else if shape = 5 then
+      mkCodeCase "fuzz/err/dict/type-n-null" #[] (mkJmpDictViaC3Code! "fuzz/type-n-null" c3TypeNNull 7)
+    else if shape = 6 then
+      mkCodeCase "fuzz/err/dict/range-n-too-large" #[] (mkJmpDictViaC3Code! "fuzz/range-n" c3RangeNTooLarge 7)
+    else if shape = 7 then
+      mkCodeCase "fuzz/err/dict/type-dict-from-idx" #[] (mkJmpDictViaC3Code! "fuzz/type-dict" c3TypeDictFromIdx 7)
+    else
+      mkCodeCase "fuzz/ok/dict-call-z/n8-miss" #[] (mkJmpDictViaC3Code! "fuzz/n8z-miss" c3CallN8PushZ 6)
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Default c3 (quit 11): JMPDICT pushes idx then jumps to c3; caller tail is skipped.
@@ -485,7 +518,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpDictId jmpDictFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr jmpDictId
+      count := 500
+      gen := genJmpDictFuzzCase }
+  ]
 
 initialize registerSuite suite
 

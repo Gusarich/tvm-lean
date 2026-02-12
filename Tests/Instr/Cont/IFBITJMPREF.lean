@@ -181,29 +181,80 @@ private def expectDecodeStep
       else
         pure s'
 
-private def ifbitjmprefOracleFamilies : Array String :=
+private def ifbitjmprefIdxPool : Array Nat :=
+  #[0, 1, 2, 5, 7, 11, 17, 31]
+
+private def ifbitjmprefBelowPool : Array (Array Value) :=
   #[
-    "branch/taken/",
-    "branch/not-taken/",
-    "ok/no-tail/",
-    "underflow/",
-    "type/popint/",
-    "intov/popint/",
-    "invopcode/missing-ref/"
+    #[],
+    #[.null],
+    #[intV 9],
+    #[.cell refLeafA],
+    #[.slice fullSliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]],
+    #[.null, intV 9],
+    #[.builder Builder.empty, .tuple #[]],
+    #[.slice fullSliceB, .builder Builder.empty]
   ]
 
-private def ifbitjmprefFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := ifbitjmprefOracleFamilies
-    mutationModes := #[
-      0, 0, 0, 0,
-      1, 1, 1,
-      2, 2,
-      3, 3, 3,
-      4
-    ]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def ifbitjmprefTailPool : Array (Array Nat) :=
+  #[#[], #[0x77], #[0x77, 0x71]]
+
+private def ifbitjmprefBodyPool : Array Cell :=
+  #[jumpBodyCellA, jumpBodyCellB]
+
+private def ifbitjmprefBadTopPool : Array Value :=
+  #[.null, .cell refLeafA, .slice fullSliceA, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def bitMaskForIdx (idx : Nat) : Int :=
+  pow2 (idx &&& 0x1f)
+
+private def otherBitMaskForIdx (idx : Nat) : Int :=
+  pow2 ((idx + 1) % 32)
+
+private def genIfbitjmprefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 12
+  let (idx, rng2) := pickFromPool ifbitjmprefIdxPool rng1
+  let (below, rng3) := pickFromPool ifbitjmprefBelowPool rng2
+  let (tailBytes, rng4) := pickFromPool ifbitjmprefTailPool rng3
+  let (body, rng5) := pickFromPool ifbitjmprefBodyPool rng4
+  let (badTop, rng6) := pickFromPool ifbitjmprefBadTopPool rng5
+  let takenX := bitMaskForIdx idx
+  let notTakenX := otherBitMaskForIdx idx
+  let base :=
+    if shape = 0 then
+      mkProbeCase "fuzz/branch/taken/bit-mask" idx takenX below body tailBytes
+    else if shape = 1 then
+      mkProbeCase "fuzz/branch/taken/neg1" idx (-1) below body tailBytes
+    else if shape = 2 then
+      mkProbeCase "fuzz/branch/taken/bit-mask-plus-3" idx (takenX + 3) below body tailBytes
+    else if shape = 3 then
+      mkProbeCase "fuzz/branch/not-taken/other-bit" idx notTakenX below body tailBytes
+    else if shape = 4 then
+      mkProbeCase "fuzz/branch/not-taken/zero" idx 0 below body tailBytes
+    else if shape = 5 then
+      mkCase "fuzz/ok/no-tail/taken" idx (mkIfbitjmprefStack below takenX) body #[]
+    else if shape = 6 then
+      mkCase "fuzz/ok/no-tail/not-taken" idx (mkIfbitjmprefStack below notTakenX) body #[]
+    else if shape = 7 then
+      mkCase "fuzz/underflow/empty" idx #[] body tailBytes
+    else if shape = 8 then
+      mkCase "fuzz/type/popint/non-int-top" idx (below ++ #[badTop]) body tailBytes
+    else if shape = 9 then
+      mkNanCase "fuzz/intov/popint/nan-via-prefix" idx below body tailBytes
+    else if shape = 10 then
+      mkMissingRefCase "fuzz/invopcode/missing-ref" idx below tailBytes
+    else if shape = 11 then
+      mkMissingRefCase "fuzz/invopcode/missing-ref/type-vs-ref-order" idx (below ++ #[badTop]) tailBytes
+    else
+      mkCase "fuzz/type/popint/non-int-top-with-below-int" idx (below ++ #[intV 11, badTop]) body tailBytes
+  let (tag, rng7) := randNat rng6 0 999_999
+  ({ base with name := s!"{base.name}/idx{idx}/{tag}" }, rng7)
 
 def suite : InstrSuite where
   id := ifbitjmprefId
@@ -438,7 +489,11 @@ def suite : InstrSuite where
     mkMissingRefCase "invopcode/missing-ref/type-vs-ref-order" 1 #[.cell refLeafA],
     mkMissingRefCase "invopcode/missing-ref/tuple-top" 31 #[.tuple #[]]
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile ifbitjmprefId ifbitjmprefFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifbitjmprefId
+      count := 500
+      gen := genIfbitjmprefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

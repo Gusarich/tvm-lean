@@ -214,6 +214,44 @@ private def jmpxdataFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def jmpxdataNoisePool : Array (Array Value) :=
+  #[#[], #[intV 1], #[.null], #[.cell refCellA], #[.slice fullSliceA], #[.builder Builder.empty]]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genJmpxdataFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (noise, rng2) := pickFromPool jmpxdataNoisePool rng1
+  let case0 :=
+    if shape = 0 then
+      mkJumpCase "fuzz/ok/basic" noise
+    else if shape = 1 then
+      mkJumpCase "fuzz/ok/order/tail-skipped" #[] #[jmpxdataInstr, .pushInt (.num 777)]
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/type/top-null" #[.null]
+    else if shape = 4 then
+      mkCodeCase "fuzz/err/decode/truncated8" #[] truncated8Code
+    else if shape = 5 then
+      mkCodeCase "fuzz/err/decode/truncated15" #[] truncated15Code
+    else if shape = 6 then
+      mkCodeCase "fuzz/err/decode/empty" #[] emptyCode
+    else if shape = 7 then
+      mkCase "fuzz/ok/nargs1" #[q0] (progSetNargsThenJmpxdata 1)
+    else if shape = 8 then
+      mkCase "fuzz/err/nargs2" #[q0] (progSetNargsThenJmpxdata 2)
+    else if shape = 9 then
+      mkJumpCase "fuzz/gas/exact" #[]
+        #[.pushInt (.num jmpxdataGasExact), .tonEnvOp .setGasLimit, jmpxdataInstr]
+    else
+      mkJumpCase "fuzz/gas/exact-minus-one" #[]
+        #[.pushInt (.num jmpxdataGasExactMinusOne), .tonEnvOp .setGasLimit, jmpxdataInstr]
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 private def oracleCases : Array OracleCase := #[
   -- Success: pop continuation, push remaining code slice, jump.
   mkJumpCase "ok/basic/empty-below" #[],
@@ -405,7 +443,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile jmpxdataId jmpxdataFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr jmpxdataId
+      count := 500
+      gen := genJmpxdataFuzzCase }
+  ]
 
 initialize registerSuite suite
 

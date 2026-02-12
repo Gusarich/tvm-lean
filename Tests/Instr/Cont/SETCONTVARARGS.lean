@@ -48,26 +48,110 @@ private def progDoubleCaptureAppend : Array Instr :=
     .pushInt (.num 1), .pushInt (.num (-1)), setContVarArgsInstr,
     .jmpx]
 
-private def setContVarArgsOracleFamilies : Array String :=
-  #[
-    "ok/direct/",
-    "err/underflow/",
-    "err/range/",
-    "err/type/",
-    "err/order/",
-    "err/rangemap/",
-    "ok/jump/",
-    "err/jump/",
-    "err/stkov/",
-    "ok/order/"
-  ]
+private def setContVarArgsCopyPool : Array Int :=
+  #[0, 1, 2, 3, 7, 31, 254, 255]
 
-private def setContVarArgsFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := setContVarArgsOracleFamilies
-    mutationModes := #[0, 0, 0, 0, 2, 2, 2, 4, 4, 1, 1, 3]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def setContVarArgsMorePool : Array Int :=
+  #[-1, 0, 1, 2, 7, 31, 254, 255]
+
+private def setContVarArgsBadCopyPool : Array Int :=
+  #[-1, 256, maxInt257, minInt257]
+
+private def setContVarArgsBadMorePool : Array Int :=
+  #[-2, 256, maxInt257, minInt257]
+
+private def setContVarArgsTypePool : Array Value :=
+  #[.null, .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
+
+private def setContVarArgsNoisePool : Array (Array Value) :=
+  #[#[], #[intV 7], #[.null], #[.cell cellA], #[.slice sliceA], #[.builder Builder.empty], #[.tuple #[]]]
+
+private def setContVarArgsJumpMorePool : Array Int :=
+  #[-1, 0, 1, 2]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genSetContVarArgsFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 19
+  let (copy, rng2) := pickFromPool setContVarArgsCopyPool rng1
+  let (more, rng3) := pickFromPool setContVarArgsMorePool rng2
+  let (badCopy, rng4) := pickFromPool setContVarArgsBadCopyPool rng3
+  let (badMore, rng5) := pickFromPool setContVarArgsBadMorePool rng4
+  let (ty, rng6) := pickFromPool setContVarArgsTypePool rng5
+  let (noise, rng7) := pickFromPool setContVarArgsNoisePool rng6
+  let (jumpMore, rng8) := pickFromPool setContVarArgsJumpMorePool rng7
+  let (extraDepth, rng9) := randNat rng8 0 2
+  let needCopy : Int := if copy = 0 then 1 else copy
+  let jumpNeed : Nat := if jumpMore < 0 then 0 else jumpMore.toNat
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/direct/copy-more-random"
+        (intStackAsc (copy.toNat + extraDepth) ++ #[q0, intV copy, intV more])
+    else if shape = 1 then
+      mkCase "fuzz/ok/direct/copy0-more-neg1-with-noise"
+        (noise ++ #[q0, intV 0, intV (-1)])
+    else if shape = 2 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/copy-requirement"
+        (intStackAsc (needCopy.toNat - 1) ++ #[q0, intV needCopy, intV 0])
+    else if shape = 4 then
+      mkCase "fuzz/err/range/more-outside-smallint"
+        #[q0, intV 0, intV badMore]
+    else if shape = 5 then
+      mkCase "fuzz/err/range/copy-outside-smallint"
+        #[q0, intV badCopy, intV 0]
+    else if shape = 6 then
+      mkCase "fuzz/err/type/more-nonint"
+        #[q0, intV 0, ty]
+    else if shape = 7 then
+      mkCase "fuzz/err/type/copy-nonint"
+        #[q0, ty, intV 0]
+    else if shape = 8 then
+      mkCase "fuzz/err/type/cont-noncont"
+        #[ty, intV 0, intV (-1)]
+    else if shape = 9 then
+      mkCase "fuzz/err/order/more-range-before-copy-type"
+        #[q0, ty, intV 256]
+    else if shape = 10 then
+      mkCase "fuzz/err/order/more-type-before-copy-range"
+        #[q0, intV 256, ty]
+    else if shape = 11 then
+      mkCase "fuzz/err/order/copy-range-before-cont-type"
+        #[ty, intV 256, intV 0]
+    else if shape = 12 then
+      mkCase "fuzz/err/order/secondary-underflow-before-cont-type"
+        #[ty, intV 2, intV 0]
+    else if shape = 13 then
+      mkCase "fuzz/err/rangemap/more-nan-rangechk" #[]
+        #[.pushCtr 0, .pushInt (.num 0), .pushInt .nan, setContVarArgsInstr]
+    else if shape = 14 then
+      mkCase "fuzz/err/rangemap/copy-nan-rangechk" #[]
+        #[.pushCtr 0, .pushInt .nan, .pushInt (.num 0), setContVarArgsInstr]
+    else if shape = 15 then
+      mkCase "fuzz/ok/jump/setthenjmp"
+        (intStackAsc jumpNeed ++ #[q0, intV 0, intV jumpMore])
+        (progSetThenJmp)
+    else if shape = 16 then
+      mkCase "fuzz/err/jump/underflow-after-jmp"
+        #[q0, intV 0, intV 1]
+        (progSetThenJmp)
+    else if shape = 17 then
+      mkCase "fuzz/ok/jump/setnum1-copy1"
+        #[intV 9]
+        (progSetNumThenSetCont 1 1 (-1) #[.jmpx])
+    else if shape = 18 then
+      mkCase "fuzz/err/stkov/setnum1-copy2"
+        #[intV 9, intV 8]
+        (progSetNumThenSetCont 1 2 0)
+    else
+      mkCase "fuzz/ok/order/jump-tail-skipped"
+        #[q0, intV 0, intV (-1)]
+        (progSetThenJmp #[.pushInt (.num 999)])
+  let (tag, rng10) := randNat rng9 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng10)
 
 def suite : InstrSuite where
   id := setContVarArgsId
@@ -203,7 +287,11 @@ def suite : InstrSuite where
       #[q0, intV 0, intV (-1)]
       (progSetThenJmp #[.pushInt (.num 999)])
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile setContVarArgsId setContVarArgsFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr setContVarArgsId
+      count := 500
+      gen := genSetContVarArgsFuzzCase }
+  ]
 
 initialize registerSuite suite
 

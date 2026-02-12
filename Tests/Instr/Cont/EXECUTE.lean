@@ -226,6 +226,41 @@ private def executeFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def executeNoisePool : Array (Array Value) := #[#[], noiseA, noiseB, noiseC, noiseD]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genExecuteFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 11
+  let (noise, rng2) := pickFromPool executeNoisePool rng1
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/control/basic" (withQ0 noise)
+    else if shape = 1 then
+      mkCase "fuzz/ok/control/skip-tail" (withQ0 #[]) #[executeInstr, .pushInt (.num tailMarker)]
+    else if shape = 2 then
+      mkCase "fuzz/ok/control/pushctr1" #[] #[.pushCtr 1, executeInstr]
+    else if shape = 3 then
+      mkCase "fuzz/err/underflow/empty" #[]
+    else if shape = 4 then
+      mkCase "fuzz/err/type/top-null" #[.null]
+    else if shape = 5 then
+      mkCodeCase "fuzz/err/decode/truncated7" #[] truncated7Code
+    else if shape = 6 then
+      mkCodeCase "fuzz/err/decode/truncated7-with-ref" #[] truncated7WithRefCode
+    else if shape = 7 then
+      mkCodeCase "fuzz/ok/decode/execute-with-ref" (withQ0 #[]) executeWithRefCode
+    else if shape = 8 then
+      mkCase "fuzz/gas/exact" (withQ0 #[]) gasProgExact
+    else if shape = 9 then
+      mkCase "fuzz/gas/exact-minus-one" (withQ0 #[]) gasProgExactMinusOne
+    else
+      mkCodeCase "fuzz/err/decode/truncated-then-execute" #[] truncatedThenExecuteCode
+  let (tag, rng3) := randNat rng2 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 private def oracleCases : Array OracleCase :=
   #[
     -- Success and control-flow transfer (`VM.call cont`) with oracle-encodable K=quit(0).
@@ -383,7 +418,11 @@ def suite : InstrSuite where
             s!"err/type-top-cell-over-cont: expected remaining #[K], got {reprStr stTypeDeep.stack}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile executeId executeFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr executeId
+      count := 500
+      gen := genExecuteFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -204,6 +204,52 @@ private def retFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def retNoisePool : Array (Array Value) :=
+  #[
+    #[],
+    #[intV 1],
+    #[.null],
+    #[.cell cellA],
+    #[.slice fullSliceA],
+    #[.builder Builder.empty],
+    #[.tuple #[]],
+    noiseA,
+    noiseB,
+    noiseC
+  ]
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genRetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 9
+  let (noise, rng2) := pickFromPool retNoisePool rng1
+  let (cap, rng3) := pickSigned257ish rng2
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/basic" noise
+    else if shape = 1 then
+      mkCase "fuzz/ok/c0-from-c1" noise (progSetC0FromC1)
+    else if shape = 2 then
+      mkCase "fuzz/ok/nargs1" #[intV 1] (progSetC0Nargs 1)
+    else if shape = 3 then
+      mkCase "fuzz/err/nargs2-underflow" #[intV 1] (progSetC0Nargs 2)
+    else if shape = 4 then
+      mkCase "fuzz/ok/nargs2" #[intV 1, intV 2] (progSetC0Nargs 2)
+    else if shape = 5 then
+      mkCase "fuzz/ok/captured-more1" #[intV 9] (progSetC0Captured cap 1)
+    else if shape = 6 then
+      mkCase "fuzz/err/captured-more2-underflow" #[intV 9] (progSetC0Captured cap 2)
+    else if shape = 7 then
+      mkCaseCode "fuzz/err/decode-truncated-8" #[] retTruncated8Code
+    else if shape = 8 then
+      mkCaseCode "fuzz/err/decode-truncated-15" #[] retTruncated15Code
+    else
+      mkCase "fuzz/ok/trailing-skipped" #[intV 3] #[retInstr, .pushInt (.num 999)]
+  let (tag, rng4) := randNat rng3 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
+
 def suite : InstrSuite where
   id := retId
   unit := #[
@@ -336,7 +382,11 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8-prefix" #[] retTruncated8Code,
     mkCaseCode "err/decode/truncated-15-prefix" #[intV 1] retTruncated15Code
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile retId retFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr retId
+      count := 500
+      gen := genRetFuzzCase }
+  ]
 
 initialize registerSuite suite
 

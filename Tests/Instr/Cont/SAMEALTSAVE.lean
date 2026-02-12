@@ -98,6 +98,10 @@ private def sameAltSaveGasExact : Int :=
 private def sameAltSaveGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne sameAltSaveInstr
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -331,6 +335,37 @@ private def sameAltSaveFuzzProfile : ContMutationProfile :=
     maxMutations := 5
     includeErrOracleSeeds := true }
 
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB, noiseC]
+
+private def genSameAltSaveFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 8
+  let (noise, rng2) := pickFromPool fuzzNoisePool rng1
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase "fuzz/ok/basic/noise" noise, rng2)
+    else if shape = 1 then
+      (mkCase "fuzz/ok/c0-from-c1" noise (progSetC0FromC1), rng2)
+    else if shape = 2 then
+      (mkCase "fuzz/err/nargs2-underflow" #[] (progSetC0Nargs 2), rng2)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/captured-more1-one-init" #[intV 9] (progSetC0Captured 74 1), rng2)
+    else if shape = 4 then
+      (mkCase "fuzz/err/control/tail-underflow" #[] #[sameAltSaveInstr, .add], rng2)
+    else if shape = 5 then
+      (mkCaseCode "fuzz/err/decode/truncated-8" #[] sameAltSaveTruncated8Code, rng2)
+    else if shape = 6 then
+      (mkCase "fuzz/gas/exact-budget"
+        #[q0V]
+        #[.pushInt (.num sameAltSaveGasExact), .tonEnvOp .setGasLimit, sameAltSaveInstr], rng2)
+    else if shape = 7 then
+      (mkCase "fuzz/gas/exact-minus-one"
+        #[q0V]
+        #[.pushInt (.num sameAltSaveGasExactMinusOne), .tonEnvOp .setGasLimit, sameAltSaveInstr], rng2)
+    else
+      (mkCaseCode "fuzz/ok/decode/raw-opcode" #[q0V] sameAltSaveRawCode, rng2)
+  let (tag, rng3) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
+
 def suite : InstrSuite where
   id := sameAltSaveId
   unit := #[
@@ -421,7 +456,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile sameAltSaveId sameAltSaveFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr sameAltSaveId
+      count := 500
+      gen := genSameAltSaveFuzzCase }
+  ]
 
 initialize registerSuite suite
 

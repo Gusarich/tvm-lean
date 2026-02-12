@@ -281,30 +281,148 @@ private def mkPrefixedIfrefElseRefCase
     (fuel : Nat := 1_000_000) : OracleCase :=
   mkCase name stack (mkPrefixedIfrefElseRefCodeCell pre t f tail) gasLimits fuel
 
-private def ifrefElseRefOracleFamilies : Array String :=
+private def ifrefElseRefTrueCondPool : Array Int :=
+  #[1, -1, 2, -2, 7, -9, maxInt257, minInt257]
+
+private def ifrefElseRefFalseCondPool : Array Int :=
+  #[0]
+
+private def ifrefElseRefBadPopBoolPool : Array Value :=
+  #[.null, .cell refLeafA, .slice sliceNoiseB, .builder Builder.empty, .tuple #[], .cont (.quit 0)]
+
+private def ifrefElseRefNoisePool : Array Value :=
+  noiseA ++ noiseB ++ noiseC ++ #[intV maxInt257, intV minInt257]
+
+private def ifrefElseRefCodePool : Array Cell :=
   #[
-    "ok/true/",
-    "ok/false/",
-    "ok/call-tail/",
-    "ok/branch/",
-    "err/popbool/",
-    "err/special/",
-    "err/decode/",
-    "err/branch/"
+    mkIfrefElseRefCodeCell bodyNoop bodyNoop #[.pushInt (.num tailMarker)],
+    codeObserveMarkers,
+    codeTrueAddTail,
+    codeFalseAddTail,
+    ifrefElseRefMissingRef0Code,
+    ifrefElseRefMissingRef1Code,
+    ifrefElseRefTruncated8Code,
+    ifrefElseRefTruncated15Code
   ]
 
-private def ifrefElseRefFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := ifrefElseRefOracleFamilies
-    mutationModes := #[
-      0, 0, 0, 0,
-      1, 1, 1,
-      2, 2,
-      3, 3, 3,
-      4
-    ]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool ifrefElseRefNoisePool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def genIfrefElseRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 25
+  let (depth, rng2) := randNat rng1 0 4
+  let (below, rng3) := genBelowStack depth rng2
+  let (condTrue, rng4) := pickFromPool ifrefElseRefTrueCondPool rng3
+  let (condFalse, rng5) := pickFromPool ifrefElseRefFalseCondPool rng4
+  let (badPopBool, rng6) := pickFromPool ifrefElseRefBadPopBoolPool rng5
+  let (code, rng7) := pickFromPool ifrefElseRefCodePool rng6
+  let base :=
+    if shape = 0 then
+      mkIfrefElseRefCase s!"fuzz/ok/true/observe-tail/deep-{depth}"
+        (withCond below condTrue)
+        bodyPushTrue
+        bodyPushFalse
+        #[.pushInt (.num tailMarker)]
+    else if shape = 1 then
+      mkIfrefElseRefCase s!"fuzz/ok/false/observe-tail/deep-{depth}"
+        (withCond below condFalse)
+        bodyPushTrue
+        bodyPushFalse
+        #[.pushInt (.num tailMarker)]
+    else if shape = 2 then
+      mkIfrefElseRefCase s!"fuzz/ok/true/deep-{depth}"
+        (withCond below condTrue)
+        bodyDeepTrue
+        bodyDeepFalse
+    else if shape = 3 then
+      mkIfrefElseRefCase s!"fuzz/ok/false/deep-{depth}"
+        (withCond below condFalse)
+        bodyDeepTrue
+        bodyDeepFalse
+    else if shape = 4 then
+      mkIfrefElseRefCase "fuzz/err/popbool/underflow-empty" #[] bodyPushTrue bodyPushFalse
+    else if shape = 5 then
+      mkIfrefElseRefCase s!"fuzz/err/popbool/type/deep-{depth}"
+        (withCondRaw below badPopBool)
+        bodyPushTrue
+        bodyPushFalse
+    else if shape = 6 then
+      mkPrefixedIfrefElseRefCase "fuzz/err/popbool/intov-nan-prefix"
+        #[] #[.pushInt .nan] bodyNoop bodyNoop #[.pushInt (.num tailMarker)]
+    else if shape = 7 then
+      mkIfrefElseRefCase "fuzz/err/special/selected-first"
+        (withCond below condTrue)
+        specialTrueCell
+        bodyNoop
+        #[.pushInt (.num tailMarker)]
+    else if shape = 8 then
+      mkIfrefElseRefCase "fuzz/err/special/selected-second"
+        (withCond below condFalse)
+        bodyNoop
+        specialFalseCell
+        #[.pushInt (.num tailMarker)]
+    else if shape = 9 then
+      mkIfrefElseRefCase "fuzz/ok/true/skip-second-special"
+        (withCond below condTrue)
+        bodyNoop
+        specialFalseCell
+        #[.pushInt (.num tailMarker)]
+    else if shape = 10 then
+      mkIfrefElseRefCase "fuzz/ok/false/skip-first-special"
+        (withCond below condFalse)
+        specialTrueCell
+        bodyNoop
+        #[.pushInt (.num tailMarker)]
+    else if shape = 11 then
+      mkCase "fuzz/err/decode/missing-0-ref-empty" #[] ifrefElseRefMissingRef0Code
+    else if shape = 12 then
+      mkCase "fuzz/err/decode/missing-1-ref-int" #[intV condFalse] ifrefElseRefMissingRef1Code
+    else if shape = 13 then
+      mkCase "fuzz/err/decode/truncated-8-prefix" #[intV condFalse] ifrefElseRefTruncated8Code
+    else if shape = 14 then
+      mkCase "fuzz/err/decode/truncated-15-prefix" #[intV condTrue] ifrefElseRefTruncated15Code
+    else if shape = 15 then
+      mkCase "fuzz/ok/call-tail/true-empty-body"
+        #[intV condTrue]
+        (mkIfrefElseRefCodeCell bodyNoop bodyNoop #[.pushInt (.num tailMarker)])
+    else if shape = 16 then
+      mkCase "fuzz/ok/call-tail/false-empty-body"
+        #[intV condFalse]
+        (mkIfrefElseRefCodeCell bodyNoop bodyNoop #[.pushInt (.num tailMarker)])
+    else if shape = 17 then
+      mkCase "fuzz/ok/call-tail/true-marker-body" #[intV condTrue] codeObserveMarkers
+    else if shape = 18 then
+      mkCase "fuzz/ok/call-tail/false-marker-body" #[intV condFalse] codeObserveMarkers
+    else if shape = 19 then
+      mkCase "fuzz/ok/call-tail/true-push7"
+        #[intV condTrue]
+        (mkIfrefElseRefCodeCell bodyPush7 bodyPush8 #[.pushInt (.num tailMarker)])
+    else if shape = 20 then
+      mkCase "fuzz/ok/call-tail/false-push8"
+        #[intV condFalse]
+        (mkIfrefElseRefCodeCell bodyPush7 bodyPush8 #[.pushInt (.num tailMarker)])
+    else if shape = 21 then
+      mkCase "fuzz/err/branch/true-selected-add-underflow" #[intV condTrue] codeTrueAddTail
+    else if shape = 22 then
+      mkCase "fuzz/ok/branch/false-skips-true-add" #[intV condFalse] codeTrueAddTail
+    else if shape = 23 then
+      mkCase "fuzz/err/branch/false-selected-add-underflow" #[intV condFalse] codeFalseAddTail
+    else if shape = 24 then
+      mkCase "fuzz/ok/branch/true-skips-false-add" #[intV condTrue] codeFalseAddTail
+    else
+      mkCase s!"fuzz/random/branch-aware/deep-{depth}" (withCond below condTrue) code
+  let (tag, rng8) := randNat rng7 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng8)
 
 def suite : InstrSuite where
   id := ifrefElseRefId
@@ -579,7 +697,11 @@ def suite : InstrSuite where
     mkCase "err/branch/false-selected-add-underflow" #[intV 0] codeFalseAddTail,
     mkCase "ok/branch/true-skips-false-add" #[intV 1] codeFalseAddTail
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile ifrefElseRefId ifrefElseRefFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr ifrefElseRefId
+      count := 500
+      gen := genIfrefElseRefFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -66,6 +66,12 @@ private def refCellB : Cell :=
 
 private def fullSliceB : Slice := Slice.ofCell refCellB
 
+private def noiseA : Array Value :=
+  #[.null, intV 7, .cell refCellA]
+
+private def noiseB : Array Value :=
+  #[.slice fullSliceB, .builder Builder.empty, .tuple #[]]
+
 private def mkOrdCont
     (code : Slice := Slice.ofCell Cell.empty)
     (saved : Continuation := .quit 0)
@@ -164,12 +170,88 @@ private def repeatEndOracleFamilies : Array String :=
     "brk/"
   ]
 
-private def repeatEndFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := repeatEndOracleFamilies
-    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def repeatEndSetGasExact : Int :=
+  computeExactGasBudget repeatEndInstr
+
+private def repeatEndSetGasExactMinusOne : Int :=
+  computeExactGasBudgetMinusOne repeatEndInstr
+
+private def pickNoise (rng0 : StdGen) : Array Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 2
+  match choice with
+  | 0 => (#[], rng1)
+  | 1 => (noiseA, rng1)
+  | _ => (noiseB, rng1)
+
+private def pickCountInRange (rng0 : StdGen) : Int × StdGen :=
+  let (choice, rng1) := randNat rng0 0 5
+  match choice with
+  | 0 => (0, rng1)
+  | 1 => (1, rng1)
+  | 2 => (-1, rng1)
+  | 3 => (minInt32, rng1)
+  | 4 => (maxInt32, rng1)
+  | _ =>
+      let (x, rng2) := pickSigned257ish rng1
+      let x' := max minInt32 (min maxInt32 x)
+      (x', rng2)
+
+private def pickCountOutOfRange (rng0 : StdGen) : Int × StdGen :=
+  let (choice, rng1) := randNat rng0 0 1
+  if choice = 0 then
+    (int32TooLarge, rng1)
+  else
+    (int32TooSmall, rng1)
+
+private def pickProgramOk (rng0 : StdGen) (loopInstr : Instr) : Array Instr × StdGen :=
+  let (choice, rng1) := randNat rng0 0 3
+  match choice with
+  | 0 =>
+      let (x, rng2) := pickSigned257ish rng1
+      (progBodyPush loopInstr x, rng2)
+  | 1 =>
+      let (a, rng2) := pickSigned257ish rng1
+      let (b, rng3) := pickSigned257ish rng2
+      (progBodyAdd loopInstr a b, rng3)
+  | 2 => (progBodyRetAlt loopInstr, rng1)
+  | _ => (progBodyRet loopInstr, rng1)
+
+private def genRepeatEndFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  match shape with
+  | 0 =>
+      let (noise, rng2) := pickNoise rng1
+      let (count, rng3) := pickCountInRange rng2
+      let count' := if count > 0 then 0 else count
+      (mkCase "fuzz/ret/nonpositive" (noise ++ #[intV count']) #[repeatEndInstr], rng3)
+  | 1 =>
+      let (noise, rng2) := pickNoise rng1
+      let (count, rng3) := pickCountInRange rng2
+      let count' := if count <= 0 then 1 else count
+      let (program, rng4) := pickProgramOk rng3 repeatEndInstr
+      (mkCase "fuzz/repeat/positive" (noise ++ #[intV count']) program, rng4)
+  | 2 =>
+      (mkCase "fuzz/err/underflow" #[] #[repeatEndInstr], rng1)
+  | 3 =>
+      (mkCase "fuzz/err/type" #[.null] #[repeatEndInstr], rng1)
+  | 4 =>
+      let (count, rng2) := pickCountOutOfRange rng1
+      (mkCase "fuzz/err/range" #[intV count] #[repeatEndInstr], rng2)
+  | 5 =>
+      let (useExact, rng2) := randBool rng1
+      let gas := if useExact then repeatEndSetGasExact else repeatEndSetGasExactMinusOne
+      let name := if useExact then "fuzz/gas/exact" else "fuzz/gas/minus-one"
+      let program := #[.pushInt (.num gas), .tonEnvOp .setGasLimit, repeatEndInstr]
+      (mkCase name #[intV 0] program, rng2)
+  | 6 =>
+      let (noise, rng2) := pickNoise rng1
+      let (count, rng3) := pickCountInRange rng2
+      let count' := if count <= 0 then 1 else count
+      let (program, rng4) := pickProgramOk rng3 repeatEndBrkInstr
+      (mkCase "fuzz/brk/positive" (noise ++ #[intV count']) program, rng4)
+  | _ =>
+      let (count, rng2) := pickCountInRange rng1
+      (mkCase "fuzz/basic" #[intV count] #[repeatEndInstr], rng2)
 
 def suite : InstrSuite where
   id := repeatEndId
@@ -370,7 +452,11 @@ def suite : InstrSuite where
     mkCase "brk/type-top-null" #[.null] #[repeatEndBrkInstr],
     mkCase "brk/range-too-large" #[intV int32TooLarge] #[repeatEndBrkInstr]
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile repeatEndId repeatEndFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr repeatEndId
+      count := 500
+      gen := genRepeatEndFuzzCase }
+  ]
 
 initialize registerSuite suite
 

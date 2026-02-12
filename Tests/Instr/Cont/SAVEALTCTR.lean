@@ -56,6 +56,10 @@ private def saveAltTruncated8Code : Cell :=
 private def saveAltTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xedb0 >>> 1) 15) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -183,6 +187,40 @@ private def saveAltCtrFuzzProfile : ContMutationProfile :=
     minMutations := 1
     maxMutations := 5
     includeErrOracleSeeds := true }
+
+private def fuzzValidIdxPool : Array Nat := #[0, 1, 2, 3, 4, 5, 7]
+
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB, noiseC]
+
+private def genSaveAltCtrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 7
+  let (idx, rng2) := pickFromPool fuzzValidIdxPool rng1
+  let (noise, rng3) := pickFromPool fuzzNoisePool rng2
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/idx{idx}" noise (progSaveAlt idx), rng3)
+    else if shape = 1 then
+      (mkCase s!"fuzz/ok/flow/idx{idx}-tail-add"
+        #[intV 2, intV 3] (progSaveAlt idx #[.add]), rng3)
+    else if shape = 2 then
+      let redefineIdx := if idx = 7 then 0 else idx
+      (mkCase s!"fuzz/err/redefine/idx{redefineIdx}"
+        #[] (progSaveAlt2 redefineIdx redefineIdx), rng3)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/redefine/idx7-allowed" #[] (progSaveAlt2 7 7), rng3)
+    else if shape = 4 then
+      let (rawCode, rng4) := pickFromPool #[saveAltCode0, saveAltCode5, saveAltCode7] rng3
+      (mkCaseCode "fuzz/ok/raw-opcode" #[] rawCode, rng4)
+    else if shape = 5 then
+      let (rawCode, rng4) := pickFromPool
+        #[saveAltCodeHole6, saveAltCodeUnassignedB8, saveAltCodeNeighborAf, saveAltTruncated8Code, saveAltTruncated15Code] rng3
+      (mkCaseCode "fuzz/err/raw-opcode" #[] rawCode, rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/err/flow/tail-add-underflow" #[] (progSaveAlt 0 #[.add]), rng3)
+    else
+      (mkCase "fuzz/ok/probe/idx5-tail-add" #[intV 2, intV 3] (progSaveAlt 5 #[.add]), rng3)
+  let (tag, rng4) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng4)
 
 private def oracleCases : Array OracleCase := #[
   -- Success across all valid indices.
@@ -388,7 +426,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile saveAltCtrId saveAltCtrFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr saveAltCtrId
+      count := 500
+      gen := genSaveAltCtrFuzzCase }
+  ]
 
 initialize registerSuite suite
 

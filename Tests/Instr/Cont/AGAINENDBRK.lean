@@ -172,25 +172,62 @@ private def noiseA : Array Value :=
 private def noiseB : Array Value :=
   #[.slice fullSliceB, .builder Builder.empty, .tuple #[]]
 
-private def againEndBrkFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/brk/retalt/",
-      "ok/brk/ret/",
-      "ok/brk/push-retalt/",
-      "ok/brk/push-ret/",
-      "ok/brk/add-retalt/",
-      "ok/brk/add-ret/",
-      "ok/brk/setc0fromc1-implicitret/",
-      "ok/brk/setc0fromc1-ret/",
-      "err/brk/body-add-underflow",
-      "err/brk/body-add-type",
-      "err/brk/body-popctr-underflow",
-      "err/brk/body-popctr-type"
-    ]
-    mutationModes := #[0, 0, 0, 1, 1, 1, 4, 4, 4, 2, 3]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def againEndBrkSetGasExact : Int :=
+  computeExactGasBudget againEndBrkInstr
+
+private def againEndBrkSetGasExactMinusOne : Int :=
+  computeExactGasBudgetMinusOne againEndBrkInstr
+
+private def pickNoise (rng0 : StdGen) : Array Value × StdGen :=
+  let (choice, rng1) := randNat rng0 0 2
+  match choice with
+  | 0 => (#[], rng1)
+  | 1 => (noiseA, rng1)
+  | _ => (noiseB, rng1)
+
+private def pickProgramOk (rng0 : StdGen) : Array Instr × StdGen :=
+  let (choice, rng1) := randNat rng0 0 5
+  match choice with
+  | 0 => (progRetAlt, rng1)
+  | 1 => (progRet, rng1)
+  | 2 =>
+      let (x, rng2) := pickSigned257ish rng1
+      (progPushRetAlt x, rng2)
+  | 3 =>
+      let (x, rng2) := pickSigned257ish rng1
+      (progPushRet x, rng2)
+  | 4 =>
+      let (a, rng2) := pickSigned257ish rng1
+      let (b, rng3) := pickSigned257ish rng2
+      (progAddRetAlt a b, rng3)
+  | _ =>
+      let (a, rng2) := pickSigned257ish rng1
+      let (b, rng3) := pickSigned257ish rng2
+      (progAddRet a b, rng3)
+
+private def genAgainEndBrkFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 5
+  match shape with
+  | 0 =>
+      let (noise, rng2) := pickNoise rng1
+      let (program, rng3) := pickProgramOk rng2
+      (mkCase "fuzz/ok/brk" noise program, rng3)
+  | 1 =>
+      (mkCase "fuzz/err/brk/add-underflow" #[] progAddOnly, rng1)
+  | 2 =>
+      (mkCase "fuzz/err/brk/add-type" #[.null, intV 1] progAddOnly, rng1)
+  | 3 =>
+      (mkCase "fuzz/err/brk/popctr" #[] progPopCtr0, rng1)
+  | 4 =>
+      let (useExact, rng2) := randBool rng1
+      let gas := if useExact then againEndBrkSetGasExact else againEndBrkSetGasExactMinusOne
+      let name := if useExact then "fuzz/gas/exact" else "fuzz/gas/minus-one"
+      let program := #[.pushInt (.num gas), .tonEnvOp .setGasLimit, againEndBrkInstr]
+      (mkCase name #[] program, rng2)
+  | _ =>
+      let (noise, rng2) := pickNoise rng1
+      let (program, rng3) := pickProgramOk rng2
+      (mkCase "fuzz/ok/brk/noise" noise program, rng3)
 
 def suite : InstrSuite where
   id := againEndBrkId
@@ -358,7 +395,11 @@ def suite : InstrSuite where
     mkCase "err/brk/body-popctr-type" #[.null] progPopCtr0,
     mkCase "err/brk/body-popctr-type-deep" #[.slice fullSliceB, intV 3] progPopCtr0
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile againEndBrkId againEndBrkFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr againEndBrkId
+      count := 500
+      gen := genAgainEndBrkFuzzCase }
+  ]
 
 initialize registerSuite suite
 

@@ -282,37 +282,160 @@ private def oracleCases : Array OracleCase := #[
   mkCodeCase "decode/bless-truncated15" #[intV 1] blessTruncated15Code
 ]
 
-private def blessFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/bless/",
-      "order/bless/",
-      "err/bless/underflow-",
-      "err/bless/type-",
-      "ok/blessargs/",
-      "err/blessargs/underflow-",
-      "err/blessargs/type-",
-      "err/blessargs/order-",
-      "ok/blessvarargs/",
-      "err/blessvarargs/underflow-",
-      "err/blessvarargs/type-",
-      "err/blessvarargs/range-",
-      "err/blessvarargs/rangemap-",
-      "err/blessvarargs/order-",
-      "ok/interaction/",
-      "err/interaction/",
-      "decode/"
-    ]
-    -- Weight toward stack-shape/order/range perturbations for BLESS copy/more families.
-    mutationModes := #[
-      0, 0, 0, 0,
-      2, 2, 2, 2,
-      4, 4, 4,
-      1, 1,
-      3
-    ]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def blessFuzzSlicePool : Array Slice := #[sliceA, sliceB, sliceEmpty]
+
+private def blessFuzzBlessTypeTopPool : Array Value :=
+  #[intV 1, .null, .cell cellA, .builder Builder.empty, .tuple #[], q0]
+
+private def blessFuzzNonIntPool : Array Value :=
+  #[.null, .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[], q0]
+
+private def blessFuzzBlessArgsCopyPool : Array Nat := #[0, 1, 2, 3, 15]
+private def blessFuzzBlessArgsMorePool : Array Int := #[-1, 0, 1, 2, 14]
+
+private def blessFuzzVarCopyPool : Array Int := #[0, 1, 2, 3, 15, 255]
+private def blessFuzzVarMorePool : Array Int := #[-1, 0, 1, 2, 14, 255]
+private def blessFuzzMoreLowPool : Array Int := #[-2, minInt257]
+private def blessFuzzMoreHighPool : Array Int := #[256, maxInt257]
+private def blessFuzzCopyLowPool : Array Int := #[-1, minInt257]
+private def blessFuzzCopyHighPool : Array Int := #[256, maxInt257]
+
+private instance : Inhabited Slice := ⟨Slice.ofCell Cell.empty⟩
+
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def mkBlessVarArgsStack
+    (stackPrefix : Array Value)
+    (code : Slice)
+    (copy more : Int) : Array Value :=
+  stackPrefix ++ #[.slice code, intV copy, intV more]
+
+private def mkBlessVarArgsStackRaw
+    (stackPrefix : Array Value)
+    (codeVal copyVal moreVal : Value) : Array Value :=
+  stackPrefix ++ #[codeVal, copyVal, moreVal]
+
+private def genBlessFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 30
+  let (sliceOk, rng2) := pickFromPool blessFuzzSlicePool rng1
+  let (badBlessTop, rng3) := pickFromPool blessFuzzBlessTypeTopPool rng2
+  let (badIntParam, rng4) := pickFromPool blessFuzzNonIntPool rng3
+  let (copyN, rng5) := pickFromPool blessFuzzBlessArgsCopyPool rng4
+  let (moreN, rng6) := pickFromPool blessFuzzBlessArgsMorePool rng5
+  let (varCopy, rng7) := pickFromPool blessFuzzVarCopyPool rng6
+  let (varMore, rng8) := pickFromPool blessFuzzVarMorePool rng7
+  let (moreLow, rng9) := pickFromPool blessFuzzMoreLowPool rng8
+  let (moreHigh, rng10) := pickFromPool blessFuzzMoreHighPool rng9
+  let (copyLow, rng11) := pickFromPool blessFuzzCopyLowPool rng10
+  let (copyHigh, rng12) := pickFromPool blessFuzzCopyHighPool rng11
+  let underflowCopy : Nat := if copyN = 0 then 1 else copyN
+  let blessArgsOkStack := intStackAsc (copyN + 1) ++ #[.slice sliceOk]
+  let blessVarOkStack := mkBlessVarArgsStack (intStackAsc (varCopy.toNat + 1)) sliceOk varCopy varMore
+  let case0 :=
+    if shape = 0 then
+      mkCase "fuzz/ok/bless/basic" #[.slice sliceOk]
+    else if shape = 1 then
+      mkCase "fuzz/ok/bless/order-tail-skipped"
+        #[.slice sliceOk]
+        #[blessInstr, .pushInt (.num 999)]
+    else if shape = 2 then
+      mkCase "fuzz/err/bless/underflow-empty" #[]
+    else if shape = 3 then
+      mkCase "fuzz/err/bless/type-top-not-slice" #[badBlessTop]
+    else if shape = 4 then
+      mkCase "fuzz/ok/blessargs/copy-more" blessArgsOkStack #[.blessArgs copyN moreN]
+    else if shape = 5 then
+      mkCase "fuzz/err/blessargs/underflow-copy"
+        (intStackAsc (underflowCopy - 1) ++ #[.slice sliceOk])
+        #[.blessArgs underflowCopy 0]
+    else if shape = 6 then
+      mkCase "fuzz/err/blessargs/type-top-not-slice" #[intV 7, badBlessTop] #[.blessArgs 1 0]
+    else if shape = 7 then
+      mkCase "fuzz/err/blessargs/order-underflow-before-slice-type" #[intV 1, .null] #[.blessArgs 2 0]
+    else if shape = 8 then
+      mkCase "fuzz/ok/blessvarargs/copy-more" blessVarOkStack #[blessVarArgsInstr]
+    else if shape = 9 then
+      mkCase "fuzz/err/blessvarargs/underflow-empty" #[] #[blessVarArgsInstr]
+    else if shape = 10 then
+      mkCase "fuzz/err/blessvarargs/underflow-one-item" #[intV 0] #[blessVarArgsInstr]
+    else if shape = 11 then
+      mkCase "fuzz/err/blessvarargs/type-more"
+        (mkBlessVarArgsStackRaw #[] (.slice sliceOk) (intV 0) badIntParam)
+        #[blessVarArgsInstr]
+    else if shape = 12 then
+      mkCase "fuzz/err/blessvarargs/range-more-low"
+        (mkBlessVarArgsStack #[] sliceOk 0 moreLow)
+        #[blessVarArgsInstr]
+    else if shape = 13 then
+      mkCase "fuzz/err/blessvarargs/range-more-high"
+        (mkBlessVarArgsStack #[] sliceOk 0 moreHigh)
+        #[blessVarArgsInstr]
+    else if shape = 14 then
+      mkCase "fuzz/err/blessvarargs/rangemap-more-nan-program"
+        #[.slice sliceOk, intV 0]
+        #[.pushInt .nan, blessVarArgsInstr]
+    else if shape = 15 then
+      mkCase "fuzz/err/blessvarargs/type-copy"
+        (mkBlessVarArgsStackRaw #[] (.slice sliceOk) badIntParam (intV 0))
+        #[blessVarArgsInstr]
+    else if shape = 16 then
+      mkCase "fuzz/err/blessvarargs/range-copy-low"
+        (mkBlessVarArgsStack #[] sliceOk copyLow 0)
+        #[blessVarArgsInstr]
+    else if shape = 17 then
+      mkCase "fuzz/err/blessvarargs/range-copy-high"
+        (mkBlessVarArgsStack #[] sliceOk copyHigh 0)
+        #[blessVarArgsInstr]
+    else if shape = 18 then
+      mkCase "fuzz/err/blessvarargs/rangemap-copy-nan-program"
+        #[.slice sliceOk, intV 0]
+        #[.pushInt .nan, .xchg0 1, blessVarArgsInstr]
+    else if shape = 19 then
+      mkCase "fuzz/err/blessvarargs/type-slice-after-params" #[intV 1, intV 0, intV 0] #[blessVarArgsInstr]
+    else if shape = 20 then
+      mkCase "fuzz/err/blessvarargs/underflow-copy-after-pop"
+        (mkBlessVarArgsStack #[] sliceOk 2 0)
+        #[blessVarArgsInstr]
+    else if shape = 21 then
+      mkCase "fuzz/err/blessvarargs/order-more-before-copy-type"
+        (mkBlessVarArgsStackRaw #[] (.slice sliceOk) (.cell cellA) .null)
+        #[blessVarArgsInstr]
+    else if shape = 22 then
+      mkCase "fuzz/err/blessvarargs/order-copy-before-slice-type"
+        #[intV 1, .null, intV 0]
+        #[blessVarArgsInstr]
+    else if shape = 23 then
+      mkCase "fuzz/ok/interaction/blessargs-callx-pass1"
+        #[intV 9, .slice sliceA]
+        (progBlessArgsCallxVarArgs 1 1 1 0)
+    else if shape = 24 then
+      mkCase "fuzz/err/interaction/blessargs-callx-pass0"
+        #[intV 9, .slice sliceA]
+        (progBlessArgsCallxVarArgs 1 1 0 0)
+    else if shape = 25 then
+      mkCase "fuzz/ok/interaction/blessvarargs-callx-pass1"
+        #[intV 9, .slice sliceB, intV 1, intV 1]
+        (progBlessVarArgsCallxVarArgs 1 0)
+    else if shape = 26 then
+      mkCase "fuzz/err/interaction/blessvarargs-callx-pass0"
+        #[intV 9, .slice sliceB, intV 1, intV 1]
+        (progBlessVarArgsCallxVarArgs 0 0)
+    else if shape = 27 then
+      mkCase "fuzz/ok/interaction/blessargs-jmpx-pass0"
+        #[intV 9, .slice sliceA]
+        (progBlessArgsJmpxVarArgs 1 0 0)
+    else if shape = 28 then
+      mkCase "fuzz/err/interaction/blessargs-jmpx-pass0-more1"
+        #[intV 9, .slice sliceA]
+        (progBlessArgsJmpxVarArgs 1 1 0)
+    else if shape = 29 then
+      mkCodeCase "fuzz/err/decode/bless-truncated8" #[] blessTruncated8Code
+    else
+      mkCodeCase "fuzz/err/decode/bless-truncated15" #[intV 1] blessTruncated15Code
+  let (tag, rng13) := randNat rng12 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng13)
 
 def suite : InstrSuite where
   id := blessId
@@ -391,7 +514,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile blessId blessFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr blessId
+      count := 500
+      gen := genBlessFuzzCase }
+  ]
 
 initialize registerSuite suite
 

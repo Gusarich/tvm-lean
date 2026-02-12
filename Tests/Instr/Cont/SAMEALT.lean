@@ -132,6 +132,10 @@ private def sameAltTruncated8Code : Cell :=
 private def sameAltTruncated15Code : Cell :=
   Cell.mkOrdinary (natToBits (0xedfa >>> 1) 15) #[]
 
+private def pickFromPool {α : Type} [Inhabited α] (pool : Array α) (rng : StdGen) : α × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
 private def sameAltOracleFamilies : Array String :=
   #[
     "ok/basic/",
@@ -149,6 +153,29 @@ private def sameAltFuzzProfile : ContMutationProfile :=
     minMutations := 1
     maxMutations := 5
     includeErrOracleSeeds := true }
+
+private def fuzzNoisePool : Array (Array Value) := #[#[], noiseA, noiseB, noiseC]
+
+private def genSameAltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 6
+  let (noise, rng2) := pickFromPool fuzzNoisePool rng1
+  let (case0, rngTag) :=
+    if shape = 0 then
+      (mkCase "fuzz/ok/basic/noise" noise, rng2)
+    else if shape = 1 then
+      (mkCase "fuzz/ok/c0-from-c1" noise (progSetC0FromC1), rng2)
+    else if shape = 2 then
+      (mkCase "fuzz/err/nargs2-underflow" #[] (progSetC0Nargs 2), rng2)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/nargs1-one-int" #[intV 33] (progSetC0Nargs 1), rng2)
+    else if shape = 4 then
+      (mkCase "fuzz/err/captured-more1-underflow" #[] (progSetC0Captured 73 1), rng2)
+    else if shape = 5 then
+      (mkCaseCode "fuzz/err/decode/truncated-8" #[] sameAltTruncated8Code, rng2)
+    else
+      (mkCaseCode "fuzz/err/decode/truncated-15" #[intV 1] sameAltTruncated15Code, rng2)
+  let (tag, rng3) := randNat rngTag 0 999_999
+  ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
 
 def suite : InstrSuite where
   id := sameAltId
@@ -294,7 +321,11 @@ def suite : InstrSuite where
     mkCaseCode "err/decode/truncated-8-prefix" #[] sameAltTruncated8Code,
     mkCaseCode "err/decode/truncated-15-prefix" #[intV 1] sameAltTruncated15Code
   ]
-  fuzz := #[ mkContMutationFuzzSpecWithProfile sameAltId sameAltFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr sameAltId
+      count := 500
+      gen := genSameAltFuzzCase }
+  ]
 
 initialize registerSuite suite
 

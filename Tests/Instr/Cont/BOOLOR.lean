@@ -146,21 +146,75 @@ private def progBoolOrPopCtr1PushCtr1 : Array Instr :=
 private def progPushNanBoolOr : Array Instr :=
   #[.pushInt .nan, boolOrInstr]
 
-private def boolOrFuzzProfile : ContMutationProfile :=
-  { oracleNamePrefixes := #[
-      "ok/basic/",
-      "ok/order/",
-      "ok/decode/",
-      "err/underflow/",
-      "err/type/",
-      "order/",
-      "err/decode/"
-    ]
-    -- Bias toward stack-shape perturbations while still covering all mutation families.
-    mutationModes := #[0, 0, 0, 1, 1, 2, 2, 2, 3, 4]
-    minMutations := 1
-    maxMutations := 5
-    includeErrOracleSeeds := true }
+private def pickFromPool {a : Type} [Inhabited a] (pool : Array a) (rng : StdGen) : a × StdGen :=
+  let (idx, rng') := randNat rng 0 (pool.size - 1)
+  (pool[idx]!, rng')
+
+private def genBelowStack (count : Nat) (rng0 : StdGen) : Array Value × StdGen := Id.run do
+  let mut out : Array Value := #[]
+  let mut rng := rng0
+  let pool : Array Value :=
+    #[.null, intV 0, intV 1, intV (-1), intV 7, intV maxInt257, intV minInt257,
+      .cell cellA, .cell cellB, .slice sliceA, .slice sliceB,
+      .builder Builder.empty, .tuple #[], q0]
+  for _ in [0:count] do
+    let (v, rng') := pickFromPool pool rng
+    out := out.push v
+    rng := rng'
+  return (out, rng)
+
+private def boolOrBadValPool : Array Value :=
+  #[.null, intV 0, intV 7, .cell cellA, .slice sliceA, .builder Builder.empty, .tuple #[]]
+
+private def genBoolOrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
+  let (shape, rng1) := randNat rng0 0 17
+  let (depth, rng2) := randNat rng1 0 6
+  let (below, rng3) := genBelowStack depth rng2
+  let (x, rng4) := pickSigned257ish rng3
+  let (base, rng5) :=
+    if shape = 0 then
+      (mkCase s!"fuzz/ok/basic/deep-{depth}" (mkStack below), rng4)
+    else if shape = 1 then
+      (mkCase "fuzz/ok/order/tail-push" (mkStack below) progBoolOrTailPush, rng4)
+    else if shape = 2 then
+      (mkCase "fuzz/ok/order/pushctr1-as-val" #[q0] progPushCtr1BoolOr, rng4)
+    else if shape = 3 then
+      (mkCase "fuzz/ok/order/pushctr1-as-cont" #[q0] progSwapWithCtr1BoolOr, rng4)
+    else if shape = 4 then
+      (mkCase "fuzz/ok/order/double-boolor" #[q0, q0, q0] progDoubleBoolOr, rng4)
+    else if shape = 5 then
+      (mkCodeCase "fuzz/ok/decode/raw-edf1" (mkStack below) boolOrCode, rng4)
+    else if shape = 6 then
+      (mkCase "fuzz/err/underflow/empty" #[], rng4)
+    else if shape = 7 then
+      let (single, rng6) := pickFromPool (boolOrBadValPool ++ #[q0]) rng4
+      (mkCase "fuzz/err/underflow/one" #[single], rng6)
+    else if shape = 8 then
+      let (badTop, rng6) := pickFromPool boolOrBadValPool rng4
+      (mkCase s!"fuzz/err/type/top/deep-{depth}" (mkStack below q0 badTop), rng6)
+    else if shape = 9 then
+      let (badSecond, rng6) := pickFromPool boolOrBadValPool rng4
+      (mkCase s!"fuzz/err/type/second/deep-{depth}" (mkStack below badSecond q0), rng6)
+    else if shape = 10 then
+      (mkCase "fuzz/order/underflow-before-top-type-program-one-item" #[] #[.pushInt (.num x), boolOrInstr], rng4)
+    else if shape = 11 then
+      (mkCase "fuzz/order/top-type-before-second-type" (mkStack #[] .null (.cell cellA)), rng4)
+    else if shape = 12 then
+      (mkCase "fuzz/order/second-type-after-top-cont" (mkStack #[] (.cell cellA) q0), rng4)
+    else if shape = 13 then
+      (mkCase "fuzz/err/type/top-nan-via-program" #[q0] progPushNanBoolOr, rng4)
+    else if shape = 14 then
+      let (code, rng6) := pickFromPool #[boolOrTruncated8Code, boolOrTruncated15Code] rng4
+      (mkCodeCase "fuzz/err/decode/truncated" (mkStack below) code, rng6)
+    else if shape = 15 then
+      (mkCase "fuzz/ok/order/program-c0-c1-no-init" #[] progC0C1BoolOr, rng4)
+    else if shape = 16 then
+      (mkCase "fuzz/ok/order/program-popctr1-pushctr1" (mkStack below) progBoolOrPopCtr1PushCtr1, rng4)
+    else
+      -- Some additional coverage of tail behavior after success.
+      (mkCase "fuzz/ok/order/tail-pushint" (mkStack below) #[boolOrInstr, .pushInt (.num 77)], rng4)
+  let (tag, rng6) := randNat rng5 0 999_999
+  ({ base with name := s!"{base.name}/{tag}" }, rng6)
 
 private def oracleCases : Array OracleCase := #[
   -- Success / continuation branch coverage.
@@ -341,7 +395,11 @@ def suite : InstrSuite where
           throw (IO.userError s!"oracle count too small: expected >=30, got {oracleCases.size}") }
   ]
   oracle := oracleCases
-  fuzz := #[ mkContMutationFuzzSpecWithProfile boolOrId boolOrFuzzProfile 500 ]
+  fuzz := #[
+    { seed := fuzzSeedForInstr boolOrId
+      count := 500
+      gen := genBoolOrFuzzCase }
+  ]
 
 initialize registerSuite suite
 
