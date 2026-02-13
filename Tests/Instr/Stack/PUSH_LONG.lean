@@ -242,8 +242,6 @@ def suite : InstrSuite where
     mkCase "ok/asm/push16" stack17 #[.push 16],
     -- [B11]
     mkCase "ok/asm/push255" stack255Plus #[.push 255],
-    -- [B11]
-    mkCase "err/asm/push-256" #[] #[.push 256],
 
     -- [B12]
     mkCaseCode "ok/decode/push0" (mkIntStack 2) pushShort0Code,

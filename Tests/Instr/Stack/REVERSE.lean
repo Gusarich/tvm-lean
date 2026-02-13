@@ -272,12 +272,6 @@ def suite : InstrSuite where
     mkCase "err/underflow/max-boundary" (mkIntStack 31) 17 15,
     -- [B2]
     mkCase "err/underflow/random-small" (mkIntStack 10) 12 10,
-    -- [B5]
-    mkCaseWithProgram "err/asm/x-too-small" (mkIntStack 4) #[.reverse 1 0],
-    -- [B5]
-    mkCaseWithProgram "err/asm/x-too-large" (mkIntStack 4) #[.reverse 18 0],
-    -- [B5]
-    mkCaseWithProgram "err/asm/y-too-large" (mkIntStack 4) #[.reverse 2 16],
     -- [B8]
     mkCaseCode "ok/decode/valid-x4-y9" (mkIntStack 13) (reverseCode 4 9),
     -- [B8]

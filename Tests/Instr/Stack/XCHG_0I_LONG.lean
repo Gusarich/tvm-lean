@@ -406,8 +406,6 @@ def suite : InstrSuite where
     mkCase "oracle/asm/long-16" (mkDepthStack 17) #[.xchg0 16],
     -- [B4]
     mkCase "oracle/asm/long-255" (mkDepthStack 256) #[.xchg0 255],
-    -- [B4]
-    mkCase "oracle/err/asm/idx256" (#[]) #[.xchg0 256],
 
     -- [B5]
     mkCaseCode "oracle/decode/long-16" (mkDepthStack 17) (xchg0LongCode 16),

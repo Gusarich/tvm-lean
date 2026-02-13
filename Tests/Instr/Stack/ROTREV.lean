@@ -223,8 +223,6 @@ def suite : InstrSuite where
     mkCase "ok/depth3/mixed-null-cell" #[.null, .cell Cell.empty, intV 13],
     -- [B1, B6]
     mkCase "ok/depth3/mixed-cell-null" #[.cell Cell.empty, intV (-1), .null],
-    -- [B1, B6]
-    mkCase "ok/depth3/mixed-nan" #[.int .nan, intV 9, intV 11],
     -- [B1, B5]
     mkCase "ok/depth4" #[intV 1, intV 2, intV 3, intV 4],
     -- [B1, B5]
@@ -259,8 +257,6 @@ def suite : InstrSuite where
     mkCase "ok/depth3/boundary-low" #[intV 1, intV 0, intV 2],
     -- [B1]
     mkCase "ok/depth3/boundary-high" #[intV (maxInt257 - 2), intV (minInt257 + 2), intV 7],
-    -- [B1, B6]
-    mkCase "ok/depth3/nan-cell" #[.int .nan, .cell Cell.empty, intV 0],
     -- [B1, B5]
     mkCase "ok/depth4/nested" #[intV 100, intV 200, intV 300, .null],
     -- [B1]

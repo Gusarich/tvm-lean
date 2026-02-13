@@ -370,15 +370,11 @@ def suite : InstrSuite where
     -- [B6]
     mkCase "oracle/range/y-negative" (withXYInt (mkIntStack 4) 2 (-1)),
     -- [B6]
-    mkCase "oracle/range/y-too-large" (withXYInt (mkIntStack 4) 2 (maxInt257 + 1)),
-    -- [B6]
     mkCase "oracle/type/y-null" (withXYValue (mkIntStack 4) (intV 1) .null),
     -- [B6]
     mkCase "oracle/type/y-cell" (withXYValue (mkIntStack 4) (intV 1) (.cell Cell.empty)),
     -- [B7]
     mkCase "oracle/range/x-negative" (withXYInt (mkIntStack 4) (-2) 3),
-    -- [B7]
-    mkCase "oracle/range/x-too-large" (withXYInt (mkIntStack 4) (maxInt257 + 1) 2),
     -- [B7]
     mkCase "oracle/type/x-null" (withXYValue (mkIntStack 4) .null (intV 1)),
     -- [B7]

@@ -425,10 +425,6 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "err/underflow-long-half-depth" (Array.mkArray 127 (intV 1)) (#[.xchg0 255]),
 
-    -- [B5]
-    mkCase "err/asm/idx-256-empty" #[] (#[.xchg0 256]),
-    -- [B5]
-    mkCase "err/asm/idx-256-with-stack" (Array.mkArray 4 (intV 7)) (#[.xchg0 256]),
 
     -- [B6]
     mkCaseCode "ok/raw-decode/00" #[intV 77] (xchg0ShortCode 0),

@@ -1,6 +1,7 @@
 import Tests.Harness.Registry
 import Tests.Harness.Gen.Arith
 import TvmLean.Spec.Index
+import TvmLean.Native.Host.StubHost
 
 open TvmLean
 open Tests

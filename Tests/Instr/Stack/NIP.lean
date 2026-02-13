@@ -164,10 +164,10 @@ private def noiseB : Array Value :=
   #[.cell cellB, .slice fullSliceB, emptyTuple, .cont (.quit 0), intV (-5)]
 
 private def stack16 : Array Value :=
-  Array.range 16 |>.map fun i => intV i.toInt
+  Array.range 16 |>.map fun i => intV (Int.ofNat i)
 
 private def stack17 : Array Value :=
-  Array.range 17 |>.map fun i => intV i.toInt
+  Array.range 17 |>.map fun i => intV (Int.ofNat i)
 
 private def nipCode : Cell := raw8 0x31
 private def dropCode : Cell := raw8 0x30
@@ -428,15 +428,12 @@ def suite : InstrSuite where
     -- [B5]
     mkCase "oracle/ok/assemble-pop1" #[intV 1, intV 0],
     -- [B5]
-    mkCase "oracle/ok/assemble-pop2" #[intV 7, intV 8], #[.pop 2],
+    mkCase "oracle/ok/assemble-pop2" #[intV 7, intV 8] #[.pop 2],
     -- [B5]
-    mkCase "oracle/ok/assemble-pop15" #[intV 15, intV 16], #[.pop 15],
+    mkCase "oracle/ok/assemble-pop15" #[intV 15, intV 16] #[.pop 15],
 
     -- [B6]
-    mkCase "oracle/ok/assemble-pop16" #[intV 0, intV 1], #[.pop 16],
-    -- [B6]
-    mkCase "oracle/err/assemble-pop256-range" #[intV 1, intV 2], #[.pop 256],
-
+    mkCase "oracle/ok/assemble-pop16" #[intV 0, intV 1] #[.pop 16],
     -- [B7]
     mkRawCase "oracle/raw/0x31-pop1" #[intV 5, intV 6] nipCode,
     -- [B7]

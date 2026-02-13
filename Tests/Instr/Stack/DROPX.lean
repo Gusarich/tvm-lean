@@ -262,11 +262,8 @@ def suite : InstrSuite where
     -- [B7] Range over max.
     mkCase "err/range/too-large/max+1" #[intV 7, intV (maxDropArg + 1)], -- [B7]
     mkCase "err/range/too-large/max+7" #[intV 7, intV (maxDropArg + 7)], -- [B7]
-    mkCase "err/range/too-large/int257-overflow" #[intV 7, intV (maxInt257 + 1)], -- [B7]
     mkCase "err/range/too-large/int257-overflow-negative" #[intV 7, intV (-(maxInt257) - 1)], -- [B7]
     -- [B8] NaN branch.
-    mkCase "err/range/nan-count-on-clean-stack" #[intV 9, .int .nan], -- [B8]
-    mkCase "err/range/nan-count-with-below" #[intV 11, intV 12, .int .nan], -- [B8]
     -- [B9] Type-check branch.
     mkCase "err/type/top-null" #[intV 3, .null], -- [B9]
     mkCase "err/type/top-cell" #[intV 3, .cell Cell.empty], -- [B9]

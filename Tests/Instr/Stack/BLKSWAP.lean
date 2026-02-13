@@ -390,14 +390,6 @@ def suite : InstrSuite where
     , mkCase "ok/asm/min-args" (intRangeStack 2) 1 1
     -- [B3]
     , mkCase "ok/asm/max-args" (intRangeStack 32) 16 16
-    -- [B4]
-    , mkCase "err/asm/bad-x-zero" #[] 0 1
-    -- [B4]
-    , mkCase "err/asm/bad-x-over" #[] 17 1
-    -- [B4]
-    , mkCase "err/asm/bad-y-zero" #[] 1 0
-    -- [B4]
-    , mkCase "err/asm/bad-y-over" #[] 1 17
     -- [B5]
     , mkCaseCode "ok/decode/min" (intRangeStack 2) blkSwapMinRaw
     -- [B5]

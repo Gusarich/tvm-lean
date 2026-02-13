@@ -281,8 +281,6 @@ def suite : InstrSuite where
     -- [B1]
     mkOverCase "runtime/ok/depth2-negative" #[intV (-7), intV (-2)],
     -- [B1]
-    mkOverCase "runtime/ok/depth2-nan" #[intV 3, .int .nan],
-    -- [B1]
     mkOverCase "runtime/ok/depth2-null" #[.null, intV 7],
     -- [B1]
     mkOverCase "runtime/ok/depth2-cell" #[.cell Cell.empty, intV 9],

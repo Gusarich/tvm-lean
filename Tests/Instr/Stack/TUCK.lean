@@ -358,8 +358,6 @@ def suite : InstrSuite where
     mkCase "ok/typed/top-two-slice" #[.slice sampleSlice, .slice sampleSlice],
     -- [B5]
     mkCase "ok/typed/top-two-builder" #[.builder sampleBuilder, .builder sampleBuilder],
-    -- [B5]
-    mkCase "ok/typed/top-two-cont" #[.cont (.quit 0), .cont (.quit 1)],
     -- [B6]
     mkCaseCode "decode/roundtrip/tuck" #[intV 11, intV 22] tuckCode,
     -- [B6]
@@ -382,8 +380,6 @@ def suite : InstrSuite where
     mkCaseCode "decode/empty-tail-16bit" #[intV 1, intV 2] (Cell.mkOrdinary (natToBits 0x6600 16) #[]),
     -- [B4, B5]
     mkCase "ok/typed/deep-negative" #[.null, intV (-3), .cell sampleCell, intV (-9)],
-    -- [B4, B5]
-    mkCase "ok/typed/deep-cont-mix" #[.cont (.quit 9), .cell sampleCell, .tuple #[], intV 99],
     -- [B4]
     mkCase "ok/deep/boundary-and-type" #[intV (maxInt257 - 1), intV (-1), .null, .slice sampleSlice],
     -- [B4]

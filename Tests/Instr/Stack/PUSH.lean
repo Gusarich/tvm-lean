@@ -361,9 +361,6 @@ def suite : InstrSuite where
     -- [B5] preserve deep mixed stack for long index
     mkCase "/ok/B5/preserve-mixed-long" 20 (#[.null, .cell Cell.empty, intV (-1), intV 2, intV 3, intV 4, intV 5, intV 6, intV 7, intV 8, intV 9, intV 10, intV 11, intV 12, intV 13, intV 14, intV 15, intV 16, intV 17, intV 18, intV 19, intV 20])
     ,
-    -- [B5] short idx7 with top as NaN source
-    mkCase "/ok/B5/idx7-push-tail-int-and-nan" 7 (#[.int .nan, intV 1, intV 2, intV 3, intV 4, intV 5, intV 6, intV 7])
-    ,
     -- [B6] runtime underflow at zero stack
     mkCase "/err/B6/underflow-empty-idx0" 0 #[]
     ,

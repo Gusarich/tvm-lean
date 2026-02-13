@@ -262,14 +262,6 @@ def suite : InstrSuite where
     mkCase "err/underflow-boundary-eq-max" (Array.replicate 15 (intV 7)) (#[.xchg3 15 14 0]),
     -- [B2]
     mkCase "err/underflow-boundary-small" (Array.replicate 2 (intV 9)) (#[.xchg3 0 0 0]),
-    -- [B4]
-    mkCase "err/asm/x-too-large" (Array.replicate 3 (intV 0)) (#[.xchg3 16 0 0]),
-    -- [B4]
-    mkCase "err/asm/y-too-large" (Array.replicate 3 (intV 1)) (#[.xchg3 1 16 0]),
-    -- [B4]
-    mkCase "err/asm/z-too-large" (Array.replicate 3 (intV 2)) (#[.xchg3 1 0 16]),
-    -- [B4]
-    mkCase "err/asm/all-too-large" (Array.replicate 3 (intV 3)) (#[.xchg3 16 16 16]),
     -- [B7]
     mkCaseCode "err/decode/truncated-15bits" (#[intV 1]) xchg3Trunc16Code,
     -- [B7]

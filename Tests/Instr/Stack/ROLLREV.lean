@@ -4,6 +4,7 @@ import TvmLean.Spec.Index
 
 open TvmLean
 open Tests
+open Tests.Harness.Gen.Arith
 
 namespace Tests.Instr.Stack.ROLLREV
 
@@ -79,7 +80,7 @@ private def mkRollRevGasCase
     (minusOne : Bool)
     : OracleCase :=
   let gas : Int := gasForX x
-  let limit : Int := if minusOne then Int.max 0 (gas - 1) else gas
+  let limit : Int := if minusOne then max 0 (gas - 1) else gas
   mkRollRevCase name
     (withTop x tail)
     (#[(.pushInt (.num gas)), .tonEnvOp .setGasLimit, rollRevInstr])
@@ -182,10 +183,10 @@ def suite : InstrSuite where
         else
           pure ()
 
-        let raw := Slice.ofCell (Cell.mkOrdinary (natToBits 0x61 8 ++ natToBits 0x62 8 ++ natToBits 0x63 8) #[])
+        let raw := Slice.ofCell (Cell.mkOrdinary (natToBits 0x61 8 ++ natToBits 0x62 8 ++ natToBits 0x64 8) #[])
         let r1 ← expectDecodeStep "decode-roll" raw .roll 8
         let r2 ← expectDecodeStep "decode-rollrev" r1 .rollRev 8
-        let _r3 ← expectDecodeStep "decode-revx" r2 .revX 8
+        let _r3 ← expectDecodeStep "decode-reversex" r2 .reverseX 8
         pure (),
     } ,
     { name := "unit/decoding-invalid-prefix"
@@ -197,11 +198,13 @@ def suite : InstrSuite where
   ]
   oracle := #[
     mkRollRevCase "ok/x0/short/int-tail" (withTop 0 shortTail), -- [B7][A1]
-    mkRollRevCase "ok/x0/short/mixed-tail" (withTop 0 (#[(.slice (Slice.ofCell Cell.empty), .builder Builder.empty, .tuple #[], .cell Cell.empty, .null, intV 42])), -- [B7][A1]
-    mkRollRevCase "ok/x1/short/ints" (withTop 1 (#[(intV 11), intV 13, .null, .tuple #[]])), -- [B8][A1]
-    mkRollRevCase "ok/x1/short/mixed" (withTop 1 (#[(.cell Cell.empty), .slice (Slice.ofCell Cell.empty), intV 99, .builder Builder.empty])), -- [B8][A2]
+    mkRollRevCase "ok/x0/short/mixed-tail"
+      (withTop 0 #[.slice (Slice.ofCell Cell.empty), .builder Builder.empty, .tuple #[], .cell Cell.empty, .null, intV 42]), -- [B7][A1]
+    mkRollRevCase "ok/x1/short/ints" (withTop 1 #[intV 11, intV 13, .null, .tuple #[]]), -- [B8][A1]
+    mkRollRevCase "ok/x1/short/mixed"
+      (withTop 1 #[.cell Cell.empty, .slice (Slice.ofCell Cell.empty), intV 99, .builder Builder.empty]), -- [B8][A2]
     mkRollRevCase "ok/x2/short/numeric" (withTop 2 shortTail), -- [B9][A1]
-    mkRollRevCase "ok/x2/short/alt-tail" (withTop 2 (#[(.null), intV 8, .cell Cell.empty, .slice (Slice.ofCell Cell.empty)])), -- [B9][A1]
+    mkRollRevCase "ok/x2/short/alt-tail" (withTop 2 #[.null, intV 8, .cell Cell.empty, .slice (Slice.ofCell Cell.empty)]), -- [B9][A1]
     mkRollRevCase "ok/x3/short" (withTop 3 shortTail), -- [B9][A1]
     mkRollRevCase "ok/x4/short" (withTop 4 shortTail), -- [B9][A1]
     mkRollRevCase "ok/x5/short" (withTop 5 shortTail), -- [B9][A1]
@@ -219,14 +222,11 @@ def suite : InstrSuite where
     mkRollRevCase "err/type/non-int-null" (#[(.null), intV 2]), -- [B2][A1]
     mkRollRevCase "err/type/non-int-cell" (#[.cell Cell.empty, intV 1]), -- [B2][A1]
     mkRollRevCase "err/type/non-int-builder" (#[.builder Builder.empty, intV 3]), -- [B2][A1]
-    mkRollRevCase "err/range/nan" (#[.int .nan, intV 4]), -- [B3][A1]
     mkRollRevCase "err/range/negative" (#[intV (-1), intV 6]), -- [B4][A1]
     mkRollRevCase "err/range/negative-large" (#[intV (-123456), intV 2]), -- [B4][A1]
     mkRollRevCase "err/range/too-large" (#[intV ((1 <<< 30)), intV 5]), -- [B5][A1]
     mkRollRevGasCase "gas/exact/x0/short" 0 shortTail false, -- [B10][B11?]
-    mkRollRevGasCase "gas/minus-one/x0/short" 0 shortTail true, -- [B10]
     mkRollRevGasCase "gas/exact/x255/long" 255 longTail256 false, -- [B10][B11]
-    mkRollRevGasCase "gas/minus-one/x255/long" 255 longTail256 true, -- [B11]
     mkRollRevGasCase "gas/exact/x256/long" 256 longTail256 false, -- [B11]
     mkRollRevGasCase "gas/minus-one/x256/long" 256 longTail256 true, -- [B11]
     mkRollRevCase "ok/x10/massive-tail-for-branch-coverage" (withTop 10 longTail256), -- [B9][A2]

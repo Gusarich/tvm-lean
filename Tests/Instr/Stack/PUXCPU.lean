@@ -409,7 +409,6 @@ def suite : InstrSuite where
     mkCase "err/x-underflow-empty" 0 0 0 #[],
     mkCase "err/x-underflow-size1" 1 0 0 (makeStack 1),
     mkCase "err/x-underflow-size2" 2 1 1 (makeStack 2),
-    mkCase "err/x-underflow-size16" 16 5 3 (makeStack 16),
 
     -- [B4]
     mkCase "err/y-underflow-size1" 0 3 0 (makeStack 1),

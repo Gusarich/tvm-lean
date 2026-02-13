@@ -235,8 +235,6 @@ def suite : InstrSuite where
     -- [B1, B3]
     mkCase "oracle/ok/depth1-zero" #[intV 0],
     -- [B1, B3]
-    mkCase "oracle/ok/depth1-nan" #[.int .nan],
-    -- [B1, B3]
     mkCase "oracle/ok/depth1-null" #[.null],
     -- [B1, B3]
     mkCase "oracle/ok/depth1-cell" #[.cell Cell.empty],

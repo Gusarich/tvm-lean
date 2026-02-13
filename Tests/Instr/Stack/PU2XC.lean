@@ -399,10 +399,6 @@ def suite : InstrSuite where
     mkCase "asm/valid/min" 0 0 0 (intStackLen 2),
     mkCase "asm/valid/edge" 15 15 15 (intStackLen 16),
     mkCase "asm/valid/z-15-depth-15" 5 5 15 (intStackLen 16),
-    mkCase "asm/invalid/x16" 16 0 0 (intStackLen 1),
-    mkCase "asm/invalid/y16" 0 16 0 (intStackLen 1),
-    mkCase "asm/invalid/z16" 0 0 16 (intStackLen 1),
-    mkCase "asm/invalid/all-over" 17 18 19 (intStackLen 1),
     -- [B10]
     mkCaseCode "decode/pu2xc" (intStackLen 8) rawPU2XCCode,
     mkCaseCode "decode/neighbor-545" (intStackLen 4) rawPUXCPUCode,

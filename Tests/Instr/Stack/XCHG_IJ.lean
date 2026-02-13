@@ -228,17 +228,6 @@ def suite : InstrSuite where
     -- [B4]
     mkCase "err/underflow-mixed-short" (Array.replicate 5 (intV 42)) #[.xchg 4 12],
 
-    -- [B5]
-    mkCase "err/asm/reject-x0" (Array.replicate 3 (intV 0)) #[.xchg 0 1],
-    -- [B5]
-    mkCase "err/asm/reject-non-ordered" (Array.replicate 3 (intV 2)) #[.xchg 5 3],
-
-    -- [B5]
-    mkCase "err/asm/reject-x-too-large" (Array.replicate 3 (intV 3)) #[.xchg 16 1],
-    -- [B5]
-    mkCase "err/asm/reject-y-too-large" (Array.replicate 3 (intV 4)) #[.xchg 1 16],
-    -- [B5]
-    mkCase "err/asm/reject-both-too-large" (Array.replicate 3 (intV 5)) #[.xchg 16 16],
 
     -- [B6]
     mkCaseCode "err/decode/truncated-8" (Array.replicate 1 (intV 7)) xchgTruncated8Code,

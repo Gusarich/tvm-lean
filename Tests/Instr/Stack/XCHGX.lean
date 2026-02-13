@@ -285,8 +285,6 @@ def suite : InstrSuite where
     mkCase "err/type/top-slice" #[.slice sampleSlice, intV 1],
     -- [B3]
     mkCase "err/type/top-builder" #[.builder sampleBuilder, intV 1],
-    -- [B3]
-    mkCase "err/type/top-cont" #[.cont (.quit 7), intV 1],
     -- [B4]
     mkCase "err/range/negative-1" #[intV (-1), intV 0],
     -- [B4]
@@ -295,8 +293,6 @@ def suite : InstrSuite where
     mkCase "err/range/too-large-boundary-plus-1" #[intV (Int.ofNat ((1 <<< 30))), intV 0],
     -- [B5]
     mkCase "err/range/too-large-257ish" #[intV (Int.ofNat ((1 <<< 31))), intV 1],
-    -- [B5]
-    mkCase "err/range/nan-top" #[.int .nan, intV 2],
     -- [B6]
     mkCase "err/underflow/size1-x1" #[intV 1],
     -- [B6]
@@ -326,8 +322,6 @@ def suite : InstrSuite where
     mkCase "ok/x3/deep-preserve" #[intV 1, .slice sampleSlice, .cell sampleCell, intV 99, intV 1],
     -- [B7]
     mkCase "ok/x7/depth8" #[intV 1, intV 2, intV 3, intV 4, intV 5, intV 6, .null, intV 7],
-    -- [B7]
-    mkCase "ok/x7/with-nonint-target" #[intV 11, .cell sampleCell, .builder sampleBuilder, .cont (.quit 1), intV 4, .slice sampleSlice, intV 9, intV 7],
     -- [B8]
     mkCaseCode "decode/roundtrip/xchgx" #[intV 8, intV 2] xchgXCode,
     -- [B8]

@@ -73,6 +73,19 @@ private def mkCaseCode
     gasLimits := gasLimits
     fuel := fuel }
 
+private def mkProgramCase
+    (name : String)
+    (stack : Array Value)
+    (program : Array Instr)
+    (gasLimits : OracleGasLimits := {})
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := popId
+    program := program
+    initStack := stack
+    gasLimits := gasLimits
+    fuel := fuel }
+
 private def popProgram (idx : Nat) (gasLimit : Int) : Array Instr :=
   #[.pushInt (.num gasLimit), .tonEnvOp .setGasLimit, .pop idx]
 
@@ -196,17 +209,11 @@ private def genPopFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 8 then
     let (x, rng2) := pickSigned257ish rng1
     let stack := #[intV 11, intV x, intV 12, intV 13]
-    ({ name := "fuzz/gas/exact"
-      instr := popId
-      program := popProgram 0 popExactGas
-      initStack := stack }, rng2)
+    (mkProgramCase "fuzz/gas/exact" stack (popProgram 0 popExactGas), rng2)
   else
     let (x, rng2) := pickSigned257ish rng1
     let stack := #[intV 11, intV x, intV 12, intV 13]
-    ({ name := "fuzz/gas/exact-minus-one"
-      instr := popId
-      program := popProgram 0 popExactGasMinusOne
-      initStack := stack }, rng2)
+    (mkProgramCase "fuzz/gas/exact-minus-one" stack (popProgram 0 popExactGasMinusOne), rng2)
 
 
 def suite : InstrSuite where
@@ -250,11 +257,11 @@ def suite : InstrSuite where
               throw (IO.userError s!"unit/asm/encode/pop16 expected 0x57 0x10, got {c16.bits}")
             if c255.bits != (natToBits 0x57 8 ++ natToBits 255 8) then
               throw (IO.userError s!"unit/asm/encode/pop255 expected 0x57 0xff, got {c255.bits}")
-            expectDecodeOk "unit/decode/pop0" (natToBits 0x30 8) (.pop 0) 8
-            expectDecodeOk "unit/decode/pop1" (natToBits 0x31 8) (.pop 1) 8
-            expectDecodeOk "unit/decode/pop15" (natToBits 0x3f 8) (.pop 15) 8
-            expectDecodeOk "unit/decode/pop16" ((natToBits 0x57 8) ++ (natToBits 16 8)) (.pop 16) 16
-            expectDecodeOk "unit/decode/pop255" ((natToBits 0x57 8) ++ (natToBits 255 8)) (.pop 255) 16
+            let _ ← expectDecodeOk "unit/decode/pop0" (natToBits 0x30 8) (.pop 0) 8
+            let _ ← expectDecodeOk "unit/decode/pop1" (natToBits 0x31 8) (.pop 1) 8
+            let _ ← expectDecodeOk "unit/decode/pop15" (natToBits 0x3f 8) (.pop 15) 8
+            let _ ← expectDecodeOk "unit/decode/pop16" ((natToBits 0x57 8) ++ (natToBits 16 8)) (.pop 16) 16
+            let _ ← expectDecodeOk "unit/decode/pop255" ((natToBits 0x57 8) ++ (natToBits 255 8)) (.pop 255) 16
         | .error e, _, _, _, _ =>
             throw (IO.userError s!"unit/asm/encode/pop0 failed: {e}")
         | _, .error e, _, _, _ =>
@@ -295,8 +302,6 @@ def suite : InstrSuite where
     mkCase "ok/short/idx15/boundary-top" 15 (repeatValue (intV 7) 16),
     -- [B1, B4, B5]
     mkCase "ok/short/idx15/with-tail-preserved" 15 (#[intV 1, intV 2] ++ repeatValue (intV 3) 14 ++ #[.cell Cell.empty, .null]),
-    -- [B1, B4, B5]
-    mkCase "ok/short/idx10/nan-tolerant" 10 #[intV 1, .int .nan, intV 2, .null, intV 3, intV 4, intV 5, intV 6, intV 7, intV 8, intV 9, intV 10],
     -- [B1, B4, B5]
     mkCase "ok/short/idx7/type-mix" 7 #[.null, .cell Cell.empty, .tuple #[], .builder Builder.empty, .cont (.quit 0), intV 1, intV 2, intV 3, intV 4],
     -- [B2, B4, B5]

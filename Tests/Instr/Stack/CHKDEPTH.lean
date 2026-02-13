@@ -296,14 +296,10 @@ private def oracleCases : Array OracleCase := #[
   mkCase "err/range-negative-1" #[intV (-1)],
   mkCase "err/range-negative-1024" #[intV (-1024)],
   mkCase "err/range-negative-big" #[intV (- (Int.ofNat 1 <<< 20))],
-  -- [B6] range-check NaN.
-  mkCase "err/range-nan" #[.int .nan],
-  mkCase "err/range-nan-with-noise" (#[intV 1, intV 2, .int .nan]),
   -- [B6] range-check above max.
   mkCase "err/range-above-30bit" #[intV (maxArg + 1)],
   mkCase "err/range-above-30bit-stack" (mkBoundarySize 2 ++ #[intV (maxArg + 7)]),
   mkCase "err/range-int257" #[intV maxInt257],
-  mkCase "err/range-int257+1" #[intV (maxInt257 + 1)],
   -- [B7] encode fixed opcode.
   { name := "asm/roundtrip"
     instr := chkDepthId

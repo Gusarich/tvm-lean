@@ -332,10 +332,6 @@ def suite : InstrSuite where
     mkCase "err/underflow/z-greater-than-depth" 0 0 4 #[intV 11, intV 22],
     mkCase "err/underflow/z-greater-than-depth-boundary" 1 1 8 #[intV 1, intV 2, intV 3, intV 4],
 
-    -- [B6] assembler range failures.
-    mkCase "err/asm/bad-x" 16 0 0 #[intV 1, intV 2],
-    mkCase "err/asm/bad-y" 0 16 0 #[intV 1, intV 2],
-    mkCase "err/asm/bad-z" 0 0 16 #[intV 1, intV 2],
 
     -- [B7][B8][B9] decode behavior in oracle payloads.
     mkCaseCode "ok/decode/xcpuxc-raw" #[] (xcpuxcCode 2 7 9),

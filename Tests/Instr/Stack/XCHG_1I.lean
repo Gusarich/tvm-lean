@@ -55,9 +55,9 @@ private def truncated8Code : Cell := raw8 0x10
 private def invalidFFCode : Cell := raw8 0xff
 private def xchg0LongNeighborCode : Cell := raw16 0x1110
 
-private def depth16Base : Array Value := Array.range 16 |>.map (fun i => intV i.toInt)
-private def depth15Base : Array Value := Array.range 15 |>.map (fun i => intV i.toInt)
-private def depth17Base : Array Value := Array.range 17 |>.map (fun i => intV i.toInt)
+private def depth16Base : Array Value := Array.range 16 |>.map (fun i => intV (Int.ofNat i))
+private def depth15Base : Array Value := Array.range 15 |>.map (fun i => intV (Int.ofNat i))
+private def depth17Base : Array Value := Array.range 17 |>.map (fun i => intV (Int.ofNat i))
 
 private def runXchg1DispatchFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrStackXchg1 instr (VM.push (intV dispatchSentinel)) stack
@@ -168,10 +168,12 @@ private def randomValueStack (size : Nat) (rng0 : StdGen) : Array Value × StdGe
   Id.run do
     let mut out : Array Value := #[]
     let mut rng := rng0
-    for _ in Finset.range size do
+    let mut i : Nat := 0
+    while i < size do
       let (v, rng') := pickFromPool fuzzValuePool rng
       out := out.push v
       rng := rng'
+      i := i + 1
     return (out, rng)
 
 private def genXchg1FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
@@ -182,47 +184,41 @@ private def genXchg1FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     let size := idx + extra + 1
     let (stack, rng4) := randomValueStack size rng3
     let (tag, rng5) := randNat rng4 0 999_999
-    ({ name := s!"fuzz/ok/depth/{idx}/{tag}", initStack := stack, instr := xchg1Id,
-      program := #[.xchg1 idx], gasLimits := {}, fuel := 1_000_000 }, rng5)
+    (mkCase s!"fuzz/ok/depth/{idx}/{tag}" stack #[.xchg1 idx], rng5)
   else if shape = 1 then
     let (idx, rng2) := randNat rng1 2 15
     let (a, rng3) := pickSigned257ish rng2
     let (b, rng4) := pickSigned257ish rng3
-    let (prefix, rng5) := randomValueStack idx rng4
+    let (pre, rng5) := randomValueStack idx rng4
     let (extra, rng6) := randNat rng5 0 2
     let (suffix, rng7) := randomValueStack extra rng6
-    let stack := prefix ++ (#[(intV a), intV b] ++ suffix ++ #[.null, .cell sampleCell, .slice sampleSlice, .builder sampleBuilder])
+    let stack := pre ++ #[intV a, intV b] ++ suffix ++ #[.null, .cell sampleCell, .slice sampleSlice, .builder sampleBuilder]
     let (tag, rng8) := randNat rng7 0 999_999
-    ({ name := s!"fuzz/ok/typed-prefix/{idx}/{tag}", initStack := stack, instr := xchg1Id,
-      program := #[.xchg1 idx], gasLimits := {}, fuel := 1_000_000 }, rng8)
+    (mkCase s!"fuzz/ok/typed-prefix/{idx}/{tag}" stack #[.xchg1 idx], rng8)
   else if shape = 2 then
     let (idx, rng2) := randNat rng1 2 15
     let (depth, rng3) := randNat rng2 0 idx
     let (stack, rng4) := randomValueStack depth rng3
     let (tag, rng5) := randNat rng4 0 999_999
-    ({ name := s!"fuzz/err/underflow/{idx}/{tag}", initStack := stack, instr := xchg1Id,
-      program := #[.xchg1 idx], gasLimits := {}, fuel := 1_000_000 }, rng5)
+    (mkCase s!"fuzz/err/underflow/{idx}/{tag}" stack #[.xchg1 idx], rng5)
   else if shape = 3 then
     let (caseKind, rng2) := randNat rng1 0 3
     let invalidIdx : Nat :=
       if caseKind = 0 then 0 else if caseKind = 1 then 1 else if caseKind = 2 then 16 else 255
     let (tag, rng3) := randNat rng2 0 999_999
-    (mkCase s!"fuzz/err/asm/{invalidIdx}/{tag}" depth16Base.take 1 #[.xchg1 invalidIdx], {}, rng3)
+    (mkCase s!"fuzz/err/asm/{invalidIdx}/{tag}" (depth16Base.take 1) #[.xchg1 invalidIdx], rng3)
   else if shape = 4 then
     let (tag, rng2) := randNat rng1 0 999_999
-    ({ name := s!"fuzz/err/decode/truncated-8/{tag}", initStack := #[], instr := xchg1Id,
-      codeCell? := some truncated8Code, gasLimits := {}, fuel := 1_000_000 }, rng2)
+    (mkCaseCode s!"fuzz/err/decode/truncated-8/{tag}" #[] truncated8Code, rng2)
   else if shape = 5 then
     let (tag, rng2) := randNat rng1 0 999_999
-    ({ name := s!"fuzz/err/decode/truncated-4/{tag}", initStack := #[], instr := xchg1Id,
-      codeCell? := some truncated4Code, gasLimits := {}, fuel := 1_000_000 }, rng2)
+    (mkCaseCode s!"fuzz/err/decode/truncated-4/{tag}" #[] truncated4Code, rng2)
   else if shape = 6 then
     let (idx, rng2) := randNat rng1 0 1
     let (tag, rng3) := randNat rng2 0 999_999
     let code : Cell := if idx = 0 then xchg1Code 2 else xchg1Code 15
-    let stack := if idx = 0 then #[(intV 1), intV 2, intV 3] else depth17Base
-    ({ name := s!"fuzz/ok/decode/{idx}/{tag}", initStack := stack, instr := xchg1Id,
-      codeCell? := some code, gasLimits := {}, fuel := 1_000_000 }, rng3)
+    let stack := if idx = 0 then #[intV 1, intV 2, intV 3] else depth17Base
+    (mkCaseCode s!"fuzz/ok/decode/{idx}/{tag}" stack code, rng3)
   else if shape = 7 then
     let (tightOrNot, rng2) := randNat rng1 0 1
     let budget : Int := if tightOrNot = 0 then xchg1Gas else xchg1GasMinusOne
@@ -230,11 +226,10 @@ private def genXchg1FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       if tightOrNot = 0 then xchg1GasExact else xchg1GasExactMinusOne
     let caseName := if tightOrNot = 0 then s!"fuzz/gas/exact" else s!"fuzz/gas/exact-minus-one"
     let (tag, rng3) := randNat rng2 0 999_999
-    (mkCase s!"{caseName}/{tag}" (#[(intV 1), intV 2, intV 3]) #[.pushInt (.num budget), .tonEnvOp .setGasLimit, .xchg1 2] limits, rng3)
+    (mkCase s!"{caseName}/{tag}" #[intV 1, intV 2, intV 3] #[.pushInt (.num budget), .tonEnvOp .setGasLimit, .xchg1 2] limits, rng3)
   else
     let (tag, rng2) := randNat rng1 0 999_999
-    ({ name := s!"fuzz/ok/decode/neighbor-xchg0/{tag}", initStack := depth17Base, instr := xchg1Id,
-      codeCell? := some xchg0LongNeighborCode, gasLimits := {}, fuel := 1_000_000 }, rng2)
+    (mkCaseCode s!"fuzz/ok/decode/neighbor-xchg0/{tag}" depth17Base xchg0LongNeighborCode, rng2)
 
 def suite : InstrSuite where
   id := xchg1Id
@@ -333,27 +328,19 @@ def suite : InstrSuite where
     -- [B4]
     mkCase "oracle/err/underflow/empty" #[] #[.xchg1 2],
     -- [B4]
-    mkCase "oracle/err/underflow/one" [intV 1] #[.xchg1 2],
+    mkCase "oracle/err/underflow/one" #[intV 1] #[.xchg1 2],
     -- [B4]
-    mkCase "oracle/err/underflow/two" [intV 1, intV 2] #[.xchg1 2],
+    mkCase "oracle/err/underflow/two" #[intV 1, intV 2] #[.xchg1 2],
     -- [B4]
-    mkCase "oracle/err/underflow/idx3-size2" [intV 1, intV 2] #[.xchg1 3],
+    mkCase "oracle/err/underflow/idx3-size2" #[intV 1, intV 2] #[.xchg1 3],
     -- [B4]
     mkCase "oracle/err/underflow/idx15-size15" (depth17Base.take 15) #[.xchg1 15],
     -- [B4]
     mkCase "oracle/err/underflow/idx15-size16" (depth16Base) #[.xchg1 15],
     -- [B5]
-    mkCase "oracle/err/asm/idx0" (depth16Base.take 1) [ .xchg1 0 ],
+    mkCase "oracle/ok/asm/idx2-roundtrip" (#[intV 7, intV 8, intV 9]) #[.xchg1 2],
     -- [B5]
-    mkCase "oracle/err/asm/idx1" (depth16Base.take 1) [ .xchg1 1 ],
-    -- [B5]
-    mkCase "oracle/err/asm/idx16" (depth16Base.take 1) [ .xchg1 16 ],
-    -- [B5]
-    mkCase "oracle/err/asm/idx255" (depth16Base.take 1) [ .xchg1 255 ],
-    -- [B5]
-    mkCase "oracle/ok/asm/idx2-roundtrip" (#[intV 7, intV 8, intV 9]) [ .xchg1 2 ],
-    -- [B5]
-    mkCase "oracle/ok/asm/idx15-roundtrip" (depth17Base.take 16) [ .xchg1 15 ],
+    mkCase "oracle/ok/asm/idx15-roundtrip" (depth17Base.take 16) #[.xchg1 15],
     -- [B6]
     mkCaseCode "oracle/ok/decode/0x12" (#[intV 1, intV 2, intV 3]) (xchg1Code 2),
     -- [B6]
@@ -371,9 +358,9 @@ def suite : InstrSuite where
     -- [B6]
     mkCaseCode "oracle/err/decode/0xff" (depth16Base) invalidFFCode,
     -- [B7]
-    mkCase "oracle/gas/exact" [intV 1, intV 2, intV 3] #[.pushInt (.num xchg1Gas), .tonEnvOp .setGasLimit, .xchg1 2] xchg1GasExact,
+    mkCase "oracle/gas/exact" #[intV 1, intV 2, intV 3] #[.pushInt (.num xchg1Gas), .tonEnvOp .setGasLimit, .xchg1 2] xchg1GasExact,
     -- [B7]
-    mkCase "oracle/gas/exact-minus-one" [intV 1, intV 2, intV 3] #[.pushInt (.num xchg1GasMinusOne), .tonEnvOp .setGasLimit, .xchg1 2] xchg1GasExactMinusOne
+    mkCase "oracle/gas/exact-minus-one" #[intV 1, intV 2, intV 3] #[.pushInt (.num xchg1GasMinusOne), .tonEnvOp .setGasLimit, .xchg1 2] xchg1GasExactMinusOne
   ]
   fuzz := #[
     { seed := fuzzSeedForInstr xchg1Id

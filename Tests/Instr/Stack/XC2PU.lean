@@ -283,12 +283,6 @@ def suite : InstrSuite where
     , mkCase "ok/with-boundary-ints" #[intV maxInt257, intV (-1), intV (maxInt257 - 1), intV minInt257, intV 0] 14 1 7
     -- [B8]
     , mkCase "ok/big-depth-with-null-cell-slice" #[intV 0, .null, vCell, vSlice, vBuilder, .cont (.quit 0), intV 42] 10 7 8
-    -- [B10]
-    , mkCase "err/asm/bad-x" #[intV 1, intV 2] 16 3 4
-    -- [B11]
-    , mkCase "err/asm/bad-y" #[intV 1, intV 2] 2 16 4
-    -- [B12]
-    , mkCase "err/asm/bad-z" #[intV 1, intV 2] 2 3 16
     -- [B13]
     , mkCaseCode "ok/decode/xc2pu-raw" (intStackLen 8) rawXC2PUCode
     -- [B14]

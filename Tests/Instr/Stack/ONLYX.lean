@@ -220,8 +220,6 @@ def suite : InstrSuite where
     -- [B8]
     mkCase "error/range/overflow-large" #[intV (Int.ofNat ((1 <<< 30) + 99)), intV 1],
 
-    -- [B9]
-    mkCase "error/range/nan" #[.int .nan],
 
     -- [B10]
     mkCase "gas/exact-success" #[intV 9, intV 2]

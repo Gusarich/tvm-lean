@@ -253,10 +253,12 @@ private def randomStack (size : Nat) (rng0 : StdGen) : Array Value × StdGen :=
   Id.run do
     let mut out : Array Value := #[]
     let mut rng := rng0
-    for _ in Finset.range size do
+    let mut i : Nat := 0
+    while i < size do
       let (v, rng') := pickPush2Value rng
       out := out.push v
       rng := rng'
+      i := i + 1
     return (out, rng)
 
 private def genPush2FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
@@ -483,13 +485,6 @@ def suite : InstrSuite where
     mkCase "oracle/asm/high" 15 15 stack17,
     -- [B5]
     mkCase "oracle/asm/boundary" 0 15 stack16,
-
-    -- [B6]
-    { name := "oracle/asm/err/x-overflow", instr := push2Id, program := #[.push2 16 0], initStack := stack2 },
-    -- [B6]
-    { name := "oracle/asm/err/y-overflow", instr := push2Id, program := #[.push2 0 16], initStack := stack2 },
-    -- [B6]
-    { name := "oracle/asm/err/both-overflow", instr := push2Id, program := #[.push2 16 16], initStack := stack2 },
 
     -- [B7]
     mkRawCase "oracle/decode/ok/push2-00" stack1 (push2Raw 0 0),

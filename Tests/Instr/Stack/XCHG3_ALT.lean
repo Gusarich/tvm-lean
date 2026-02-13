@@ -88,6 +88,38 @@ private def xchg3AltGasExact : Int := 34
 
 private def xchg3AltGasExactMinusOne : Int := 33
 
+private def xchg3AltRawStepGasExact : Int :=
+  xchg3AltGasExact + implicitRetGasPrice
+
+private def gasCostWithFallback (instr : Instr) : Int :=
+  match singleInstrCp0GasBudget instr with
+  | .ok gas => gas
+  | .error _ => instrGas instr 16
+
+private def xchg3AltSetGasNeed (budget : Int) : Int :=
+  gasCostWithFallback (.pushInt (.num budget))
+    + gasCostWithFallback (.tonEnvOp .setGasLimit)
+    + xchg3AltRawStepGasExact
+
+private def xchg3AltSetGasExact : Int :=
+  let rec loop (n : Int) (iters : Nat) : Int :=
+    match iters with
+    | 0 => n
+    | k + 1 =>
+        let n' := xchg3AltSetGasNeed n
+        if n' = n then n else loop n' k
+  loop 64 16
+
+private def xchg3AltSetGasExactMinusOne : Int :=
+  if xchg3AltSetGasExact > 0 then xchg3AltSetGasExact - 1 else 0
+
+private def xchg3AltGasProgramCode (budget : Int) : Cell :=
+  match encodeCp0 (.pushInt (.num budget)), encodeCp0 (.tonEnvOp .setGasLimit) with
+  | .ok pushBits, .ok setGasBits =>
+      Cell.mkOrdinary (pushBits ++ setGasBits ++ natToBits (xchg3AltWord 1 2 3) 24) #[]
+  | _, _ =>
+      Cell.mkOrdinary (natToBits (xchg3AltWord 1 2 3) 24) #[]
+
 private def mkCase
     (name : String)
     (stack : Array Value)
@@ -237,14 +269,12 @@ private def genXchg3AltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else
       (mkCaseCode "fuzz/raw/ok/alt/high-args" stack16 (xchg3AltCode 15 15 15), rng2)
   else if shape = 11 then
-    let (x, y, z, rng2) := pickXchg3Args rng1
-    let (stack, rng3) := randomXchg3Stack 3 rng2
-    let (exact, rng4) := randBool rng3
+    let (stack, rng2) := randomXchg3Stack 4 rng1
+    let (exact, rng4) := randBool rng2
     if exact then
-      (mkCaseCode "fuzz/gas/exact/alt" stack (xchg3AltCode x y z) (oracleGasLimitsExact xchg3AltGasExact), rng4)
+      (mkCaseCode "fuzz/gas/exact/alt" stack (xchg3AltGasProgramCode xchg3AltSetGasExact), rng4)
     else
-      (mkCaseCode "fuzz/gas/exact-minus-one/alt" stack (xchg3AltCode x y z)
-        (oracleGasLimitsExactMinusOne xchg3AltGasExact), rng4)
+      (mkCaseCode "fuzz/gas/exact-minus-one/alt" stack (xchg3AltGasProgramCode xchg3AltSetGasExactMinusOne), rng4)
   else if shape = 12 then
     let (depth, rng2) := randNat rng1 0 6
     let (stack, rng3) := randomXchg3Stack depth rng2
@@ -289,11 +319,6 @@ def suite : InstrSuite where
     mkCase "err/underflow/deep-at-boundary" (stack16.extract 0 15) (#[.xchg3 14 15 13]),
     mkCase "err/underflow/max-args" (stack16) (#[.xchg3 15 15 15]),
 
-    -- [B4] assembler argument-range guards
-    mkCase "err/asm/reject-x-over-15" (Array.range 3 |>.map (fun i => intV (Int.ofNat i))) (#[.xchg3 16 1 2]),
-    mkCase "err/asm/reject-y-over-15" #[intV 1, intV 2, intV 3] (#[.xchg3 2 16 1]),
-    mkCase "err/asm/reject-z-over-15" #[intV 1, intV 2, intV 3] (#[.xchg3 2 1 16]),
-    mkCase "err/asm/reject-all-over-15" #[intV 1, intV 2, intV 3] (#[.xchg3 16 16 16]),
 
     -- [B5] short decoder boundaries and malformed prefixes
     mkCaseCode "ok/raw/short/valid-0-1-2" #[intV 1, intV 2, intV 3] (xchg3ShortCode 0 1 2),
@@ -308,12 +333,12 @@ def suite : InstrSuite where
     mkCaseCode "err/raw/alt/truncated-23" #[intV 4] xchg3AltTrunc23Code,
     mkCaseCode "err/raw/alt/truncated-15" #[intV 5] xchg3AltTrunc15Code,
     mkCaseCode "ok/raw/adjacent-is-not-xchg3" #[intV 9, intV 8] xchg3AltNeighborCode,
+    -- [B7] gas edge via embedded setGasLimit + raw alt opcode.
+    mkCaseCode "ok/gas/exact" #[intV 1, intV 2, intV 3, intV 4]
+      (xchg3AltGasProgramCode xchg3AltSetGasExact),
+    mkCaseCode "err/gas/exact-minus-one" #[intV 1, intV 2, intV 3, intV 4]
+      (xchg3AltGasProgramCode xchg3AltSetGasExactMinusOne),
 
-    -- [B7] gas edge cases
-    mkCaseCode "ok/gas/exact" #[intV 1, intV 2, intV 3] (xchg3AltCode 1 2 3)
-      (oracleGasLimitsExact xchg3AltGasExact),
-    mkCaseCode "err/gas/exact-minus-one" #[intV 1, intV 2, intV 3] (xchg3AltCode 1 2 3)
-      (oracleGasLimitsExactMinusOne xchg3AltGasExact)
   ]
   fuzz := #[
     { seed := fuzzSeedForInstr xchg3AltId

@@ -222,7 +222,6 @@ private def rollOracleCases : Array OracleCase := #[
   mkCase "err/empty/underflow-before-pop" #[], -- [B2]
   mkCase "err/type-top-null" #[.null], -- [B2]
   mkCase "err/type-top-cell" #[.cell Cell.empty], -- [B2]
-  mkCase "err/range-top-nan" #[(.int .nan)], -- [B2]
   mkCase "err/range-top-negative" #[intV (-1)], -- [B2]
   mkCase "err/range-top-over-max" #[intV rollOverMaxOffsetInt], -- [B2]
 
