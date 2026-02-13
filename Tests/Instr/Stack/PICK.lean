@@ -200,9 +200,9 @@ def suite : InstrSuite where
           (runPickDispatchFallback #[intV 7, intV 11]) #[intV 7, intV 11, intV 909] },
     { name := "unit/direct/success-x0-and-x2" -- [B2][B3]
       run := do
-        expectOkStack "x0" (runPickDirect #[intV 42]) #[intV 42, intV 42]
+        expectOkStack "x0" (runPickDirect #[intV 42, intV 0]) #[intV 42, intV 42]
         expectOkStack "x2" (runPickDirect #[intV 1, intV 2, intV 3, intV 2])
-          #[intV 1, intV 2, intV 3, intV 2, intV 2] },
+          #[intV 1, intV 2, intV 3, intV 1] },
     { name := "unit/direct/error-cases" -- [B4][B5]
       run := do
         expectErr "empty-stk" (runPickDirect #[]) .stkUnd

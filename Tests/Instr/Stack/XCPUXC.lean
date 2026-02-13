@@ -262,7 +262,7 @@ def suite : InstrSuite where
         -- [B1]
         expectOkStack "runtime/x0-y0-z1"
           (runXcpuxcDirect 0 0 1 #[intV 11, intV 22])
-          #[intV 22, intV 11, intV 22] },
+          #[intV 22, intV 11, intV 11] },
     { name := "unit/runtime/underflow-empty"
       run := do
         -- [B2]
@@ -276,7 +276,7 @@ def suite : InstrSuite where
         -- [B4]
         expectOkStack "runtime/non-int"
           (runXcpuxcDirect 1 0 0 #[.null, .cell sampleCell, sampleBuilder, intV 7])
-          #[.cell sampleCell, .null, sampleBuilder, intV 7, sampleBuilder] },
+          #[.null, .cell sampleCell, sampleBuilder, intV 7, intV 7] },
     { name := "unit/asm/range-x"
       run := do
         -- [B6]
@@ -300,7 +300,12 @@ def suite : InstrSuite where
         expectDecodeOk "unit/decode/xc2pu" (xc2puCode 2 3 4) (.xc2pu 2 3 4)
         expectDecodeOk "unit/decode/xcpu2" (xcpu2Code 2 3 4) (.xcpu2 2 3 4)
         expectDecodeErr "unit/decode/truncated-8" trunc8Code .invOpcode
-        expectDecodeErr "unit/decode/truncated-15" trunc15Code .invOpcode },
+        match decodeCp0WithBits (Slice.ofCell trunc15Code) with
+        | .ok (.push 2, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"unit/decode/truncated-15: expected alias push 2 (8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-15: expected alias push 2 (8), got error {e}") },
   ]
   oracle := #[
     -- [B1][B5] baseline successes and boundary-shaped successes.

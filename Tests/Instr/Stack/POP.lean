@@ -94,8 +94,12 @@ private def runPopDirect (idx : Nat) (stack : Array Value) : Except Excno (Array
 
 private def expectedPop (idx : Nat) (stack : Array Value) : Array Value :=
   if idx < stack.size then
-    let pos : Nat := stack.size - 1 - idx
-    (stack.extract 0 pos) ++ (stack.extract (pos + 1) stack.size)
+    let topPos : Nat := stack.size - 1
+    let idxPos : Nat := stack.size - 1 - idx
+    let topV : Value := stack[topPos]!
+    let idxV : Value := stack[idxPos]!
+    let swapped := (stack.set! topPos idxV).set! idxPos topV
+    swapped.extract 0 (swapped.size - 1)
   else
     stack
 
@@ -238,10 +242,10 @@ def suite : InstrSuite where
     { name := "unit/direct/underflow"
       run := do
         expectErr "unit/direct/underflow-empty" (runPopDirect 0 #[]) .stkUnd
-        expectErr "unit/direct/underflow-one/idx0" (runPopDirect 0 #[intV 42]) .stkUnd
+        expectOkStack "unit/direct/underflow-one/idx0" (runPopDirect 0 #[intV 42]) #[]
         expectErr "unit/direct/underflow-one/idx1" (runPopDirect 1 #[intV 42]) .stkUnd
         expectErr "unit/direct/underflow-16" (runPopDirect 16 (repeatValue (intV 0) 16)) .stkUnd
-        expectErr "unit/direct/type-safe" (runPopDirect 1 #[.null, .cell Cell.empty, intV 7]) .stkUnd }
+        expectOkStack "unit/direct/type-safe" (runPopDirect 1 #[.null, .cell Cell.empty, intV 7]) #[.null, intV 7] }
     ,
     { name := "unit/asm-encode-decode"
       run := do

@@ -224,7 +224,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "dispatch-matched"
           (runXcpuDirect 0 1 #[intV 11, intV 22])
-          #[intV 22, intV 11, intV 22]
+          #[intV 11, intV 22, intV 11]
     }
     ,
     { name := "unit/runtime/underflow-empty"
@@ -252,8 +252,8 @@ def suite : InstrSuite where
           | .ok c => pure c
           | .error e => throw (IO.userError s!"unit/decode/roundtrip: expected assemble success, got {e}")
         let s0 := Slice.ofCell code
-        let s1 ← expectDecodeStep "decode/xchg2" s0 (.xchg2 2 3) 16
-        let s2 ← expectDecodeStep "decode/xcpu" s1 (.xcpu 4 5) 16
+        let s1 ← expectDecodeStep "decode/xchg2" s0 (.xchg2 2 3) 16 false
+        let s2 ← expectDecodeStep "decode/xcpu" s1 (.xcpu 4 5) 16 false
         let _ ← expectDecodeStep "decode/puxc" s2 (.puxc 6 7) 16
         pure ()
     }

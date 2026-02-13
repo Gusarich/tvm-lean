@@ -97,8 +97,8 @@ private def mkGasCase
 private def runPopDirect (idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrStackPop (popInstr idx) stack
 
-private def runPopFallback (idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrStackPop (popInstr idx) (VM.push (intV 101)) stack
+private def runPopFallback (_idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackPop .add (VM.push (intV 101)) stack
 
 private def popShortExactGas : Int :=
   computeExactGasBudget (popInstr 1)
@@ -407,7 +407,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "runtime/fallback"
           (runPopFallback 2 #[intV 1, intV 2, intV 3, intV 4])
-          #[intV 1, intV 2, intV 4]
+          #[intV 1, intV 2, intV 3, intV 4, intV 101]
     }
     ,
     { name := "unit/decode/short-vs-long-raw"
@@ -441,7 +441,12 @@ def suite : InstrSuite where
     { name := "unit/decode/truncated-prefix-fails"
       run := do
         expectDecodeErr "decode/truncated-8" popRawTruncated8 .invOpcode
-        expectDecodeErr "decode/truncated-15" popRawTruncated15 .invOpcode
+        match decodeCp0WithBits (Slice.ofCell popRawTruncated15) with
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/truncated-15: expected alias nop(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode/truncated-15: expected alias nop(8), got error {e}")
     }
     ,
     { name := "unit/oracle-count-at-least-30"

@@ -304,7 +304,7 @@ def suite : InstrSuite where
           #[intV 1]
         expectOkStack "match/drop-middle"
           (runBlkdrop2Direct 1 2 #[intV 10, intV 20, intV 30, intV 40])
-          #[intV 10, intV 40]
+          #[intV 10, intV 30, intV 40]
     } ,
     { name := "unit/operation/underflow"
       run := do

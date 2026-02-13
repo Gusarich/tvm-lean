@@ -259,7 +259,7 @@ def suite : InstrSuite where
         -- [B2]
         expectOkStack "normal-small"
           (runPuxcpuDirect 1 1 0 (#[intV 11, intV 22, intV 33]))
-          (#[intV 11, intV 22, intV 22, intV 33, intV 33])
+          (#[intV 11, intV 22, intV 33, intV 22, intV 22])
     }
     ,
     { name := "unit/runtime/noop-x-boundary"
@@ -267,7 +267,7 @@ def suite : InstrSuite where
         -- [B6]
         expectOkStack "x-zero-boundary"
           (runPuxcpuDirect 0 2 0 (#[intV 5, intV 6, intV 7]))
-          (#[intV 5, intV 7, intV 6, intV 6])
+          (#[intV 5, intV 7, intV 7, intV 6, intV 6])
     }
     ,
     { name := "unit/runtime/underflow-x"

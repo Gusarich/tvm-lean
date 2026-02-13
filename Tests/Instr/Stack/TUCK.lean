@@ -257,7 +257,7 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback-vs-match"
       run := do
-        expectOkStack "dispatch/fallback-add" (runTuckDispatchFallback .add #[intV 10, intV 32]) #[intV 42, intV dispatchSentinel]
+        expectOkStack "dispatch/fallback-add" (runTuckDispatchFallback .add #[intV 10, intV 32]) #[intV 10, intV 32, intV dispatchSentinel]
     },
     { name := "unit/dispatch/matched-tuck"
       run := do
@@ -274,7 +274,7 @@ def suite : InstrSuite where
         expectOkStack "deep-stack/preserve-prefix-3" (runTuckDirect #[.null, intV 1, intV 2]) #[.null, intV 2, intV 1, intV 2]
         expectOkStack "deep-stack/preserve-prefix-4"
           (runTuckDirect #[intV (-3), .cell sampleCell, .slice sampleSlice, intV 99])
-          #[intV (-3), intV 99, .slice sampleSlice, .cell sampleCell, intV 99]
+          #[intV (-3), .cell sampleCell, intV 99, .slice sampleSlice, intV 99]
     },
     { name := "unit/ok/type-agnostic-values"
       run := do
@@ -295,7 +295,7 @@ def suite : InstrSuite where
           throw (IO.userError s!"assemble/tuck expected 0x66, got {reprStr assembled.bits}")
         expectDecodeTuck "decode/tuck-ok-8bit" tuckCode
         expectDecodeErr "decode/truncated-4bit" truncated4Code .invOpcode
-        expectDecodeTuck "decode/tuck-with-trailing" (Cell.mkOrdinary (natToBits 0x667f 16) #[])
+        expectDecodeTuck "decode/tuck-with-trailing" (Cell.mkOrdinary (natToBits 0x667f 16) #[]) 8 false
         expectDecodeDropX "decode/dropx" dropXCode 8 false
         expectDecodeXchgX "decode/xchgx" xchgXCode 8 false
     }

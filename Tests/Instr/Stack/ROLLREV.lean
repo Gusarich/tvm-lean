@@ -158,18 +158,18 @@ def suite : InstrSuite where
         expectErr "underflow-after-pop" (runRollRevDirect #[(intV 0)]) .stkUnd },
     { name := "unit/error-cases/type-and-range"
       run := do
-        expectErr "type-top-null" (runRollRevDirect (#[(.null), intV 7]) ) .typeChk
-        expectErr "range-nan" (runRollRevDirect (#[(.int .nan), intV 7]) ) .rangeChk
-        expectErr "range-negative" (runRollRevDirect (#[(intV (-1)), intV 7]) ) .rangeChk
-        expectErr "range-over-max" (runRollRevDirect (#[(intV (1 <<< 30)), intV 7]) ) .rangeChk },
+        expectErr "type-top-null" (runRollRevDirect (#[intV 7, (.null)])) .typeChk
+        expectErr "range-nan" (runRollRevDirect (#[intV 7, (.int .nan)])) .rangeChk
+        expectErr "range-negative" (runRollRevDirect (#[intV 7, intV (-1)])) .rangeChk
+        expectErr "range-over-max" (runRollRevDirect (#[intV 7, intV (1 <<< 30)])) .rangeChk },
     { name := "unit/success/x-boundaries"
       run := do
         expectOkStack "x0" (runRollRevDirect (withTop 0 shortTail))
-          #[intV 11, .null, .cell Cell.empty, .slice (Slice.ofCell Cell.empty), .builder Builder.empty]
+          #[intV 11, .null, .cell Cell.empty, .slice (Slice.ofCell Cell.empty), .builder Builder.empty, .tuple #[]]
         expectOkStack "x1" (runRollRevDirect (withTop 1 shortTail))
-          #[intV 11, .slice (Slice.ofCell Cell.empty), .null, .cell Cell.empty, .builder Builder.empty, .tuple #[]]
+          #[intV 11, .null, .cell Cell.empty, .slice (Slice.ofCell Cell.empty), .tuple #[], .builder Builder.empty]
         expectOkStack "x2" (runRollRevDirect (withTop 2 shortTail))
-          #[.cell Cell.empty, intV 11, .null, .slice (Slice.ofCell Cell.empty), .builder Builder.empty, .tuple #[]] },
+          #[intV 11, .null, .cell Cell.empty, .tuple #[], .slice (Slice.ofCell Cell.empty), .builder Builder.empty] },
     { name := "unit/encoding-and-decoding"
       run := do
         let code ←
@@ -192,9 +192,11 @@ def suite : InstrSuite where
     { name := "unit/decoding-invalid-prefix"
       run := do
         match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits 0x00 8) #[])) with
-        | .error _ => pure ()
-        | .ok _ =>
-            throw (IO.userError "decode-invalid-prefix: expected error on 0x00") }
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode-invalid-prefix: expected alias nop(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode-invalid-prefix: expected alias nop(8), got error {e}") }
   ]
   oracle := #[
     mkRollRevCase "ok/x0/short/int-tail" (withTop 0 shortTail), -- [B7][A1]

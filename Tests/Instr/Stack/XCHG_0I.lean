@@ -100,11 +100,14 @@ private def runXchg0WithNext
   runHandlerDirectWithNext execInstrStackXchg0 instr (VM.push (intV dispatchSentinel)) stack
 
 private def expectedSwapTop (idx : Nat) (stack : Array Value) : Array Value :=
-  match stack[0]?, stack[idx]? with
-  | some top, some atIdx =>
-      (stack.set! 0 atIdx).set! idx top
-  | _, _ =>
-      stack
+  if idx < stack.size then
+    let topPos := stack.size - 1
+    let idxPos := stack.size - 1 - idx
+    let top := stack[topPos]!
+    let atIdx := stack[idxPos]!
+    (stack.set! topPos atIdx).set! idxPos top
+  else
+    stack
 
 private def expectAssembledEq
     (label : String)
@@ -291,7 +294,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback"
       run := do
         let input := #[intV 7, intV 9]
-        expectOkStack "unit/dispatch/fallback" (runXchg0WithNext (.pushInt (.num 1)) input) #[intV dispatchSentinel, intV 7, intV 9]
+        expectOkStack "unit/dispatch/fallback" (runXchg0WithNext (.pushInt (.num 1)) input) #[intV 7, intV 9, intV dispatchSentinel]
     },
     { name := "unit/dispatch/swap-path"
       run := do
@@ -355,7 +358,7 @@ def suite : InstrSuite where
     },
     { name := "unit/opcode/decode/short"
       run := do
-        expectDecodeInstr "unit/opcode/decode/00" (xchg0ShortCode 0) (.xchg0 0) 8
+        expectDecodeInstr "unit/opcode/decode/00" (xchg0ShortCode 0) (.nop) 8
         expectDecodeInstr "unit/opcode/decode/01" (xchg0ShortCode 1) (.xchg0 1) 8
         expectDecodeInstr "unit/opcode/decode/0f" (xchg0ShortCode 15) (.xchg0 15) 8
     },

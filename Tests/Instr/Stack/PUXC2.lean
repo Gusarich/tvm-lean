@@ -228,7 +228,7 @@ def suite : InstrSuite where
         -- [B1, B4]
         expectOkStack "matched-puxc2-basic"
           (runPuxc2Direct 0 0 0 #[intV 11, intV 22])
-          #[intV 11, intV 22, intV 11]
+          #[intV 22, intV 11, intV 22]
     }
     ,
     { name := "unit/dispatch/matched-puxc2-x1"
@@ -236,7 +236,7 @@ def suite : InstrSuite where
         -- [B1, B4, B5]
         expectOkStack "matched-puxc2-x1-y0-z1"
           (runPuxc2Direct 1 0 1 #[intV 11, intV 22])
-          #[intV 22, intV 11, intV 22]
+          #[intV 11, intV 22, intV 11]
     }
     ,
     { name := "unit/underflow/empty"

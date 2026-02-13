@@ -134,7 +134,7 @@ def suite : InstrSuite where
         expectOkStack "unit/direct/1" (run2SwapDirect #[intV 1, intV 2, intV 3, intV 4]) #[intV 3, intV 4, intV 1, intV 2]
         expectOkStack "unit/direct/2" (run2SwapDirect #[intV 10, intV 20, intV 30, intV 40]) #[intV 30, intV 40, intV 10, intV 20]
         expectOkStack "unit/direct/3" (run2SwapDirect #[intV (-1), intV 7, intV 0, intV 5]) #[intV 0, intV 5, intV (-1), intV 7]
-        expectOkStack "unit/direct/long" (run2SwapDirect #[intV 1, intV 2, intV 3, intV 4, .null, .cell Cell.empty]) #[intV 3, intV 4, intV 1, intV 2, .null, .cell Cell.empty]
+        expectOkStack "unit/direct/long" (run2SwapDirect #[intV 1, intV 2, intV 3, intV 4, .null, .cell Cell.empty]) #[intV 1, intV 2, .null, .cell Cell.empty, intV 3, intV 4]
         expectOkStack "unit/direct/types"
           (run2SwapDirect #[.null, .cell Cell.empty, .cont (.quit 0), intV 99])
           #[.cont (.quit 0), intV 99, .null, .cell Cell.empty] }
@@ -162,7 +162,7 @@ def suite : InstrSuite where
               throw (IO.userError s!"unit/asm/roundtrip: expected 8 bits, got {bits}")
         | .error e =>
             throw (IO.userError s!"unit/asm/roundtrip: decode failed with {e}")
-        assertDecode8 "unit/asm/adjacent-rot" 0x59 .rot
+        assertDecode8 "unit/asm/adjacent-rot" 0x59 .rotRev
         assertDecode8 "unit/asm/adjacent-drop2" 0x5b .drop2
         assertDecode8 "unit/asm/adjacent-two-over" 0x5d .twoOver
         match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits 0x5a 4) #[])) with

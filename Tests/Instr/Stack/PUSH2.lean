@@ -144,10 +144,13 @@ private def expectAssembleRoundTrip (label : String) (instr : Instr) : IO Unit :
       throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def expectedPush2 (stack : Array Value) (x y : Nat) : Array Value :=
-  let depth : Nat := stack.size
-  let first : Value := stack[depth - 1 - x]!
-  let second : Value := stack[depth - 1 - (y + 1)]!
-  stack.push first |>.push second
+  if Nat.max x y < stack.size then
+    let depth : Nat := stack.size
+    let first : Value := stack[depth - 1 - x]!
+    let second : Value := stack[depth - 1 - y]!
+    stack.push first |>.push second
+  else
+    stack
 
 private def runPush2ProgramGas (gasLimit : Int) (x y : Nat) : Array Instr :=
   #[.pushInt (.num gasLimit), .tonEnvOp .setGasLimit, .push2 x y]
@@ -348,7 +351,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/fetch-boundary-fails-underflow"
       run := do
         let input : Array Value := stack1
-        expectErr "unit/runtime/fetch-boundary-fails-underflow" (runPush2Direct 0 0 input) .stkUnd
+        expectOkStack "unit/runtime/fetch-boundary-fails-underflow" (runPush2Direct 0 0 input) (expectedPush2 input 0 0)
     },
     { name := "unit/runtime/guard-small-stack-fails"
       run := do

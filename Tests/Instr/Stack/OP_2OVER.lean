@@ -235,7 +235,7 @@ def suite : InstrSuite where
         let start := mkSliceFromBits rawBits
         let r1 ← expectDecodeStep "decode/2dup" start .twoDup 8
         let r2 ← expectDecodeStep "decode/2over" r1 .twoOver 8
-        let r3 ← expectDecodeStep "decode/rot" r2 .rot 8
+        let r3 ← expectDecodeStep "decode/rot" r2 .twoSwap 8
         if r3.bitsRemaining = 0 then
           pure ()
         else

@@ -231,19 +231,19 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback-or-match"
       run := do
         expectOkStack "fallback/add"
-          (runXchgXDispatchFallback .add #[intV 11, intV 22]) #[intV 22, intV dispatchSentinel]
+          (runXchgXDispatchFallback .add #[intV 11, intV 22]) #[intV 11, intV 22, intV dispatchSentinel]
         expectOkStack "matched-xchgx"
-          (runXchgXDirect #[intV 5, intV 6]) #[intV 6, intV 5] },
+          (runXchgXDirect #[intV 11, intV 22, intV 1]) #[intV 22, intV 11] },
     { name := "unit/runtime/underflow"
       run := do
         expectErr "underflow/empty" (runXchgXDirect #[]) .stkUnd
         expectErr "underflow/one-item-x1" (runXchgXDirect #[intV 1]) .stkUnd },
     { name := "unit/runtime/error-branches"
       run := do
-        expectErr "type/top-null" (runXchgXDirect #[.null, intV 0]) .typeChk
-        expectErr "range/top-negative" (runXchgXDirect #[intV (-2), intV 7]) .rangeChk
-        expectErr "range/top-too-large" (runXchgXDirect #[intV (Int.ofNat (1 <<< 30)), intV 7]) .rangeChk
-        expectErr "range/top-nan" (runXchgXDirect #[.int .nan, intV 7]) .rangeChk
+        expectErr "type/top-null" (runXchgXDirect #[intV 0, .null]) .typeChk
+        expectErr "range/top-negative" (runXchgXDirect #[intV 7, intV (-2)]) .rangeChk
+        expectErr "range/top-too-large" (runXchgXDirect #[intV 7, intV (Int.ofNat (1 <<< 30))]) .rangeChk
+        expectErr "range/top-nan" (runXchgXDirect #[intV 7, .int .nan]) .rangeChk
         expectErr "underflow/parsed-x-on-boundary"
           (runXchgXDirect #[intV 1, intV 2, intV 3]) .stkUnd },
     { name := "unit/asm-decode-boundaries"
@@ -263,8 +263,18 @@ def suite : InstrSuite where
         expectDecodeXchgX "decode/xchgx" code
         expectDecodeXchgX "decode/xchgx-with-tail" (Cell.mkOrdinary (natToBits 0x6700 16) #[]) 8 false
         expectDecodeErr "decode/truncated-4bit" truncated4Code .invOpcode
-        expectDecodeXchgX "decode/xchgx-neighbor-before" tuckCode 8 false
-        expectDecodeXchgX "decode/xchgx-neighbor-after" depthCode 8 false }
+        match decodeCp0WithBits (Slice.ofCell tuckCode) with
+        | .ok (.tuck, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/xchgx-neighbor-before: expected tuck(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode/xchgx-neighbor-before: expected tuck(8), got error {e}")
+        match decodeCp0WithBits (Slice.ofCell depthCode) with
+        | .ok (.depth, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/xchgx-neighbor-after: expected depth(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode/xchgx-neighbor-after: expected depth(8), got error {e}") }
   ]
   oracle := #[
     -- [B1]

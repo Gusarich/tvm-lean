@@ -236,7 +236,7 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback-add"
       run := do
-        expectOkStack "dispatch/fallback-add" (runXchg1DispatchFallback .add #[intV 10, intV 32]) #[intV 42, intV dispatchSentinel]
+        expectOkStack "dispatch/fallback-add" (runXchg1DispatchFallback .add #[intV 10, intV 32]) #[intV 10, intV 32, intV dispatchSentinel]
     },
     { name := "unit/dispatch/matched-idx2"
       run := do

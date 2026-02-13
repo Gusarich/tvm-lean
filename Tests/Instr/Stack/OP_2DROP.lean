@@ -203,15 +203,15 @@ def suite : InstrSuite where
     { name := "unit/direct/drop2-basic"
       run := do
         expectOkStack "unit/direct/two" (runDrop2Direct #[intV 11, intV 22]) #[]
-        expectOkStack "unit/direct/three" (runDrop2Direct #[intV 1, intV 2, intV 3]) #[intV 3]
+        expectOkStack "unit/direct/three" (runDrop2Direct #[intV 1, intV 2, intV 3]) #[intV 1]
         expectOkStack "unit/direct/four"
-          (runDrop2Direct #[intV 7, intV 8, intV 9, intV 10]) #[intV 9, intV 10]
+          (runDrop2Direct #[intV 7, intV 8, intV 9, intV 10]) #[intV 7, intV 8]
         expectOkStack "unit/direct/five-tail"
           (runDrop2Direct #[intV 9, intV 10, .null, .cell Cell.empty, intV 99])
-          #[.null, .cell Cell.empty, intV 99]
+          #[intV 9, intV 10, .null]
         expectOkStack "unit/direct/non-int-tail"
           (runDrop2Direct #[.null, .cell Cell.empty, intV 1, intV 2, .tuple #[]])
-          #[intV 1, intV 2, .tuple #[]] }
+          #[.null, .cell Cell.empty, intV 1] }
     ,
     { name := "unit/direct/underflow"
       run := do

@@ -53,13 +53,14 @@ private def runRotRevDirect (stack : Array Value) : Except Excno (Array Value) :
   runHandlerDirect execInstrStackRotRev rotRevInstr stack
 
 private def expectedRotRev (stack : Array Value) : Array Value :=
-  match stack[0]?, stack[1]?, stack[2]? with
-  | some x0, some x1, some x2 =>
-      if stack.size = 3 then
-        #[x1, x2, x0]
-      else
-        #[x1, x2, x0] ++ stack.extract 3 stack.size
-  | _, _, _ => stack
+  if stack.size < 3 then
+    stack
+  else
+    let n := stack.size
+    let x0 := stack[n - 1]!
+    let x1 := stack[n - 2]!
+    let x2 := stack[n - 3]!
+    ((stack.set! (n - 3) x0).set! (n - 2) x2).set! (n - 1) x1
 
 private def expectDecodeStep
     (label : String)

@@ -223,7 +223,12 @@ def suite : InstrSuite where
         else
           throw (IO.userError s!"decode/neighbors: expected exhaustion, got {s3.bitsRemaining} bits remaining")
         expectDecodeErr "decode/truncated-7" (Cell.mkOrdinary (natToBits 0x65 7) #[]) .invOpcode
-        expectDecodeErr "decode/truncated-15" (Cell.mkOrdinary (natToBits 0x65 15) #[]) .invOpcode }
+        match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits 0x65 15) #[])) with
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/truncated-15: expected alias nop(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode/truncated-15: expected alias nop(8), got error {e}") }
   ]
   oracle := #[
     -- [B1] Normal no-op count.

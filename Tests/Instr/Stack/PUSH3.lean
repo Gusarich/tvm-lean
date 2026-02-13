@@ -108,11 +108,14 @@ private def stackDepth1 : Array Value := baseStack.extract 0 1
 private def stackDepth0 : Array Value := #[]
 
 private def expectedPush3 (stack : Array Value) (x y z : Nat) : Array Value :=
-  let depth := stack.size
-  let vX : Value := stack[depth - 1 - x]!
-  let vY : Value := stack[depth - 1 - (y + 1)]!
-  let vZ : Value := stack[depth - 1 - (z + 2)]!
-  stack.push vX |>.push vY |>.push vZ
+  if Nat.max (Nat.max x y) z < stack.size then
+    let depth := stack.size
+    let vX : Value := stack[depth - 1 - x]!
+    let vY : Value := stack[depth - 1 - y]!
+    let vZ : Value := stack[depth - 1 - z]!
+    stack.push vX |>.push vY |>.push vZ
+  else
+    stack
 
 private def mkPush3Case
     (name : String)
@@ -265,7 +268,7 @@ def suite : InstrSuite where
     { name := "unit/direct/underflow-variants"
       run := do
         expectErr "err/empty" (runPush3Direct 0 0 0 stackDepth0) .stkUnd
-        expectErr "err/one" (runPush3Direct 0 0 0 stackDepth1) .stkUnd
+        expectOkStack "err/one" (runPush3Direct 0 0 0 stackDepth1) (expectedPush3 stackDepth1 0 0 0)
         expectErr "err/two" (runPush3Direct 2 0 0 stackDepth2) .stkUnd
         expectErr "err/three" (runPush3Direct 3 0 0 stackDepth3) .stkUnd
         expectErr "err/size9" (runPush3Direct 9 8 7 stackDepth9) .stkUnd

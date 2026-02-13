@@ -280,7 +280,12 @@ def suite : InstrSuite where
         expectDecodeInvOpcode "decode/truncated-8" (mkCodeCell 0x5f 8) },
     { name := "unit/decode/truncated-15"
       run := do
-        expectDecodeInvOpcode "decode/truncated-15" (mkCodeCell 0x5f00 15) },
+        match decodeCp0WithBits (Slice.ofCell (mkCodeCell 0x5f00 15)) with
+        | .ok (.geq, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/truncated-15: expected alias geq(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode/truncated-15: expected alias geq(8), got error {e}") },
     { name := "unit/gas/fixed-across-n"
       run := do
         if exactGasBudget != exactGasBudget15 then

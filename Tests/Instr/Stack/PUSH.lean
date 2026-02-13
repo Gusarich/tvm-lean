@@ -98,8 +98,8 @@ private def mkGasCase
 private def runPushDirect (idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrStackPush (mkPush idx) stack
 
-private def runPushFallback (idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrStackPush (mkPush idx) (VM.push (intV 909)) stack
+private def runPushFallback (_idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackPush .add (VM.push (intV 909)) stack
 
 private def pushShortExactGas : Int :=
   computeExactGasBudget (mkPush 1)
@@ -238,9 +238,8 @@ def suite : InstrSuite where
   unit := #[
     { name := "/unit/direct/short-short/idx0-empty"
       run := do
-        expectOkStack "/unit/direct/idx0-empty"
-          (runPushDirect 0 #[])
-          (#[(intV 1)].append #[])
+        expectErr "/unit/direct/idx0-empty"
+          (runPushDirect 0 #[]) .stkUnd
     }
     ,
     { name := "/unit/direct/short/push1-on-2"

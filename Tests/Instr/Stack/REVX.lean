@@ -220,7 +220,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "dispatch-fallback"
           (runRevXDispatchFallback (withXY shortTail 1 1))
-          (withXY shortTail 1 777) },
+          ((withXY shortTail 1 1).push (intV 777)) },
     { name := "unit/runtime/underflow"
       run := do
         expectErr "underflow-empty" (runRevXDirect #[]) .stkUnd

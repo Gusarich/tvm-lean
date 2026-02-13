@@ -90,6 +90,17 @@ private def runDropDirect (idx : Nat) (stack : Array Value) : Except Excno (Arra
 private def runDropDispatchFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrStackPop instr (VM.push (intV 77)) stack
 
+private def expectedDrop (idx : Nat) (stack : Array Value) : Array Value :=
+  if idx < stack.size then
+    let topPos : Nat := stack.size - 1
+    let idxPos : Nat := stack.size - 1 - idx
+    let topV : Value := stack[topPos]!
+    let idxV : Value := stack[idxPos]!
+    let swapped := (stack.set! topPos idxV).set! idxPos topV
+    swapped.extract 0 (swapped.size - 1)
+  else
+    stack
+
 private def expectAssembleDrop (label : String) (idx : Nat) : IO Unit := do
   let c ←
     match assembleCp0 [dropInstr idx] with
@@ -248,15 +259,15 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback"
       run := do
         let ok := runDropDispatchFallback .add (#[intV 11])
-        expectOkStack "dispatch-fallback" ok (#[intV 11]) },
+        expectOkStack "dispatch-fallback" ok (#[intV 11, intV 77]) },
     { name := "unit/direct/drop0"
       run := do
         let ok := runDropDirect 0 (mkTypeStack 4)
-        expectOkStack "drop0" ok (mkTypeStack 3) },
+        expectOkStack "drop0" ok (expectedDrop 0 (mkTypeStack 4)) },
     { name := "unit/direct/drop1"
       run := do
         let ok := runDropDirect 1 (#[(.cell Cell.empty), intV 21, intV 22])
-        expectOkStack "drop1" ok (#[(.cell Cell.empty), intV 22]) },
+        expectOkStack "drop1" ok (expectedDrop 1 (#[(.cell Cell.empty), intV 21, intV 22])) },
     { name := "unit/direct/drop1-underflow"
       run := do
         expectErr "drop1-underflow" (runDropDirect 1 (#[(intV 3)])) .stkUnd },
@@ -264,12 +275,12 @@ def suite : InstrSuite where
       run := do
         let stack := mkTypeStack 16
         let ok := runDropDirect 15 stack
-        expectOkStack "drop15" ok (mkTypeStack 15) },
+        expectOkStack "drop15" ok (expectedDrop 15 stack) },
     { name := "unit/direct/drop16"
       run := do
         let stack := mkTypeStack 17
         let ok := runDropDirect 16 stack
-        expectOkStack "drop16" ok (mkTypeStack 16) },
+        expectOkStack "drop16" ok (expectedDrop 16 stack) },
     { name := "unit/direct/drop255-underflow"
       run := do
         expectErr "drop255-underflow" (runDropDirect 255 (mkTypeStack 255)) .stkUnd },
@@ -305,7 +316,7 @@ def suite : InstrSuite where
         expectDecodeDrop "decode-drop-15" 0x3f 8 (dropInstr 15) },
     { name := "unit/decode/drop-16"
       run := do
-        expectDecodeDrop "decode-drop-16" 0x57 16 (dropInstr 16) },
+        expectDecodeDrop "decode-drop-16" 0x5710 16 (dropInstr 16) },
     { name := "unit/decode/drop-255"
       run := do
         expectDecodeDrop "decode-drop-255" 0x57ff 16 (dropInstr 255) },

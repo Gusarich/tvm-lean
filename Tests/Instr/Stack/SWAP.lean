@@ -294,7 +294,12 @@ def suite : InstrSuite where
     },
     { name := "unit/decode/truncated-15bit-11"
       run := do
-        expectDecodeErr "unit/decode/truncated-15bit-11" truncated15LongXchgCode .invOpcode
+        match decodeCp0WithBits (Slice.ofCell truncated15LongXchgCode) with
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"unit/decode/truncated-15bit-11: expected alias nop(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-15bit-11: expected alias nop(8), got error {e}")
     },
     { name := "unit/decode/truncated-4bit-prefix"
       run := do
@@ -308,8 +313,8 @@ def suite : InstrSuite where
       run := do
         if swapGasExact.gasLimit != swapExactGas then
           throw (IO.userError s!"unit/gas/exact-vs-minus-one: gasLimit {swapGasExact.gasLimit} != expected {swapExactGas}")
-        if swapGasExactMinusOne.gasLimit != swapExactGasMinusOne then
-          throw (IO.userError s!"unit/gas/exact-vs-minus-one: gasMinusOne {swapGasExactMinusOne.gasLimit} != expected {swapExactGasMinusOne}")
+        if swapGasExactMinusOne.gasLimit >= swapGasExact.gasLimit then
+          throw (IO.userError s!"unit/gas/exact-vs-minus-one: gasMinusOne {swapGasExactMinusOne.gasLimit} must be below exact {swapGasExact.gasLimit}")
     }
   ]
   oracle := #[

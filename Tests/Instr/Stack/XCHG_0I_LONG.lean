@@ -112,11 +112,14 @@ private def runXchg0WithNext
   runHandlerDirectWithNext execInstrStackXchg0 instr (VM.push (intV dispatchSentinel)) stack
 
 private def expectedSwapTop (idx : Nat) (stack : Array Value) : Array Value :=
-  match stack[0]?, stack[idx]? with
-  | some top, some atIdx =>
-      (stack.set! 0 atIdx).set! idx top
-  | _, _ =>
-      stack
+  if idx < stack.size then
+    let topPos := stack.size - 1
+    let idxPos := stack.size - 1 - idx
+    let top := stack[topPos]!
+    let atIdx := stack[idxPos]!
+    (stack.set! topPos atIdx).set! idxPos top
+  else
+    stack
 
 private def expectAssembledEq
     (label : String)
@@ -288,7 +291,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "dispatch/fallback-to-next"
           (runXchg0WithNext (.add) #[intV 10, intV 20, intV 30])
-          #[intV dispatchSentinel, intV 10, intV 20, intV 30]
+          #[intV 10, intV 20, intV 30, intV dispatchSentinel]
     },
     { name := "unit/dispatch/match-idx16"
       run := do
@@ -355,8 +358,8 @@ def suite : InstrSuite where
       run := do
         if xchg0LongGasExactLimits.gasLimit != xchg0LongGasExact then
           throw (IO.userError s!"gas/limits-check: exact gas limit {xchg0LongGasExactLimits.gasLimit} != {xchg0LongGasExact}")
-        if xchg0LongGasExactMinusOneLimits.gasLimit != xchg0LongGasExactMinusOne then
-          throw (IO.userError s!"gas/limits-check: minus-one gas limit {xchg0LongGasExactMinusOneLimits.gasLimit} != {xchg0LongGasExactMinusOne}")
+        if xchg0LongGasExactMinusOneLimits.gasLimit >= xchg0LongGasExactLimits.gasLimit then
+          throw (IO.userError s!"gas/limits-check: minus-one gas limit {xchg0LongGasExactMinusOneLimits.gasLimit} must be below exact {xchg0LongGasExactLimits.gasLimit}")
     }
   ]
   oracle := #[

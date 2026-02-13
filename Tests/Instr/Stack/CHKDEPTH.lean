@@ -363,7 +363,7 @@ def suite : InstrSuite where
         expectOkStack "unit/partial/one" (runChkDepthDirect (#[intV 11, intV 22, intV 33, intV 1])) (#[(intV 11), intV 22, intV 33]
         )
         expectOkStack "unit/partial/three" (runChkDepthDirect (#[intV 11, intV 22, intV 33, intV 44, intV 3])) (#[(intV 11), intV 22, intV 33, intV 44])
-        expectOkStack "unit/partial/boundary-size" (runChkDepthDirect (#[intV 77, intV 0])) #[] },
+        expectOkStack "unit/partial/boundary-size" (runChkDepthDirect (#[intV 77, intV 0])) #[intV 77] },
     { name := "unit/direct/ok/boundary"
       run := do
         let full := #[intV 1, intV 2, intV 3, intV 4, intV 5]
@@ -408,7 +408,12 @@ def suite : InstrSuite where
         expectDecodeErr "decode/invalid-6c" (Slice.ofCell (Cell.mkOrdinary (natToBits invalidWord 8))) .invOpcode
         expectDecodeErr "decode/invalid-6f" (Slice.ofCell (Cell.mkOrdinary (natToBits invalidWord2 8))) .invOpcode
         expectDecodeErr "decode/truncated-7" (Slice.ofCell (Cell.mkOrdinary (natToBits chkDepthWord 7))) .invOpcode
-        expectDecodeErr "decode/truncated-15" (Slice.ofCell (Cell.mkOrdinary (natToBits chkDepthWord 15))) .invOpcode },
+        match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits chkDepthWord 15))) with
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/truncated-15: expected alias nop(8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"decode/truncated-15: expected alias nop(8), got error {e}") },
     { name := "unit/gas/limits"
       run := do
         if chkDepthGasExact ≤ 0 then

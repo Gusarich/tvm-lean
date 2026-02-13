@@ -86,13 +86,14 @@ private def runRotDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrStackRot rotInstr stack
 
 private def expectedRot (stack : Array Value) : Array Value :=
-  match stack[0]?, stack[1]?, stack[2]? with
-  | some x0, some x1, some x2 =>
-      if stack.size = 3 then
-        #[x1, x2, x0]
-      else
-        #[x1, x2, x0] ++ stack.extract 3 stack.size
-  | _, _, _ => stack
+  if stack.size < 3 then
+    stack
+  else
+    let n := stack.size
+    let x0 := stack[n - 1]!
+    let x1 := stack[n - 2]!
+    let x2 := stack[n - 3]!
+    ((stack.set! (n - 3) x1).set! (n - 2) x0).set! (n - 1) x2
 
 private def expectDecodeStep
     (label : String)
@@ -233,10 +234,9 @@ def suite : InstrSuite where
     },
     { name := "unit/rot/decode/adjacent-boundaries"
       run := do
-        let left := Slice.ofCell (raw8 0x57)
         let right := Slice.ofCell (raw8 0x59)
         let far := Slice.ofCell (raw8 0x5a)
-        let _ ← expectDecodeStep "unit/rot/decode/left-boundary" left .drop2 8
+        expectDecodeErr "unit/rot/decode/left-boundary" (natToBits 0x57 8) .invOpcode
         let _ ← expectDecodeStep "unit/rot/decode/center" right .rotRev 8
         let _ ← expectDecodeStep "unit/rot/decode/right-boundary" far .twoSwap 8
         pure ()
