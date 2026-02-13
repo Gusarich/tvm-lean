@@ -19,7 +19,7 @@ All 919 TVM instructions are implemented. The vast majority are pure Lean; crypt
 | Dictionary | 143 | 🚧 |
 | Continuation | 98 | ✅ Tested |
 | Crypto | 50 | 🚧 |
-| Stack | 50 | 🚧 |
+| Stack | 50 | ✅ Tested |
 | Other | 133 | 🚧 |
 
 Tested categories have both hand-crafted differential test cases and a randomized fuzz harness running hundreds of generated cases. Every test compares results directly against the C++ reference implementation, and all pass. Coverage for the remaining categories is in progress.

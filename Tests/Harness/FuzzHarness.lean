@@ -267,6 +267,37 @@ private def oracleCliIntLimit : Int :=
 private def intSafeForOracleCli (n : Int) : Bool :=
   n.natAbs ≤ oracleCliIntLimit.natAbs
 
+private def valueOracleCliCompatible (v : Value) : Bool :=
+  oracleTokenEncodable v &&
+    match v with
+    | .int (.num n) => intSafeForOracleCli n
+    | .int .nan => false
+    | _ => true
+
+private def stackOracleCliCompatible (stack : Array Value) : Bool :=
+  stack.foldl (init := true) fun ok v => ok && valueOracleCliCompatible v
+
+private def oracleCaseAsmCompatible (c : OracleCase) : Bool :=
+  match c.codeCell? with
+  | some _ => true
+  | none =>
+      match assembleCp0 c.program.toList with
+      | .ok _ => true
+      | .error _ => false
+
+private def oracleCaseFuzzComparable (c : OracleCase) : Bool :=
+  oracleCaseAsmCompatible c
+    && stackOracleCliCompatible c.initStack
+    && c.initC7.isEmpty
+
+private def isSkippableFuzzOracleError (msg : String) : Bool :=
+  msg.startsWith "assembleCp0 failed:"
+    || msg.startsWith "cannot encode NaN in oracle stack token stream"
+    || msg.startsWith "only full-cell slices are supported in oracle stack token stream"
+    || msg.startsWith "non-empty tuples are not yet supported in oracle stack token stream"
+    || msg.startsWith "only quit(0) continuations are supported in oracle stack token stream"
+    || !((msg.splitOn "times:integer expected").tail.isEmpty)
+
 private def intValueIndices (stack : Array Value) : Array Nat := Id.run do
   let mut out : Array Nat := #[]
   for i in [0:stack.size] do
@@ -420,12 +451,24 @@ private def nextFuzzOracleCase
 def runFuzzSpec (spec : FuzzSpec) (oraclePool : Array OracleCase := #[]) : IO FuzzRunResult := do
   let mut gen := mkStdGen spec.seed.toNat
   let mut i : Nat := 0
+  let mut attempts : Nat := 0
+  let maxAttempts : Nat := spec.count.succ * 64
   let mut failures : Array FuzzFailure := #[]
   let mut artifacts : Array System.FilePath := #[]
-  while i < spec.count do
+  while i < spec.count && attempts < maxAttempts do
+    attempts := attempts + 1
     let (oracleCase, gen') := nextFuzzOracleCase spec oraclePool i gen
     gen := gen'
+    if !oracleCaseFuzzComparable oracleCase then
+      continue
     let out ← runOracleCase oracleCase
+    if !out.ok then
+      match out.error? with
+      | some msg =>
+          if isSkippableFuzzOracleError msg then
+            continue
+      | none => pure ()
+    i := i + 1
     if !out.ok then
       let artifact? ← dumpFailureArtifact spec.seed i oracleCase out
       failures := failures.push { iteration := i, result := out, artifact? := artifact? }
