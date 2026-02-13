@@ -122,6 +122,55 @@ private def pushLongGasExact : Int :=
 private def pushLongGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne (.push 255)
 
+private def pushLongDispatchSentinel : Int := 60_404
+
+private def runPushLongDirect (idx : Nat) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrStackPush (.push idx) stack
+
+private def runPushLongWithNext
+    (instr : Instr)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackPush instr (VM.push (intV pushLongDispatchSentinel)) stack
+
+private def expectAssembleRangeErr (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error .rangeChk => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected rangeChk, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected rangeChk, got successful assembly")
+
+private def expectDecodeOk
+    (label : String)
+    (code : Cell)
+    (expected : Instr)
+    (expectedBits : Nat) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
+  | .ok (instr, bits, rest) =>
+      if instr != expected then
+        throw (IO.userError s!"{label}: expected {reprStr expected}, got {reprStr instr}")
+      else if bits != expectedBits then
+        throw (IO.userError s!"{label}: expected {expectedBits} bits, got {bits}")
+      else if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+        throw
+          (IO.userError
+            s!"{label}: expected empty decode tail, got bits={rest.bitsRemaining}, refs={rest.refsRemaining}")
+      else
+        pure ()
+
+private def expectDecodeErr
+    (label : String)
+    (code : Cell)
+    (expected : Excno) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      if e = expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected {expected}, got {e}")
+  | .ok (instr, bits, _rest) =>
+      throw (IO.userError s!"{label}: expected decode error {expected}, got {reprStr instr} ({bits} bits)")
+
 private def pickFuzzValue (rng : StdGen) : Value × StdGen :=
   let (k, rng') := randNat rng 0 6
   match k with
@@ -206,7 +255,43 @@ private def genPushLongFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 
 def suite : InstrSuite where
   id := pushLongId
-  unit := #[]
+  unit := #[
+    { name := "unit/dispatch/fallback"
+      run := do
+        expectOkStack "unit/dispatch/fallback"
+          (runPushLongWithNext .add #[intV 10, intV 20])
+          #[intV 10, intV 20, intV pushLongDispatchSentinel] },
+    { name := "unit/runtime/short-idx1"
+      run := do
+        expectOkStack "unit/runtime/short-idx1"
+          (runPushLongDirect 1 #[intV 11, intV 22])
+          #[intV 11, intV 22, intV 11] },
+    { name := "unit/runtime/long-idx16"
+      run := do
+        expectOkStack "unit/runtime/long-idx16"
+          (runPushLongDirect 16 stack17)
+          (stack17.push (intV 1)) },
+    { name := "unit/runtime/underflow-long"
+      run := do
+        expectErr "unit/runtime/underflow-long"
+          (runPushLongDirect 255 (mkIntStack 16))
+          .stkUnd },
+    { name := "unit/asm/range-idx256"
+      run := do
+        expectAssembleRangeErr "unit/asm/range-idx256" (.push 256) },
+    { name := "unit/decode/short0"
+      run := do
+        expectDecodeOk "unit/decode/short0" pushShort0Code (.push 0) 8 },
+    { name := "unit/decode/long16"
+      run := do
+        expectDecodeOk "unit/decode/long16" (pushLongCode 16) (.push 16) 16 },
+    { name := "unit/decode/alias-pop30"
+      run := do
+        expectDecodeOk "unit/decode/alias-pop30" pushLongAliasPopCode (.pop 0) 8 },
+    { name := "unit/decode/truncated-56"
+      run := do
+        expectDecodeErr "unit/decode/truncated-56" pushLong56Truncated .invOpcode }
+  ]
   oracle := #[
     -- [B1]
     mkCase "ok/push0/top-duplicate" (mkIntStack 2) #[.push 0],

@@ -81,6 +81,55 @@ private def xchg3SetGasExact : Int :=
 private def xchg3SetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne (.xchg3 1 2 3)
 
+private def xchg3DispatchSentinel : Int := 48_224
+
+private def runXchg3Direct (x y z : Nat) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrStackXchg3 (.xchg3 x y z) stack
+
+private def runXchg3WithNext
+    (instr : Instr)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackXchg3 instr (VM.push (intV xchg3DispatchSentinel)) stack
+
+private def expectAssembleRangeErr (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error .rangeChk => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected rangeChk, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected rangeChk, got successful assembly")
+
+private def expectDecodeOk
+    (label : String)
+    (code : Cell)
+    (expected : Instr)
+    (expectedBits : Nat) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
+  | .ok (instr, bits, rest) =>
+      if instr != expected then
+        throw (IO.userError s!"{label}: expected {reprStr expected}, got {reprStr instr}")
+      else if bits != expectedBits then
+        throw (IO.userError s!"{label}: expected {expectedBits} bits, got {bits}")
+      else if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+        throw
+          (IO.userError
+            s!"{label}: expected empty decode tail, got bits={rest.bitsRemaining}, refs={rest.refsRemaining}")
+      else
+        pure ()
+
+private def expectDecodeErr
+    (label : String)
+    (code : Cell)
+    (expected : Excno) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      if e = expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected {expected}, got {e}")
+  | .ok (instr, bits, _rest) =>
+      throw (IO.userError s!"{label}: expected decode error {expected}, got {reprStr instr} ({bits} bits)")
+
 private def pickFuzzValue (rng0 : StdGen) : Value × StdGen :=
   let (mode, rng1) := randNat rng0 0 9
   if mode = 0 then
@@ -204,7 +253,52 @@ private def genXchg3FuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 
 def suite : InstrSuite where
   id := xchg3Id
-  unit := #[]
+  unit := #[
+    { name := "unit/dispatch/fallback"
+      run := do
+        expectOkStack "unit/dispatch/fallback"
+          (runXchg3WithNext .add #[intV 1, intV 2, intV 3])
+          #[intV 1, intV 2, intV 3, intV xchg3DispatchSentinel] },
+    { name := "unit/runtime/matched-noop-args"
+      run := do
+        expectOkStack "unit/runtime/matched-noop-args"
+          (runXchg3Direct 2 1 0 #[intV 11, intV 22, intV 33])
+          #[intV 11, intV 22, intV 33] },
+    { name := "unit/runtime/underflow"
+      run := do
+        expectErr "unit/runtime/underflow"
+          (runXchg3Direct 1 2 3 #[intV 11, intV 22])
+          .stkUnd },
+    { name := "unit/asm/range"
+      run := do
+        expectAssembleRangeErr "unit/asm/range-x" (.xchg3 16 0 0)
+        expectAssembleRangeErr "unit/asm/range-y" (.xchg3 0 16 0)
+        expectAssembleRangeErr "unit/asm/range-z" (.xchg3 0 0 16) },
+    { name := "unit/decode/short-form"
+      run := do
+        expectDecodeOk "unit/decode/short-form" (xchg3Code16 1 2 3) (.xchg3 1 2 3) 16 },
+    { name := "unit/decode/alt-form"
+      run := do
+        expectDecodeOk "unit/decode/alt-form" (xchg3Code24 0 1 2) (.xchg3 0 1 2) 24 },
+    { name := "unit/decode/truncation"
+      run := do
+        match decodeCp0WithBits (Slice.ofCell xchg3Trunc16Code) with
+        | .ok (.cmp, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw
+              (IO.userError
+                s!"unit/decode/truncated-15: expected alias cmp (8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-15: expected alias cmp (8), got error {e}")
+        match decodeCp0WithBits (Slice.ofCell xchg3Trunc24Code) with
+        | .ok (.mul, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw
+              (IO.userError
+                s!"unit/decode/truncated-23: expected alias mul (8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-23: expected alias mul (8), got error {e}") }
+  ]
   oracle := #[
     -- [B1,B3]
     mkCase "ok/normal/depth3-ascending" #[intV 1, intV 2, intV 3],

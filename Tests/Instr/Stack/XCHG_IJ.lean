@@ -87,6 +87,55 @@ private def xchgSetGasExact : Int :=
 private def xchgSetGasExactMinusOne : Int :=
   computeExactGasBudgetMinusOne (.xchg 1 2)
 
+private def xchgIjDispatchSentinel : Int := 55_112
+
+private def runXchgIjDirect (x y : Nat) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrStackXchg (.xchg x y) stack
+
+private def runXchgIjWithNext
+    (instr : Instr)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackXchg instr (VM.push (intV xchgIjDispatchSentinel)) stack
+
+private def expectAssembleRangeErr (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error .rangeChk => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected rangeChk, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected rangeChk, got successful assembly")
+
+private def expectDecodeOk
+    (label : String)
+    (code : Cell)
+    (expected : Instr)
+    (expectedBits : Nat) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
+  | .ok (instr, bits, rest) =>
+      if instr != expected then
+        throw (IO.userError s!"{label}: expected {reprStr expected}, got {reprStr instr}")
+      else if bits != expectedBits then
+        throw (IO.userError s!"{label}: expected {expectedBits} bits, got {bits}")
+      else if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+        throw
+          (IO.userError
+            s!"{label}: expected empty decode tail, got bits={rest.bitsRemaining}, refs={rest.refsRemaining}")
+      else
+        pure ()
+
+private def expectDecodeErr
+    (label : String)
+    (code : Cell)
+    (expected : Excno) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      if e = expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected {expected}, got {e}")
+  | .ok (instr, bits, _rest) =>
+      throw (IO.userError s!"{label}: expected decode error {expected}, got {reprStr instr} ({bits} bits)")
+
 private def stack16Base : Array Value :=
   #[
     intV 1, intV 2, intV 3, intV 4, intV 5, intV 6, intV 7, intV 8,
@@ -189,7 +238,45 @@ private def genXchgIjFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 
 def suite : InstrSuite where
   id := xchgIjId
-  unit := #[]
+  unit := #[
+    { name := "unit/dispatch/fallback"
+      run := do
+        expectOkStack "unit/dispatch/fallback"
+          (runXchgIjWithNext .add #[intV 10, intV 32])
+          #[intV 10, intV 32, intV xchgIjDispatchSentinel] },
+    { name := "unit/runtime/swap-success"
+      run := do
+        expectOkStack "unit/runtime/swap-success"
+          (runXchgIjDirect 1 2 #[intV 10, intV 20, intV 30])
+          #[intV 20, intV 10, intV 30] },
+    { name := "unit/runtime/invalid-x0"
+      run := do
+        expectErr "unit/runtime/invalid-x0"
+          (runXchgIjDirect 0 1 #[intV 1, intV 2, intV 3])
+          .invOpcode },
+    { name := "unit/runtime/invalid-order"
+      run := do
+        expectErr "unit/runtime/invalid-order"
+          (runXchgIjDirect 2 1 #[intV 1, intV 2, intV 3])
+          .invOpcode },
+    { name := "unit/runtime/underflow"
+      run := do
+        expectErr "unit/runtime/underflow"
+          (runXchgIjDirect 1 2 #[intV 1, intV 2])
+          .stkUnd },
+    { name := "unit/asm/range"
+      run := do
+        expectAssembleRangeErr "unit/asm/range-x-overflow" (.xchg 16 1)
+        expectAssembleRangeErr "unit/asm/range-y-overflow" (.xchg 1 16)
+        expectAssembleRangeErr "unit/asm/range-invalid-x0" (.xchg 0 1) },
+    { name := "unit/decode/valid"
+      run := do
+        expectDecodeOk "unit/decode/valid" (xchgCode 14 15) (.xchg 14 15) 16 },
+    { name := "unit/decode/truncation"
+      run := do
+        expectDecodeErr "unit/decode/truncated-8" xchgTruncated8Code .invOpcode
+        expectDecodeErr "unit/decode/truncated-15" xchgTruncated15Code .invOpcode }
+  ]
   oracle := #[
     -- [B1]
     mkCase "ok/swap-minimal-adjacent" #[intV 10, intV 20, intV 30] #[.xchg 1 2],

@@ -135,6 +135,57 @@ private def rawXC2PUTrunc8 : Cell :=
 private def rawXC2PUTrunc15 : Cell :=
   Cell.mkOrdinary (natToBits (0x541345 >>> 1) 15) #[]
 
+private def xc2puDispatchSentinel : Int := 50_067
+
+private def runXc2puDirect
+    (x y z : Nat)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrStackXc2pu (.xc2pu x y z) stack
+
+private def runXc2puWithNext
+    (instr : Instr)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackXc2pu instr (VM.push (intV xc2puDispatchSentinel)) stack
+
+private def expectAssembleRangeErr (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error .rangeChk => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected rangeChk, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected rangeChk, got successful assembly")
+
+private def expectDecodeOk
+    (label : String)
+    (code : Cell)
+    (expected : Instr)
+    (expectedBits : Nat := 24) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
+  | .ok (instr, bits, rest) =>
+      if instr != expected then
+        throw (IO.userError s!"{label}: expected {reprStr expected}, got {reprStr instr}")
+      else if bits != expectedBits then
+        throw (IO.userError s!"{label}: expected {expectedBits} bits, got {bits}")
+      else if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+        throw
+          (IO.userError
+            s!"{label}: expected empty decode tail, got bits={rest.bitsRemaining}, refs={rest.refsRemaining}")
+      else
+        pure ()
+
+private def expectDecodeErr
+    (label : String)
+    (code : Cell)
+    (expected : Excno) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      if e = expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected {expected}, got {e}")
+  | .ok (instr, bits, _rest) =>
+      throw (IO.userError s!"{label}: expected decode error {expected}, got {reprStr instr} ({bits} bits)")
+
 private def valuePool : Array Value :=
   #[
     intV 0,
@@ -237,7 +288,46 @@ private def genXc2puFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 
 def suite : InstrSuite where
   id := xc2puId
-  unit := #[]
+  unit := #[
+    { name := "unit/dispatch/fallback"
+      run := do
+        expectOkStack "unit/dispatch/fallback"
+          (runXc2puWithNext .add #[intV 11, intV 22])
+          #[intV 11, intV 22, intV xc2puDispatchSentinel] },
+    { name := "unit/runtime/matched-basic"
+      run := do
+        expectOkStack "unit/runtime/matched-basic"
+          (runXc2puDirect 1 0 1 #[intV 11, intV 22])
+          #[intV 11, intV 22, intV 11] },
+    { name := "unit/runtime/underflow-empty"
+      run := do
+        expectErr "unit/runtime/underflow-empty"
+          (runXc2puDirect 0 0 0 #[])
+          .stkUnd },
+    { name := "unit/asm/range"
+      run := do
+        expectAssembleRangeErr "unit/asm/range-x" (.xc2pu 16 0 0)
+        expectAssembleRangeErr "unit/asm/range-y" (.xc2pu 0 16 0)
+        expectAssembleRangeErr "unit/asm/range-z" (.xc2pu 0 0 16) },
+    { name := "unit/decode/raw"
+      run := do
+        expectDecodeOk "unit/decode/raw-541345" rawXC2PUCode (.xc2pu 3 4 5) },
+    { name := "unit/decode/neighbors"
+      run := do
+        expectDecodeOk "unit/decode/neighbor-xchg3" rawXCHG3Code (.xchg3 2 10 11)
+        expectDecodeOk "unit/decode/neighbor-xcpuxc" rawXCPUXCCode (.xcpuxc 0 1 0) },
+    { name := "unit/decode/truncation"
+      run := do
+        expectDecodeErr "unit/decode/truncated-8" rawXC2PUTrunc8 .invOpcode
+        match decodeCp0WithBits (Slice.ofCell rawXC2PUTrunc15) with
+        | .ok (.xchg1 3, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw
+              (IO.userError
+                s!"unit/decode/truncated-15: expected alias xchg1 3 (8), got {reprStr instr} ({bits} bits)")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-15: expected alias xchg1 3 (8), got error {e}") }
+  ]
   oracle := #[
     -- [B2, B9, B13]
     mkCase "ok/min-depth-boundary-1" #[intV 100, intV 200] 0 0 0

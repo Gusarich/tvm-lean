@@ -286,9 +286,92 @@ private def genXchg3AltFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     let (stack, rng4) := randomXchg3Stack depth rng3
     (mkCaseCode "fuzz/raw/err/alt-needs-more" stack (xchg3AltCode x y z), rng4)
 
+private def xchg3AltDispatchSentinel : Int := 47_771
+
+private def runXchg3AltDirect (x y z : Nat) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrStackXchg3 (.xchg3 x y z) stack
+
+private def runXchg3AltWithNext
+    (instr : Instr)
+    (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrStackXchg3 instr (VM.push (intV xchg3AltDispatchSentinel)) stack
+
+private def expectAssembleRangeErr (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error .rangeChk => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected rangeChk, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected rangeChk, got successful assembly")
+
+private def expectDecodeOk
+    (label : String)
+    (code : Cell)
+    (expected : Instr)
+    (expectedBits : Nat) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
+  | .ok (instr, bits, rest) =>
+      if instr != expected then
+        throw (IO.userError s!"{label}: expected {reprStr expected}, got {reprStr instr}")
+      else if bits != expectedBits then
+        throw (IO.userError s!"{label}: expected {expectedBits} bits, got {bits}")
+      else if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+        throw
+          (IO.userError
+            s!"{label}: expected empty decode tail, got bits={rest.bitsRemaining}, refs={rest.refsRemaining}")
+      else
+        pure ()
+
+private def expectDecodeErr
+    (label : String)
+    (code : Cell)
+    (expected : Excno) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      if e = expected then
+        pure ()
+      else
+        throw (IO.userError s!"{label}: expected {expected}, got {e}")
+  | .ok (instr, bits, _rest) =>
+      throw (IO.userError s!"{label}: expected decode error {expected}, got {reprStr instr} ({bits} bits)")
+
 def suite : InstrSuite where
   id := xchg3AltId
-  unit := #[]
+  unit := #[
+    { name := "unit/dispatch/fallback"
+      run := do
+        expectOkStack "unit/dispatch/fallback"
+          (runXchg3AltWithNext .add #[intV 1, intV 2, intV 3])
+          #[intV 1, intV 2, intV 3, intV xchg3AltDispatchSentinel] },
+    { name := "unit/runtime/matched-noop-args"
+      run := do
+        expectOkStack "unit/runtime/matched-noop-args"
+          (runXchg3AltDirect 2 1 0 #[intV 10, intV 20, intV 30])
+          #[intV 10, intV 20, intV 30] },
+    { name := "unit/runtime/underflow"
+      run := do
+        expectErr "unit/runtime/underflow"
+          (runXchg3AltDirect 1 2 3 #[intV 1, intV 2])
+          .stkUnd },
+    { name := "unit/asm/range"
+      run := do
+        expectAssembleRangeErr "unit/asm/range-x" (.xchg3 16 0 0)
+        expectAssembleRangeErr "unit/asm/range-y" (.xchg3 0 16 0)
+        expectAssembleRangeErr "unit/asm/range-z" (.xchg3 0 0 16) },
+    { name := "unit/decode/alt-form"
+      run := do
+        expectDecodeOk "unit/decode/alt-form" (xchg3AltCode 15 15 15) (.xchg3 15 15 15) 24 },
+    { name := "unit/decode/short-form"
+      run := do
+        expectDecodeOk "unit/decode/short-form" (xchg3ShortCode 0 1 2) (.xchg3 0 1 2) 16 },
+    { name := "unit/decode/neighbor-xc2pu"
+      run := do
+        expectDecodeOk "unit/decode/neighbor-xc2pu" xchg3AltNeighborCode (.xc2pu 0 0 0) 24 },
+    { name := "unit/decode/truncation"
+      run := do
+        expectDecodeErr "unit/decode/truncated-short-8" xchg3ShortTrunc8Code .invOpcode
+        expectDecodeErr "unit/decode/truncated-alt-23" xchg3AltTrunc23Code .invOpcode }
+  ]
   oracle := #[
     -- [B1] short successful distinct-index paths
     mkCase "ok/short/distinct/minimal" #[intV 10, intV 20, intV 30] (#[.xchg3 0 1 2]),
