@@ -180,38 +180,38 @@ private def genDICTIGETPREV (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 9 then
       (mkCase "fuzz/err/underflow-empty" (#[]), rng1)
     else if shape = 10 then
-      (mkCase "fuzz/err/underflow-one" (#[] ++ [intV 7]), rng1)
+      (mkCase "fuzz/err/underflow-one" (#[intV 7]), rng1)
     else if shape = 11 then
       (mkCase "fuzz/err/key-nan" (#[(.int .nan), (.cell dict8A), intV 8]), rng1)
     else if shape = 12 then
-      (mkCase "fuzz/err/type-key" (#[(.cell valueB), (.cell dict8A), intV 8]), rng1)
+      (mkCase "fuzz/err/type-key" (#[(.slice valueB), (.cell dict8A), intV 8]), rng1)
     else if shape = 13 then
       (mkCase "fuzz/err/type-dict" (stack3 (-10) (.int (.num 0)) 8), rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/type-n" (stack3 (-10) (.cell dict8A) (.null)), rng1)
+      (mkCase "fuzz/err/type-n" #[intV (-10), .cell dict8A, .null], rng1)
     else if shape = 15 then
-      (mkCodeCase "fuzz/gas/base-exact" (stack3 90 (.cell dict8A) 8)
+      (mkCase "fuzz/gas/base-exact" (stack3 90 (.cell dict8A) 8)
         (#[
           .pushInt (.num baseGas),
           .tonEnvOp .setGasLimit,
           instr
         ]) (oracleGasLimitsExact baseGas), rng1)
     else if shape = 16 then
-      (mkCodeCase "fuzz/gas/base-minus-one" (stack3 90 (.cell dict8A) 8)
+      (mkCase "fuzz/gas/base-minus-one" (stack3 90 (.cell dict8A) 8)
         (#[
           .pushInt (.num baseGasMinusOne),
           .tonEnvOp .setGasLimit,
           instr
         ]) (oracleGasLimitsExactMinusOne baseGas), rng1)
     else if shape = 17 then
-      (mkCodeCase "fuzz/gas/hit-exact" (stack3 (-10) (.cell dict8A) 8)
+      (mkCase "fuzz/gas/hit-exact" (stack3 (-10) (.cell dict8A) 8)
         (#[
           .pushInt (.num hitGas),
           .tonEnvOp .setGasLimit,
           instr
         ]) (oracleGasLimitsExact hitGas), rng1)
     else if shape = 18 then
-      (mkCodeCase "fuzz/gas/hit-minus-one" (stack3 (-10) (.cell dict8A) 8)
+      (mkCase "fuzz/gas/hit-minus-one" (stack3 (-10) (.cell dict8A) 8)
         (#[
           .pushInt (.num hitGasMinusOne),
           .tonEnvOp .setGasLimit,
@@ -229,11 +229,10 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ← runDispatchFallback (#[] ++ [intV 1, intV 2, intV 3])
-        if st == #[] ++ [intV 1, intV 2, intV 3, intV 909] then
-          pure ()
-        else
-          throw (IO.userError s!"fallback failed: expected {reprStr (#[] ++ [intV 1, intV 2, intV 3, intV 909])}, got {reprStr st}") },
+        expectOkStack
+          "fallback"
+          (runDispatchFallback #[intV 1, intV 2, intV 3])
+          #[intV 1, intV 2, intV 3, intV 909] },
     { name := "unit/opcode/assemble/exact" -- [B7]
       run := do
         let c := assembleNoRefCell! "dictigetprev/asm" #[instr]
@@ -251,7 +250,7 @@ def suite : InstrSuite where
         | .error _ => pure () },
     { name := "unit/decode/branches" -- [B7]
       run := do
-        let s0 := Slice.ofCell (rawOpcodeF47A ++ rawOpcodeF474 ++ rawOpcodeF47F)
+        let s0 := Slice.ofCell (Cell.mkOrdinary (rawOpcodeF47A.bits ++ rawOpcodeF474.bits ++ rawOpcodeF47F.bits) #[])
         let s1 ← expectDecodeStep "decode/self" s0 (.dictGetNear 10) 16
         let s2 ← expectDecodeStep "decode/prev" s1 (.dictGetNear 0) 16
         let s3 ← expectDecodeStep "decode/next" s2 (.dictGetNear 15) 16
@@ -291,10 +290,10 @@ def suite : InstrSuite where
     mkCodeCase "ok/code/raw/0xf47f" (stack3 (-10) (.cell dict8A) 8) rawOpcodeF47F, -- [B7]
     mkCase "err/underflow-empty" #[], -- [B2]
     mkCase "err/underflow-one" (#[intV 7]), -- [B2]
-    mkCase "err/type-key-non-int" (#[(.cell valueA), (.cell dict8A), intV 8]), -- [B5]
+    mkCase "err/type-key-non-int" (#[(.slice valueA), (.cell dict8A), intV 8]), -- [B5]
     mkCase "err/key-nan" (#[(.int .nan), (.cell dict8A), intV 8]), -- [B5]
     mkCase "err/type-dict" (stack3 (-10) (.int (.num 0)) 8), -- [B2][B3]
-    mkCase "err/type-n" (stack3 (-10) (.cell dict8A) (.null)), -- [B2]
+    mkCase "err/type-n" #[intV (-10), .cell dict8A, .null], -- [B2]
     mkCase "err/n-negative" (stack3 (-10) (.cell dict8A) (-1)), -- [B2][B3]
     mkCase "err/n-too-large" (stack3 (-10) (.cell dict8A) 258), -- [B2][B3]
     mkCase "err/malformed-dict-nearest" (stack3 (-1) (.cell malformedDict) 8), -- [B6]

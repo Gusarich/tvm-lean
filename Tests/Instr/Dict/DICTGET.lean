@@ -266,6 +266,9 @@ private def mkCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private instance : Coe Instr (Array Instr) where
+  coe i := #[i]
+
 private def mkCaseCode
     (name : String)
     (stack : Array Value := #[])
@@ -357,7 +360,7 @@ private def genDictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 24 then
       mkCase (s!"{baseName}/byref-int-malformed") (stackInt 1 (.cell dictInt8ByRefRoot) 8) dictGetIntRef
     else
-      mkCase (s!"{baseName}/raw") #[] rawF40a
+      mkCaseCode (s!"{baseName}/raw") #[] rawF40a
   ({ case0 with name := s!"{baseName}/{shape}"}, rng2)
 
 def suite : InstrSuite where
@@ -369,11 +372,11 @@ def suite : InstrSuite where
         expectOkStack
           "fallback/non-match"
           (runDictGetDispatchFallback .add #[])
-          (# [intV sentinel])
+          (#[intV sentinel])
         expectOkStack
           "match/executes-dictget"
           (runDictGet dictGetSlice (stackInt 5 (.cell dictSlice8Root) 8))
-          (# [dict8Marker5, intV (-1)]) },
+          (#[.slice dict8Marker5, intV (-1)]) },
     { name := "unit/underflow"
       run := do
         expectErr "empty-stack" (runDictGet dictGetSlice #[]) .stkUnd
@@ -402,53 +405,53 @@ def suite : InstrSuite where
         expectOkStack
           "slice-key-n0-hit"
           (runDictGet dictGetSlice (stackSlice (natToBits 5 8) (.cell dictSlice0Root) 0))
-          (# [dict0Marker0, intV (-1)])
+          (#[.slice dict0Marker0, intV (-1)])
         expectOkStack
           "slice-key-n0-miss-root"
           (runDictGet dictGetSlice (stackSlice (natToBits 5 8) .null 0))
-          (# [intV 0]) },
+          (#[intV 0]) },
     { name := "unit/int-key-miss-hit"
       run := do
         expectOkStack
           "signed-hit-5"
           (runDictGet dictGetInt (stackInt 5 (.cell dictInt8Root) 8))
-          (# [dict8Marker5, intV (-1)])
+          (#[.slice dict8Marker5, intV (-1)])
         expectOkStack
           "signed-miss-positive"
           (runDictGet dictGetInt (stackInt 127 (.cell dictInt8Root) 8))
-          (# [intV 0])
+          (#[intV 0])
         expectOkStack
           "unsigned-hit-255"
           (runDictGet dictGetUInt (stackInt 255 (.cell dictInt8UnsignedRoot) 8))
-          (# [dict8U255, intV (-1)])
+          (#[.slice dict8U255, intV (-1)])
         expectOkStack
           "unsigned-miss-negative"
           (runDictGet dictGetUInt (stackInt (-1) (.cell dictInt8UnsignedRoot) 8))
-          (# [intV 0])
+          (#[intV 0])
         expectOkStack
           "signed-key-width"
           (runDictGet dictGetInt (stackInt 1 (.cell dictInt1Root) 1))
-          (# [intV 0])
+          (#[intV 0])
         expectOkStack
           "unsigned-key-width"
           (runDictGet dictGetUInt (stackInt 1 (.cell dictInt0Root) 0))
-          (# [intV 0]) },
+          (#[intV 0]) },
     { name := "unit/stack-preserve"
       run := do
         expectOkStack
           "slice-preserve-prefix"
           (runDictGet dictGetSlice #[intV 77, .cell dictSlice8Root, intV 5, intV 8])
-          (# [intV 77, dict8Marker5, intV (-1)])
+          (#[intV 77, .slice dict8Marker5, intV (-1)])
         expectOkStack
           "int-preserve-prefix"
           (runDictGet dictGetInt #[intV 77, .cell dictInt8Root, intV 5, intV 8])
-          (# [intV 77, dict8Marker5, intV (-1)]) },
+          (#[intV 77, .slice dict8Marker5, intV (-1)]) },
     { name := "unit/by-ref-retrieval"
       run := do
         expectOkStack
           "slice-byref-hit"
           (runDictGet dictGetSliceRef (stackSlice (natToBits 5 8) (.cell dictSliceByRefRoot) 8))
-          (# [byRefValueMarker, intV (-1)])
+          (#[byRefValueMarker, intV (-1)])
         expectErr
           "slice-byref-malformed"
           (runDictGet dictGetSliceRef (stackSlice (natToBits 1 8) (.cell dictSliceByRefRoot) 8))
@@ -456,7 +459,7 @@ def suite : InstrSuite where
         expectOkStack
           "int-byref-hit"
           (runDictGet dictGetIntRef (stackInt 5 (.cell dictInt8ByRefRoot) 8))
-          (# [byRefValueMarker, intV (-1)])
+          (#[byRefValueMarker, intV (-1)])
         expectErr
           "int-byref-malformed"
           (runDictGet dictGetIntRef (stackInt 1 (.cell dictInt8ByRefRoot) 8))

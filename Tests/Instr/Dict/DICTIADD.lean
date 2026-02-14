@@ -53,7 +53,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - success/failure, byRef toggles, signed/unsigned key mode, malformed roots, and both underflow/type/range families.
 
 TOTAL BRANCHES: 9
--*/
+-/
 
 private def dictIAddId : InstrId := { name := "DICTIADD" }
 
@@ -414,9 +414,9 @@ def suite : InstrSuite where
     -- [B4] type check: key is not int.
     , caseDictIAdd "oracle/err/key-type" false false #[.slice mkValidSliceValue, .null, .cell dictSignedOtherKey, intV 4]
     -- [B4] type check: wrong value type for non-ref path.
-    , caseDictIAdd "oracle/err/value-type/nonref" false false (mkCaseStack false false 1 (.cell dictSignedOtherKey) 4 .cell malformedDictRoot)
+    , caseDictIAdd "oracle/err/value-type/nonref" false false (mkCaseStack false false 1 (.cell dictSignedOtherKey) 4 (.cell malformedDictRoot))
     -- [B4] type check: wrong value type for by-ref path.
-    , caseDictIAdd "oracle/err/value-type/byref" false true (mkCaseStack false true 1 (.cell dictSignedOtherKey) 4 .slice mkBadSliceValue)
+    , caseDictIAdd "oracle/err/value-type/byref" false true (mkCaseStack false true 1 (.cell dictSignedOtherKey) 4 (.slice mkBadSliceValue))
 
     -- [B5] dictionary structural error: malformed root.
     , caseDictIAdd "oracle/err/malformed-root" false false (mkCaseStack false false 1 (.cell malformedDictRoot) 4)

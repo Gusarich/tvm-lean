@@ -220,7 +220,7 @@ private def genDICTGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 1 then
       (mkCase (s!"fuzz/miss/null-n0/{tag}") (stackSliceKey (signedKeyBits "fuzz/miss/null-n0" 0 0) .null 0), rng2)
     else if shape = 2 then
-      (mkCase (s!"fuzz/miss/wide-null/{tag}") (stackSliceKey (signedKeyBits "fuzz/miss/wide-null" 1 1) .null 257), rng2)
+      (mkCase (s!"fuzz/miss/wide-null/{tag}") (stackSliceKey (signedKeyBits "fuzz/miss/wide-null" 0 1) .null 257), rng2)
     else if shape = 3 then
       (mkCase (s!"fuzz/miss/narrow/{tag}") (stackSliceKey (signedKeyBits "fuzz/miss/narrow" 0 1) (.cell dictSigned1) 1), rng2)
     else if shape = 4 then
@@ -246,17 +246,17 @@ private def genDICTGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 14 then
       (mkCase (s!"fuzz/err/key-builder/{tag}") (#[.builder Builder.empty, .cell dictSigned8, intV 8]), rng2)
     else if shape = 15 then
-      (mkCase (s!"fuzz/err/dict-type/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/dict-type" 5 8)), dictTypeValue, intV 8], rng2)
+      (mkCase (s!"fuzz/err/dict-type/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/dict-type" 5 8)), dictTypeValue, intV 8]), rng2)
     else if shape = 16 then
-      (mkCase (s!"fuzz/err/n-null/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-null" 5 8)), .cell dictSigned8, .null], rng2)
+      (mkCase (s!"fuzz/err/n-null/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-null" 5 8)), .cell dictSigned8, .null]), rng2)
     else if shape = 17 then
-      (mkCase (s!"fuzz/err/n-builder/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-builder" 5 8)), .cell dictSigned8, .builder Builder.empty], rng2)
+      (mkCase (s!"fuzz/err/n-builder/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-builder" 5 8)), .cell dictSigned8, .builder Builder.empty]), rng2)
     else if shape = 18 then
-      (mkCase (s!"fuzz/err/n-nan/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-nan" 5 8)), .cell dictSigned8, .int .nan], rng2)
+      (mkCase (s!"fuzz/err/n-nan/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-nan" 5 8)), .cell dictSigned8, .int .nan]), rng2)
     else if shape = 19 then
-      (mkCase (s!"fuzz/err/n-negative/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)], rng2)
+      (mkCase (s!"fuzz/err/n-negative/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)]), rng2)
     else if shape = 20 then
-      (mkCase (s!"fuzz/err/n-too-large/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-too-large" 5 8)), .cell dictSigned8, intV 1024], rng2)
+      (mkCase (s!"fuzz/err/n-too-large/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-too-large" 5 8)), .cell dictSigned8, intV 1024]), rng2)
     else if shape = 21 then
       (mkCase (s!"fuzz/err/key-too-short/{tag}") (#[.slice (mkSliceFromBits (natToBits 5 4)), .cell dictSigned8, intV 8]), rng2)
     else if shape = 22 then
@@ -344,11 +344,11 @@ def suite : InstrSuite where
         expectErr "bad-value-bits" (runDirect (stackSliceKey (signedKeyBits "unit/err/bad-value-bits" 6 8) (.cell dictBadValueBits) 8)) .dictErr
         expectErr "bad-value-refs" (runDirect (stackSliceKey (signedKeyBits "unit/err/bad-value-refs" 7 8) (.cell dictBadValueRefs) 8)) .dictErr
         expectErr "malformed-dict" (runDirect (stackSliceKey (signedKeyBits "unit/err/malformed-dict" 5 8) (.cell malformedDict) 8)) .dictErr
-        expectErr "n-negative" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)]) .rangeChk
-        expectErr "n-too-large" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-too-large" 5 8)), .cell dictSigned8, intV 1024]) .rangeChk
-        expectErr "n-nan" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-nan" 5 8)), .cell dictSigned8, .int .nan]) .rangeChk
+        expectErr "n-negative" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)])) .rangeChk
+        expectErr "n-too-large" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-too-large" 5 8)), .cell dictSigned8, intV 1024])) .rangeChk
+        expectErr "n-nan" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-nan" 5 8)), .cell dictSigned8, .int .nan])) .rangeChk
         expectErr "key-non-slice" (runDirect (stackSliceKey (signedKeyBits "unit/err/key-non-slice" 5 8) (.cell dictSigned8) 8)) .typeChk
-        expectErr "dict-non-cell" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/dict-non-cell" 5 8)), dictTypeValue, intV 8]) .typeChk
+        expectErr "dict-non-cell" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/dict-non-cell" 5 8)), dictTypeValue, intV 8])) .typeChk
         expectErr "underflow-empty" (runDirect #[]) .stkUnd }
   ]
   oracle := #[
@@ -358,7 +358,7 @@ def suite : InstrSuite where
     mkCase "oracle/underflow-two" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/underflow-two" 5 8)), .cell dictSigned8]),
 
     -- [B3]
-    mkCase "oracle/err/n-null" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-null" 5 8)), .cell dictSigned8, .null),
+    mkCase "oracle/err/n-null" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-null" 5 8)), .cell dictSigned8, .null]),
     mkCase "oracle/err/n-builder" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-builder" 5 8)), .cell dictSigned8, .builder Builder.empty]),
     mkCase "oracle/err/n-nan" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-nan" 5 8)), .cell dictSigned8, .int .nan]),
     mkCase "oracle/err/n-negative" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)]),
@@ -369,12 +369,12 @@ def suite : InstrSuite where
     mkCase "oracle/err/key-cell" (#[.cell Cell.empty, .cell dictSigned8, intV 8]),
     mkCase "oracle/err/key-int" (#[.int (.num 11), .cell dictSigned8, intV 8]),
     mkCase "oracle/err/key-builder" (#[.builder Builder.empty, .cell dictSigned8, intV 8]),
-    mkCase "oracle/err/dict-type" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/dict-type" 5 8)), dictTypeValue, intV 8),
+    mkCase "oracle/err/dict-type" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/dict-type" 5 8)), dictTypeValue, intV 8]),
     mkCase "oracle/err/key-too-short" (#[.slice (mkSliceFromBits (natToBits 5 4)), .cell dictSigned8, intV 8]),
 
     -- [B6]
     mkCase "oracle/miss/null" (stackSliceKey (signedKeyBits "oracle/miss/null" 5 8) .null 8),
-    mkCase "oracle/miss/wide-null" (stackSliceKey (signedKeyBits "oracle/miss/wide-null" 1 1) .null 257),
+    mkCase "oracle/miss/wide-null" (stackSliceKey (signedKeyBits "oracle/miss/wide-null" 0 1) .null 257),
     mkCase "oracle/miss/key-not-found" (stackSliceKey (signedKeyBits "oracle/miss/not-found" 11 8) (.cell dictSigned8) 8),
     mkCase "oracle/miss/narrow-key-miss" (stackSliceKey (signedKeyBits "oracle/miss/narrow-key-miss" 0 1) (.cell dictSigned8) 1),
     mkCase "oracle/hit/5" (stackSliceKey (signedKeyBits "oracle/hit/5" 5 8) (.cell dictSigned8) 8),

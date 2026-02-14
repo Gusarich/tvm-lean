@@ -193,6 +193,9 @@ private def mkDictAddGetBCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private instance : Coe Instr (Array Instr) where
+  coe i := #[i]
+
 private def mkCodeCase
     (name : String)
     (stack : Array Value)
@@ -215,7 +218,7 @@ private def mkGasCase
     (fuel : Nat := 1_000_000) : OracleCase :=
   mkDictAddGetBCase name
     stack
-    (#[] ++ [ .pushInt (.num gas), .tonEnvOp .setGasLimit, instr ])
+    (#[ .pushInt (.num gas), .tonEnvOp .setGasLimit, instr ])
     gasLimits
     fuel
 
@@ -271,11 +274,11 @@ private def createBitsUnsigned4 : Nat :=
 
 private def dictAddGetBExactGas : Int := computeExactGasBudget instrSlice
 private def dictAddGetBMissSliceGas : Int :=
-  dictAddGetBExactGas + Int.ofNat (createBitsSlice4 * cellCreateGasPrice)
+  dictAddGetBExactGas + (Int.ofNat createBitsSlice4 * cellCreateGasPrice)
 private def dictAddGetBMissSignedGas : Int :=
-  dictAddGetBExactGas + Int.ofNat (createBitsSigned4 * cellCreateGasPrice)
+  dictAddGetBExactGas + (Int.ofNat createBitsSigned4 * cellCreateGasPrice)
 private def dictAddGetBMissUnsignedGas : Int :=
-  dictAddGetBExactGas + Int.ofNat (createBitsUnsigned4 * cellCreateGasPrice)
+  dictAddGetBExactGas + (Int.ofNat createBitsUnsigned4 * cellCreateGasPrice)
 private def dictAddGetBMissSliceGasMinusOne : Int :=
   if dictAddGetBMissSliceGas > 0 then dictAddGetBMissSliceGas - 1 else 0
 private def dictAddGetBMissSignedGasMinusOne : Int :=
@@ -311,19 +314,23 @@ private def genDictAddGetBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 5 =>
         (mkDictAddGetBCase
           "fuzz/int-signed-hit"
-          (mkDictCaseIntStack valueA 7 (.cell dictSigned4) 4), instrSigned)
+          (mkDictCaseIntStack valueA 7 (.cell dictSigned4) 4)
+          instrSigned, rng2)
     | 6 =>
         (mkDictAddGetBCase
           "fuzz/int-signed-miss"
-          (mkDictCaseIntStack valueA 2 (.cell dictSigned4) 4), instrSigned)
+          (mkDictCaseIntStack valueA 2 (.cell dictSigned4) 4)
+          instrSigned, rng2)
     | 7 =>
         (mkDictAddGetBCase
           "fuzz/int-unsigned-hit"
-          (mkDictCaseIntStack valueA 255 (.cell dictUnsigned8) 8), instrSignedUnsigned)
+          (mkDictCaseIntStack valueA 255 (.cell dictUnsigned8) 8)
+          instrSignedUnsigned, rng2)
     | 8 =>
         (mkDictAddGetBCase
           "fuzz/int-unsigned-miss"
-          (mkDictCaseIntStack valueA 7 (.cell dictUnsigned8) 8), instrSignedUnsigned)
+          (mkDictCaseIntStack valueA 7 (.cell dictUnsigned8) 8)
+          instrSignedUnsigned, rng2)
     | 9 =>
         (mkDictAddGetBCase
           "fuzz/key-too-short"
@@ -343,11 +350,13 @@ private def genDictAddGetBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 13 =>
         (mkDictAddGetBCase
           "fuzz/key-int-out-of-range/signed"
-          (mkDictCaseIntStack valueA 8 (.cell dictSigned4) 4), instrSigned)
+          (mkDictCaseIntStack valueA 8 (.cell dictSigned4) 4)
+          instrSigned, rng2)
     | 14 =>
         (mkDictAddGetBCase
           "fuzz/key-int-out-of-range/unsigned"
-          (mkDictCaseIntStack valueA (-1) (.cell dictUnsigned8) 8), instrSignedUnsigned)
+          (mkDictCaseIntStack valueA (-1) (.cell dictUnsigned8) 8)
+          instrSignedUnsigned, rng2)
     | 15 =>
         (mkDictAddGetBCase
           "fuzz/type/dict-not-cell"
@@ -415,10 +424,11 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/next"
       run := do
-        let st ← runDictAddGetBFallback (mkDictCaseIntStack valueA 1 (.cell dictSigned4) 4)
         let expected := mkDictCaseIntStack valueA 1 (.cell dictSigned4) 4 ++ #[.int (.num 777)]
-        if st != expected then
-          throw (IO.userError s!"dispatch/next: expected {reprStr expected}, got {reprStr st}")
+        expectOkStack
+          "dispatch/next"
+          (runDictAddGetBFallback (mkDictCaseIntStack valueA 1 (.cell dictSigned4) 4))
+          expected
     },
     { name := "unit/decoder/decode/f455"
       run := do

@@ -346,7 +346,7 @@ def suite : InstrSuite where
     { name := "unit/exec/ok-empty-null"
       run := do
         let expected : Cell :=
-          mkSetFromInt! "unit/exec/ok-empty-null" none 1 1 builderA
+          mkSetFromInt! "unit/exec/ok-empty-null" none 1 0 builderA
         expectOkStack "unit/exec/ok-empty-null"
           (runDICTISETBDirect (mkISETBStack 1 1 .null))
           #[.cell expected]

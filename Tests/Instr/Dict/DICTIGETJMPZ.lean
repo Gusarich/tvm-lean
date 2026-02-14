@@ -84,7 +84,7 @@ private def dictSignedHitRoot : Cell :=
   mkDictRootSlice! "dict/signed/hit" 3 4 false mkMethodValue
 
 private def dictSignedMissRoot : Cell :=
-  mkDictRootSlice! "dict/signed/miss" 9 4 false mkMethodValue
+  mkDictRootSlice! "dict/signed/miss" 2 4 false mkMethodValue
 
 private def dictUnsignedHitRoot : Cell :=
   mkDictRootSlice! "dict/unsigned/hit" 13 4 true mkMethodValue
@@ -187,7 +187,7 @@ private def genDictIGETJMPZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 1 then
       mkCase "[fuzz] hit/unsigned" true (mkDictCaseStack (intV 13) (.cell dictUnsignedHitRoot) (intV 4))
     else if shape = 2 then
-      mkCase "[fuzz] miss/signed" false (mkDictCaseStack (intV 9) (.cell dictSignedMissRoot) (intV 4))
+      mkCase "[fuzz] miss/signed" false (mkDictCaseStack (intV 7) (.cell dictSignedMissRoot) (intV 4))
     else if shape = 3 then
       mkCase "[fuzz] miss/unsigned" true (mkDictCaseStack (intV 2) (.cell dictUnsignedMissRoot) (intV 4))
     else if shape = 4 then

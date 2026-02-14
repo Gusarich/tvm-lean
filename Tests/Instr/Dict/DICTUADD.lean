@@ -281,13 +281,12 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ← runDictUAddDispatchFallback #[.slice valueA, intV 5, .cell dictU8Single, intV 8]
         let expected : Array Value :=
           (#[] : Array Value) ++ [ .slice valueA, intV 5, .cell dictU8Single, intV 8, intV dispatchSentinel ]
-        if st == expected then
-          pure ()
-        else
-          throw (IO.userError s!"dispatch/fallback: expected appended sentinel, got {reprStr st}") },
+        expectOkStack
+          "dispatch/fallback"
+          (runDictUAddDispatchFallback #[.slice valueA, intV 5, .cell dictU8Single, intV 8])
+          expected },
     { name := "unit/encoding/valid" -- [B7]
       run := do
         match assembleCp0 [instr] with

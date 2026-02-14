@@ -309,12 +309,12 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        match runDICTIREPLACEGETREFDispatchFallback (#[.int (.num 1), .int (.num 2), .int (.num 3), .cell dictSigned8Single]) with
+        match runDICTIREPLACEGETREFDispatchFallback (#[intV 1, intV 2, intV 3, .cell dictSigned8Single]) with
         | .ok st =>
-            if st == #[.int (.num 1), .int (.num 2), .int (.num 3), .cell dictSigned8Single, .int (.num 909)] then
+            if st == #[intV 1, intV 2, intV 3, .cell dictSigned8Single, intV 909] then
               pure ()
             else
-              throw (IO.userError s!"dispatch/fallback failed: expected {reprStr #[.int (.num 1), .int (.num 2), .int (.num 3), .cell dictSigned8Single, .int (.num 909)]}, got {reprStr st}")
+              throw (IO.userError s!"dispatch/fallback failed: expected {reprStr #[intV 1, intV 2, intV 3, .cell dictSigned8Single, intV 909]}, got {reprStr st}")
         | .error e =>
             throw (IO.userError s!"dispatch/fallback failed with {e}") },
     { name := "unit/decode/f42a" -- [B7]

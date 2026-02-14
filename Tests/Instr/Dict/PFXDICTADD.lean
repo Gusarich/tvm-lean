@@ -109,7 +109,7 @@ private def mkSliceKey (n : Nat) (value : Nat) : Slice :=
   mkSliceFromBits (natToBits value n)
 
 private def requireBits (label : String) (key : Int) (n : Nat) : BitString :=
-  match dictKeyBits? key n false with
+  match dictKeyBits? key n true with
   | some bits => bits
   | none => panic! s!"{label}: invalid key key={key} for n={n}"
 

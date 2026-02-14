@@ -156,7 +156,7 @@ private def dictTwoRef257 : Cell :=
   mkDictRefRoot! "dictTwoRef257" 257 #[(minInt257, valueA), (maxInt257, valueB)]
 
 private def dictSliceSingle8 : Cell :=
-  mkDictSliceRoot! "dictSliceSingle8" 8 #[(7, Slice.ofCell (Cell.mkOrdinary (natToBits 0xF0 8) #[])]
+  mkDictSliceRoot! "dictSliceSingle8" 8 #[(7, Slice.ofCell (Cell.mkOrdinary (natToBits 0xF0 8) #[]))]
 
 private def malformedDict : Cell :=
   Cell.mkOrdinary (natToBits 0b1 1) #[]
@@ -299,11 +299,10 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ← runDictIMaxRefDispatchFallback #[.cell dictSingleRef8, intV 8]
-        if st == #[.cell dictSingleRef8, intV 8, intV dispatchSentinel] then
-          pure ()
-        else
-          throw (IO.userError s!"fallback failed: expected {reprStr #[.cell dictSingleRef8, intV 8, intV dispatchSentinel]}, got {reprStr st}") },
+        expectOkStack
+          "fallback"
+          (runDictIMaxRefDispatchFallback #[.cell dictSingleRef8, intV 8])
+          #[.cell dictSingleRef8, intV 8, intV dispatchSentinel] },
     { name := "unit/miss/null/0" -- [B2][B3]
       run := do
         expectOkStack "miss-null/0" (runDictIMaxRefDirect #[dictNull, intV 0]) #[intV 0] },
@@ -378,9 +377,9 @@ def suite : InstrSuite where
         | .error e =>
             throw (IO.userError s!"expected assemble success, got {e}") },
     { name := "unit/asm/reject-gap" -- [B7]
-      run := expectAssembleErr "asm-reject-gap" (ExecInstr.dictGetMinMax 9) .invOpcode },
+      run := expectAssembleErr "asm-reject-gap" (.dictGetMinMax 9) .invOpcode },
     { name := "unit/asm/reject-range" -- [B7]
-      run := expectAssembleErr "asm-reject-range" (ExecInstr.dictGetMinMax 33) .rangeChk },
+      run := expectAssembleErr "asm-reject-range" (.dictGetMinMax 33) .rangeChk },
     { name := "unit/decode/chain" -- [B8]
       run := do
         expectDecodeOk "decode-f48c" rawOpcodeF48C (.dictGetMinMax 12)

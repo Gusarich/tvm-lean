@@ -81,7 +81,7 @@ private def malformedCell : Cell :=
   Cell.mkOrdinary (natToBits 0b1010 4) #[]
 
 private def requireBits (label : String) (k : Int) (n : Nat) : BitString :=
-  match dictKeyBits? k n false with
+  match dictKeyBits? k n true with
   | some bits => bits
   | none => panic! s!"{label}: invalid key k={k}, n={n}"
 

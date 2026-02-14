@@ -292,8 +292,7 @@ def suite : InstrSuite where
             (runRaw
               (mkInstr false false)
               (mkDictCaseStack 13 dictUnsignedHitRoot 4)
-              { Regs.initial with c0 := .quit 17 }
-              (Slice.ofCell Cell.empty))
+              { Regs.initial with c0 := .quit 17 })
         expectJumpTransfer "raw/jump" (.quit 17) st },
     { name := "unit/raw/call" -- [B10]
       run := do

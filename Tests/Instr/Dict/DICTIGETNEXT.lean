@@ -200,7 +200,7 @@ private def genDICTIGETNEXT (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 12 then
       (mkCase "fuzz/underflow/empty" #[], rng1) -- [B2]
     else if shape = 13 then
-      (mkCase "fuzz/underflow/one" (#[] ++ [intV 7]), rng1) -- [B2]
+      (mkCase "fuzz/underflow/one" #[intV 7], rng1) -- [B2]
     else if shape = 14 then
       (mkCase "fuzz/underflow/two" (stack3 5 dict8A 8 |>.take 2), rng1) -- [B2]
     else if shape = 15 then
@@ -325,7 +325,7 @@ def suite : InstrSuite where
     mkCase "ok/oob-neg-257" (stack3 (minInt257 - 1) dict257A 257), -- [B4]
     mkCase "ok/oob-neg-257-empty" (stack3 (minInt257 - 1) dictNull 257), -- [B4]
     mkCase "err/underflow-empty" #[], -- [B2]
-    mkCase "err/underflow-one" (#[] ++ [intV 7]), -- [B2]
+    mkCase "err/underflow-one" #[intV 7], -- [B2]
     mkCase "err/underflow-two" (stack3 5 dict8A 8 |>.take 2), -- [B2]
     mkCase "err/n/type" (#[.int (.num 5), dict8A, .tuple #[]]), -- [B2]
     mkCase "err/n/nan" (#[.int .nan, dict8A, intV 8]), -- [B2]

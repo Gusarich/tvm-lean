@@ -223,7 +223,7 @@ def suite : InstrSuite where
             throw (IO.userError s!"assemble valid opcode failed: {reprStr e}") },
     { name := "unit/opcode/assemble/reject-gap" -- [B8]
       run := do
-        match assembleCp0 [ExecInstr.dictGetMinMax 1] with
+        match assembleCp0 [.dictGetMinMax 1] with
         | .ok _ =>
             throw (IO.userError "assemble accepted invalid args=1")
         | .error _ =>
@@ -240,7 +240,7 @@ def suite : InstrSuite where
         expectDecodeErr "decode/truncated-8" rawTruncated8 .invOpcode },
     { name := "unit/exec/hit-and-miss-order" -- [B2][B3][B4][B5][B6]
       run := do
-        expectOkStack "direct/hit/single8" (runDictIMinDirect #[(.cell dictSingle8), intV 8]) #[valueA, intV 0, intV (-1)]
+        expectOkStack "direct/hit/single8" (runDictIMinDirect #[(.cell dictSingle8), intV 8]) #[.slice valueA, intV 0, intV (-1)]
         expectOkStack "direct/miss/null" (runDictIMinDirect #[(.null), intV 8]) #[intV 0] }
   ]
   oracle := #[

@@ -269,16 +269,16 @@ def genDictIremMaxRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 20 then
       (mkCase "fuzz/err/bad-ref-value" #[ .cell dictSliceSingle8, intV 8], rng1)
     else if shape = 21 then
-      (mkCodeCase "fuzz/gas/base-exact-miss" #[dictNull, intV 8]
+      (mkCase "fuzz/gas/base-exact-miss" #[dictNull, intV 8]
         (#[.pushInt (.num baseGas), .tonEnvOp .setGasLimit, instr]) (oracleGasLimitsExact baseGas), rng1)
     else if shape = 22 then
-      (mkCodeCase "fuzz/gas/base-exact-minus-one-miss" #[dictNull, intV 8]
+      (mkCase "fuzz/gas/base-exact-minus-one-miss" #[dictNull, intV 8]
         (#[.pushInt (.num baseGasMinusOne), .tonEnvOp .setGasLimit, instr]) (oracleGasLimitsExactMinusOne baseGasMinusOne), rng1)
     else if shape = 23 then
-      (mkCodeCase "fuzz/gas/remove-two8-exact" #[.cell dictTwoRef8, intV 8]
+      (mkCase "fuzz/gas/remove-two8-exact" #[.cell dictTwoRef8, intV 8]
         (#[.pushInt (.num removeTwoRef8Gas), .tonEnvOp .setGasLimit, instr]) (oracleGasLimitsExact removeTwoRef8Gas), rng1)
     else
-      (mkCodeCase "fuzz/gas/remove-two8-exact-minus-one" #[.cell dictTwoRef8, intV 8]
+      (mkCase "fuzz/gas/remove-two8-exact-minus-one" #[.cell dictTwoRef8, intV 8]
         (#[.pushInt (.num removeTwoRef8GasMinusOne), .tonEnvOp .setGasLimit, instr]) (oracleGasLimitsExactMinusOne removeTwoRef8GasMinusOne), rng1)
   let (tag, rng3) := randNat rng2 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng3)
@@ -293,12 +293,10 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ←
-          runDispatchFallback #[intV 1, intV 2]
-        if st == #[intV 1, intV 2, intV 909] then
-          pure ()
-        else
-          throw (IO.userError s!"dispatch fallback failed: expected {reprStr #[intV 1, intV 2, intV 909]}, got {reprStr st}") },
+        expectOkStack
+          "dispatch/fallback"
+          (runDispatchFallback #[intV 1, intV 2])
+          #[intV 1, intV 2, intV 909] },
     { name := "unit/asm/assemble-ok" -- [B7]
       run := do
         match assembleCp0 [instr] with
@@ -351,12 +349,12 @@ def suite : InstrSuite where
       run := do
         expectOkStack "hit-257-max"
           (runDirect #[ .cell dictSingleRef257Max, intV 257])
-          #[.null, .cell valueB, maxInt257, intV (-1)] },
+          #[.null, .cell valueB, intV maxInt257, intV (-1)] },
     { name := "unit/exec/hit-257-boundary-min" -- [B6][B3]
       run := do
         expectOkStack "hit-257-min"
           (runDirect #[ .cell dictSingleRef257Min, intV 257])
-          #[.null, .cell valueA, minInt257, intV (-1)] },
+          #[.null, .cell valueA, intV minInt257, intV (-1)] },
     { name := "unit/exec/byref-shape-invalid" -- [B6][B5]
       run := do
         expectErr "bad-ref-shape" (runDirect #[ .cell dictSliceSingle8, intV 8]) .dictErr },

@@ -86,7 +86,7 @@ private def malformedCell : Cell :=
   Cell.mkOrdinary (natToBits 0b1010 4) #[]
 
 private def requireBits (label : String) (k : Int) (n : Nat) : BitString :=
-  match dictKeyBits? k n false with
+  match dictKeyBits? k n true with
   | some bits => bits
   | none => panic! s!"{label}: invalid key k={k}, n={n}"
 
@@ -99,7 +99,7 @@ private def mkSliceDictRoot! (label : String) (n : Nat) (entries : Array (Int ×
     for e in entries do
       let (k, v) := e
       let bits : BitString := requireBits label k n
-      match dictSetSliceWithCells root bits v .replace with
+      match dictSetSliceWithCells root bits v .set with
       | .ok (some r, _ok, _created, _loaded) =>
           root := some r
       | .ok (none, _, _, _) =>
@@ -116,7 +116,7 @@ private def mkRefDictRoot! (label : String) (n : Nat) (entries : Array (Int × C
     for e in entries do
       let (k, v) := e
       let bits : BitString := requireBits label k n
-      match dictSetRefWithCells root bits v .replace with
+      match dictSetRefWithCells root bits v .set with
       | .ok (some r, _ok, _created, _loaded) =>
           root := some r
       | .ok (none, _, _, _) =>

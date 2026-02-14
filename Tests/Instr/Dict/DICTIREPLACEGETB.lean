@@ -301,9 +301,9 @@ private def genDICTIREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       else if sel = 2 then
         mkCase "fuzz/signed-hit/8/42" (mkIntStack 8 42 (.cell dictSigned8) valueA)
       else if sel = 3 then
-        mkCase "fuzz/unsigned-hit/8/0" (mkIntStack 8 0 (.cell dictUnsigned8) valueB) instrSignedUnsigned
+        mkCase "fuzz/unsigned-hit/8/0" (mkIntStack 8 0 (.cell dictUnsigned8) valueB) #[instrSignedUnsigned]
       else
-        mkCase "fuzz/unsigned-hit/8/255" (mkIntStack 8 255 (.cell dictUnsigned8) valueC) instrSignedUnsigned
+        mkCase "fuzz/unsigned-hit/8/255" (mkIntStack 8 255 (.cell dictUnsigned8) valueC) #[instrSignedUnsigned]
     (c, rng2)
   else if shape < 44 then
     let (sel, rng2) := randBool rng1
@@ -317,11 +317,11 @@ private def genDICTIREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
     let (sel, rng2) := randNat rng1 0 2
     let c : OracleCase :=
       if sel = 0 then
-        mkCase "fuzz/slice-hit" (mkSliceStack 8 slice8C (.cell dictSlice8) valueA) instrSlice
+        mkCase "fuzz/slice-hit" (mkSliceStack 8 slice8C (.cell dictSlice8) valueA) #[instrSlice]
       else if sel = 1 then
-        mkCase "fuzz/slice-miss" (mkSliceStack 8 slice8Miss (.cell dictSlice8) valueA) instrSlice
+        mkCase "fuzz/slice-miss" (mkSliceStack 8 slice8Miss (.cell dictSlice8) valueA) #[instrSlice]
       else
-        mkCase "fuzz/slice-cellund" (mkSliceStack 8 slice8Short (.cell dictSlice8) valueA) instrSlice
+        mkCase "fuzz/slice-cellund" (mkSliceStack 8 slice8Short (.cell dictSlice8) valueA) #[instrSlice]
     (c, rng2)
   else if shape < 70 then
     let (sel, rng2) := randNat rng1 0 5
@@ -337,13 +337,13 @@ private def genDICTIREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       else if sel = 4 then
         mkCase "fuzz/range/int-key-low" (mkIntStack 4 (-9) (.cell dictSigned4) valueA)
       else
-        mkCase "fuzz/range/unsigned-high" (mkIntStack 8 (-1) (.cell dictUnsigned8) valueA) instrSignedUnsigned
+        mkCase "fuzz/range/unsigned-high" (mkIntStack 8 (-1) (.cell dictUnsigned8) valueA) #[instrSignedUnsigned]
     (c, rng2)
   else if shape < 84 then
     let (sel, rng2) := randNat rng1 0 4
     let c : OracleCase :=
       if sel = 0 then
-        mkCase "fuzz/type/value-not-builder" (#[] ++ [ .int (.num 7), intV 1, .cell dictSigned4, intV 4 ])
+        mkCase "fuzz/type/value-not-builder" (#[ .int (.num 7), intV 1, .cell dictSigned4, intV 4 ])
       else if sel = 1 then
         mkCase "fuzz/type/key-not-int" (#[.builder valueA, .slice slice8A, .cell dictSigned8, intV 8])
       else if sel = 2 then
@@ -351,7 +351,7 @@ private def genDICTIREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       else if sel = 3 then
         mkCase "fuzz/type/malformed-int-root" (mkIntStack 8 1 (.cell malformedDict) valueA)
       else
-        mkCase "fuzz/type/malformed-slice-root" (mkSliceStack 8 slice8A (.cell malformedDict) valueA) instrSlice
+        mkCase "fuzz/type/malformed-slice-root" (mkSliceStack 8 slice8A (.cell malformedDict) valueA) #[instrSlice]
     (c, rng2)
   else
     let (sel, rng2) := randNat rng1 0 5
@@ -377,12 +377,8 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ← runDICTIREPLACEGETBFallback (mkIntStack 4 1 (.cell dictSigned4) valueA)
         let expected := mkIntStack 4 1 (.cell dictSigned4) valueA ++ #[.int (.num 777)]
-        if st == expected then
-          pure ()
-        else
-          throw (IO.userError s!"fallback failed: expected {reprStr expected}, got {reprStr st}") },
+        expectOkStack "fallback" (runDICTIREPLACEGETBFallback (mkIntStack 4 1 (.cell dictSigned4) valueA)) expected },
     { name := "unit/asm/reject" -- [B8]
       run := do
         expectAssembleErr "assemble/slice" .invOpcode instrSlice
@@ -405,7 +401,7 @@ def suite : InstrSuite where
         expectErr "underflow" (runDICTIREPLACEGETBDirect instrSlice #[]) .stkUnd
         expectErr "n-negative" (runDICTIREPLACEGETBDirect instrSlice (mkIntStack (-1) 1 (.cell dictSigned8) valueA)) .rangeChk
         expectErr "n-too-large" (runDICTIREPLACEGETBDirect instrSlice (mkIntStack 1024 1 (.cell dictSigned8) valueA)) .rangeChk
-        expectErr "n-nan" (runDICTIREPLACEGETBDirect instrSlice (#[] ++ [ .builder valueA, intV 1, .cell dictSigned8, .int .nan ])) .rangeChk
+        expectErr "n-nan" (runDICTIREPLACEGETBDirect instrSlice (#[ .builder valueA, intV 1, .cell dictSigned8, .int .nan ])) .rangeChk
         expectErr "key-short" (runDICTIREPLACEGETBDirect instrSlice (mkSliceStack 8 slice8Short (.cell dictSlice8) valueA)) .cellUnd
         expectErr "type-top" (runDICTIREPLACEGETBDirect instrSlice (#[.int (.num 7), intV 1, .cell dictSigned8, intV 8])) .typeChk
         expectErr "type-key" (runDICTIREPLACEGETBDirect instrSlice (#[.builder valueA, .slice slice8A, .cell dictSigned8, intV 8])) .typeChk
@@ -414,11 +410,11 @@ def suite : InstrSuite where
       } ]
   oracle := #[
     -- [B2] slice hits and misses
-    mkCase "ok/slice-hit/8" (mkSliceStack 8 slice8C (.cell dictSlice8) valueA) instrSlice, -- [B2] [B6]
-    mkCase "ok/slice-hit/4" (mkSliceStack 4 slice4A (.cell dictSlice4) valueA) instrSlice, -- [B2] [B6]
-    mkCase "ok/slice-hit-zero" (mkSliceStack 0 sliceZero (.cell dictSlice8) valueA) instrSlice, -- [B2] [B6]
-    mkCase "ok/slice-miss/8" (mkSliceStack 8 slice8Miss (.cell dictSlice8) valueA) instrSlice, -- [B6]
-    mkCase "ok/slice-miss/4" (mkSliceStack 4 slice4Miss (.cell dictSlice4) valueA) instrSlice, -- [B6]
+    mkCase "ok/slice-hit/8" (mkSliceStack 8 slice8C (.cell dictSlice8) valueA) #[instrSlice], -- [B2] [B6]
+    mkCase "ok/slice-hit/4" (mkSliceStack 4 slice4A (.cell dictSlice4) valueA) #[instrSlice], -- [B2] [B6]
+    mkCase "ok/slice-hit-zero" (mkSliceStack 0 sliceZero (.cell dictSlice8) valueA) #[instrSlice], -- [B2] [B6]
+    mkCase "ok/slice-miss/8" (mkSliceStack 8 slice8Miss (.cell dictSlice8) valueA) #[instrSlice], -- [B6]
+    mkCase "ok/slice-miss/4" (mkSliceStack 4 slice4Miss (.cell dictSlice4) valueA) #[instrSlice], -- [B6]
 
     -- [B3] signed path hits/misses
     mkCase "ok/signed-hit/0" (mkIntStack 0 0 (.cell dictSigned0) valueA), -- [B3] [B6]
@@ -429,10 +425,10 @@ def suite : InstrSuite where
     mkCase "ok/signed-miss/nonempty" (mkIntStack 4 6 (.cell dictSigned4) valueB), -- [B6]
 
     -- [B4] unsigned path hits/misses
-    mkCase "ok/unsigned-hit/255" (mkIntStack 8 255 (.cell dictUnsigned8) valueA) instrSignedUnsigned, -- [B4]
-    mkCase "ok/unsigned-hit/1" (mkIntStack 8 1 (.cell dictUnsigned8) valueA) instrSignedUnsigned, -- [B4]
-    mkCase "ok/unsigned-miss" (mkIntStack 8 2 (.cell dictUnsigned8) valueA) instrSignedUnsigned, -- [B6]
-    mkCase "ok/unsigned-miss/null" (mkIntStack 8 5 .null valueA) instrSignedUnsigned, -- [B6]
+    mkCase "ok/unsigned-hit/255" (mkIntStack 8 255 (.cell dictUnsigned8) valueA) #[instrSignedUnsigned], -- [B4]
+    mkCase "ok/unsigned-hit/1" (mkIntStack 8 1 (.cell dictUnsigned8) valueA) #[instrSignedUnsigned], -- [B4]
+    mkCase "ok/unsigned-miss" (mkIntStack 8 2 (.cell dictUnsigned8) valueA) #[instrSignedUnsigned], -- [B6]
+    mkCase "ok/unsigned-miss/null" (mkIntStack 8 5 .null valueA) #[instrSignedUnsigned], -- [B6]
 
     -- [B5] underflow
     mkCase "err/underflow/empty" #[], -- [B5]
@@ -445,19 +441,19 @@ def suite : InstrSuite where
     mkCase "err/key-nan/signed" (#[.builder valueA, .int .nan, .cell dictSigned8, intV 8]), -- [B6]
     mkCase "err/key-out-of-range/signed-high" (mkIntStack 4 8 (.cell dictSigned4) valueA), -- [B6]
     mkCase "err/key-out-of-range/signed-low" (mkIntStack 4 (-9) (.cell dictSigned4) valueA), -- [B6]
-    mkCase "err/key-out-of-range/unsigned" (mkIntStack 8 (-1) (.cell dictUnsigned8) valueA) instrSignedUnsigned, -- [B6]
-    mkCase "err/key-out-of-range/unsigned-high" (mkIntStack 8 256 (.cell dictUnsigned8) valueA) instrSignedUnsigned, -- [B6]
+    mkCase "err/key-out-of-range/unsigned" (mkIntStack 8 (-1) (.cell dictUnsigned8) valueA) #[instrSignedUnsigned], -- [B6]
+    mkCase "err/key-out-of-range/unsigned-high" (mkIntStack 8 256 (.cell dictUnsigned8) valueA) #[instrSignedUnsigned], -- [B6]
     mkCase "err/range/n-negative" (mkIntStack (-1) 0 (.cell dictSigned8) valueA), -- [B6]
     mkCase "err/range/n-too-large" (mkIntStack 1024 0 (.cell dictSigned8) valueA), -- [B6]
 
     -- [B7] slice key too short
-    mkCase "err/slice-short/8" (mkSliceStack 8 slice8Short (.cell dictSlice8) valueA) instrSlice, -- [B7]
-    mkCase "err/slice-short/4" (mkSliceStack 4 slice4Short (.cell dictSlice4) valueA) instrSlice, -- [B7]
+    mkCase "err/slice-short/8" (mkSliceStack 8 slice8Short (.cell dictSlice8) valueA) #[instrSlice], -- [B7]
+    mkCase "err/slice-short/4" (mkSliceStack 4 slice4Short (.cell dictSlice4) valueA) #[instrSlice], -- [B7]
 
     -- [B8] malformed dictionary
     mkCase "err/dict-malformed/signed" (mkIntStack 8 1 (.cell malformedDict) valueA), -- [B7]
-    mkCase "err/dict-malformed/slice" (mkSliceStack 8 slice8A (.cell malformedDict) valueA) instrSlice, -- [B8]
-    mkCase "err/type/value-not-builder" (#[] ++ [ .int (.num 7), intV 1, .cell dictSigned8, intV 8 ]), -- [B6]
+    mkCase "err/dict-malformed/slice" (mkSliceStack 8 slice8A (.cell malformedDict) valueA) #[instrSlice], -- [B8]
+    mkCase "err/type/value-not-builder" (#[ .int (.num 7), intV 1, .cell dictSigned8, intV 8 ]), -- [B6]
 
     -- [B9][B10] decode via raw code cells
     mkCodeCase "ok/code/f44d" (mkSliceStack 8 slice8A (.cell dictSlice8) valueA) rawF44D, -- [B9]

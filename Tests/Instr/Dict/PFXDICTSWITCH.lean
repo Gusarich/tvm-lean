@@ -264,7 +264,7 @@ private def mkRawCase
 private def genPFXDICTSWITCH (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 16
   let (tag, rng2) := randNat rng1 0 999_999
-  let (case0 : OracleCase) :=
+  let case0 : OracleCase :=
     if shape = 0 then
       mkCase "fuzz/underflow/0"
     else if shape = 1 then
@@ -276,15 +276,15 @@ private def genPFXDICTSWITCH (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 4 then
       mkCase "fuzz/miss/0" #[.slice keyMissSlice]
     else if shape = 5 then
-      mkCase "fuzz/miss/with-tail" #[.int 42, .slice keyMissSlice]
+      mkCase "fuzz/miss/with-tail" #[intV 42, .slice keyMissSlice]
     else if shape = 6 then
       mkRawCase "fuzz/raw/miss" #[.slice keyMissSlice] (rawSwitch24 4 pfxDict4Root)
     else if shape = 7 then
-      mkRawCase "fuzz/raw/miss-with-tail" #[.int 7, .slice keyMissSlice] (rawSwitch24 4 pfxDict4Root)
+      mkRawCase "fuzz/raw/miss-with-tail" #[intV 7, .slice keyMissSlice] (rawSwitch24 4 pfxDict4Root)
     else if shape = 8 then
       mkRawCase "fuzz/raw/hit" #[.slice keyMatchSlice] (rawSwitch24 4 pfxDict4Root)
     else if shape = 9 then
-      mkRawCase "fuzz/raw/hit-with-tail" #[.int 1, .slice keyMatchSlice] (rawSwitch24 4 pfxDict4Root)
+      mkRawCase "fuzz/raw/hit-with-tail" #[intV 1, .slice keyMatchSlice] (rawSwitch24 4 pfxDict4Root)
     else if shape = 10 then
       mkRawCase "fuzz/raw/keylen-0" #[.slice keyLongSlice] (rawSwitch24 0 pfxDict0Root)
     else if shape = 11 then
@@ -322,8 +322,8 @@ def suite : InstrSuite where
       run := do
         expectOkStack
           "unit/miss-with-tail"
-          (runDirect instrSwitch4 #[.int 7, .slice keyMissSlice])
-          #[.int 7, .slice keyMissSlice] },
+          (runDirect instrSwitch4 #[intV 7, .slice keyMissSlice])
+          #[intV 7, .slice keyMissSlice] },
     { name := "unit/malformed-root" -- [B8]
       run := do
         expectErr "unit/malformed-root" (runDirect instrSwitchMalformed #[.slice keyMissSlice]) .dictErr },
@@ -343,7 +343,7 @@ def suite : InstrSuite where
       run := do
         let st ← expectRawOk
           "unit/raw/hit-jump-with-tail"
-          (runRaw instrSwitch4 #[.int 7, .slice keyMatchSlice] regsWithSentinelC0 defaultCc)
+          (runRaw instrSwitch4 #[intV 7, .slice keyMatchSlice] regsWithSentinelC0 defaultCc)
         expectJumpTransfer "unit/raw/hit-jump-with-tail" dict4Value sentinelC0 st },
     { name := "unit/raw/malformed-root" -- [B8]
       run := do
@@ -372,7 +372,7 @@ def suite : InstrSuite where
     mkCase "oracle/underflow" #[],
     mkCase "oracle/type-int" #[.int (.num 7)],
     mkCase "oracle/miss" #[.slice keyMissSlice],
-    mkCase "oracle/miss-with-tail" #[.int 9, .slice keyMissSlice],
+    mkCase "oracle/miss-with-tail" #[intV 9, .slice keyMissSlice],
     mkRawCase "oracle/raw/miss" #[.slice keyMissSlice] (rawSwitch24 4 pfxDict4Root),
     mkRawCase "oracle/raw/hit" #[.slice keyMatchSlice] (rawSwitch24 4 pfxDict4Root),
     mkRawCase "oracle/raw/hit-long-key" #[.slice keyLongSlice] (rawSwitch24 4 pfxDict4Root),

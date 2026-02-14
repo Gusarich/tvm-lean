@@ -268,7 +268,7 @@ private def limitsExactMinusOneMiss4_2Pair : OracleGasLimits := oracleGasLimitsE
 private def limitsExactMinusOneMiss1023 : OracleGasLimits := oracleGasLimitsExactMinusOne exactGasMiss1023MinusOne
 
 private def gasLimitProgram (raw : Cell) (gas : Int) : Cell :=
-  match assembleCp0 [ .pushInt (.num gas), .tonEnvOp .setGasLimit, raw ] with
+  match assembleCp0 [ .pushInt (.num gas), .tonEnvOp .setGasLimit ] with
   | .ok p =>
       Cell.mkOrdinary (p.bits ++ raw.bits) (p.refs ++ raw.refs)
   | .error e =>
@@ -373,7 +373,7 @@ private def genDICTISETGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 9 then
       (mkCase (s!"fuzz/err/key-nonzero-at-n0/{tag}") (mkStack valueCellA 1 (.cell dict0) 0), rng2)
     else if shape = 10 then
-      (mkCase (s!"fuzz/err/type-value/{tag}") (#[.int (.num 7), .int (.num 5), .cell dict4, intV 4), rng2)
+      (mkCase (s!"fuzz/err/type-value/{tag}") (#[.int (.num 7), .int (.num 5), .cell dict4, intV 4]), rng2)
     else if shape = 11 then
       (mkCase (s!"fuzz/err/type-key/{tag}") (#[.cell valueCellA, .slice valueSliceBadBits, .cell dict4, intV 4]), rng2)
     else if shape = 12 then

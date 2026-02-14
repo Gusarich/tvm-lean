@@ -236,7 +236,7 @@ private def genSUBDICTURPGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 17 then
       (mkCase "fuzz/key/int-negative" (mkStack (-1) (.cell dictRoot4) 4 4), rng1)
     else if shape = 18 then
-      (mkCase "fuzz/root/type-slice" (mkStack 1 (.slice (mkSliceFromBits (natToBits 0 1)) 4 2), rng1)
+      (mkCase "fuzz/root/type-slice" (mkStack 1 (.slice (mkSliceFromBits (natToBits 0 1))) 4 2), rng1)
     else if shape = 19 then
       (mkCase "fuzz/dict/malformed" (mkStack 1 (.cell malformedDict) 4 2), rng1)
     else if shape = 20 then

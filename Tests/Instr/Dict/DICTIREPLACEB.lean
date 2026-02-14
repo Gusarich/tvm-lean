@@ -204,6 +204,9 @@ private def mkCase
     gasLimits := gasLimits
     fuel := fuel }
 
+private instance : Coe Instr (Array Instr) where
+  coe i := #[i]
+
 private def mkCodeCase
     (name : String)
     (stack : Array Value)
@@ -350,9 +353,9 @@ private def genDICTIREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     let (sel, rng2) := randNat rng1 0 4
     let c : OracleCase :=
       if sel = 0 then
-        mkCase "fuzz/type/value-not-builder" (#[] ++ [ .int (.num 7), intV 1, .cell dictSigned4, intV 4])
+        mkCase "fuzz/type/value-not-builder" (#[ .int (.num 7), intV 1, .cell dictSigned4, intV 4])
       else if sel = 1 then
-        mkCase "fuzz/type/key-not-int" (#[] ++ [ .builder sampleValueA, .slice slice8ExactA, .cell dictSigned8, intV 8])
+        mkCase "fuzz/type/key-not-int" (#[ .builder sampleValueA, .slice slice8ExactA, .cell dictSigned8, intV 8])
       else if sel = 2 then
         mkCase "fuzz/type/dict-not-maybe-cell" (mkIntStack 4 1 (.int (.num 5)))
       else if sel = 3 then
@@ -468,15 +471,15 @@ def suite : InstrSuite where
 
     -- [B8] underflow on stack depth.
     mkCase "err/underflow/empty" #[],
-    mkCase "err/underflow/one" (#[] ++ [ .builder sampleValueA ]),
-    mkCase "err/underflow/two" (#[] ++ [ .builder sampleValueA, intV 1 ]),
-    mkCase "err/underflow/three" (#[] ++ [ .builder sampleValueA, intV 1, .cell dictSigned8 ]),
+    mkCase "err/underflow/one" (#[ .builder sampleValueA ]),
+    mkCase "err/underflow/two" (#[ .builder sampleValueA, intV 1 ]),
+    mkCase "err/underflow/three" (#[ .builder sampleValueA, intV 1, .cell dictSigned8 ]),
 
     -- [B8] type errors by argument order.
     mkCase "err/type/dict-not-maybe-cell" (mkIntStack 4 0 (.int (.num 7)) sampleValueA),
-    mkCase "err/type/key-not-int" (#[] ++ [ .builder sampleValueA, .slice slice8ExactA, .cell dictSigned8, intV 8 ]),
-    mkCase "err/type/key-nan" (#[] ++ [ .builder sampleValueA, .int .nan, .cell dictSigned8, intV 8 ]),
-    mkCase "err/type/value-not-builder" (#[] ++ [ .int (.num 7), intV 3, .cell dictSigned4, intV 4 ]),
+    mkCase "err/type/key-not-int" (#[ .builder sampleValueA, .slice slice8ExactA, .cell dictSigned8, intV 8 ]),
+    mkCase "err/type/key-nan" (#[ .builder sampleValueA, .int .nan, .cell dictSigned8, intV 8 ]),
+    mkCase "err/type/value-not-builder" (#[ .int (.num 7), intV 3, .cell dictSigned4, intV 4 ]),
     mkCase "err/type/slice-value-on-int" (mkSliceStack 8 slice8ExactA (.cell dictSigned8) sampleValueA) dictReplaceBSigned, -- [B8] wrong top for int-key
 
     -- [B9] malformed dictionary branch.

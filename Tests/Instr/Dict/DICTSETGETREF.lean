@@ -552,7 +552,7 @@ private def exactMinusOne (g : Int) : Int := if g > 0 then g - 1 else 0
 private def exactGasLimit : Int :=
   baseGas
 
-private def suite : InstrSuite where
+def suite : InstrSuite where
   id := suiteId
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]

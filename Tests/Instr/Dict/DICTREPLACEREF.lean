@@ -416,53 +416,57 @@ private def genDICTREPLACEREFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         intV 8,
       ]), rng1)
     else if shape = 24 then
-      (mkCase "fuzz/gas/base-exact-miss" (#[
+      (mkCase "fuzz/gas/base-exact-miss" #[
         .cell valueA,
         .slice s1023,
         .null,
         intV 1023,
-      ],
-        (#[
+      ]
+        #[
           .pushInt (.num baseGas),
           .tonEnvOp .setGasLimit,
           instr
-        ]), (oracleGasLimitsExact baseGas)), rng1)
+        ]
+        (oracleGasLimitsExact baseGas), rng1)
     else if shape = 25 then
-      (mkCase "fuzz/gas/base-exact-minus-one" (#[
+      (mkCase "fuzz/gas/base-exact-minus-one" #[
         .cell valueA,
         .slice s1023,
         .null,
         intV 1023,
-      ],
-        (#[
+      ]
+        #[
           .pushInt (.num baseGasMinusOne),
           .tonEnvOp .setGasLimit,
           instr
-        ]), (oracleGasLimitsExactMinusOne baseGas)), rng1)
+        ]
+        (oracleGasLimitsExactMinusOne baseGas), rng1)
     else if shape = 26 then
-      (mkCase "fuzz/gas/hit-single-exact" (#[
+      (mkCase "fuzz/gas/hit-single-exact" #[
         .cell valueC,
         .slice s8A,
         .cell dictPair8,
         intV 8,
-      ],
-        (#[
+      ]
+        #[
           .pushInt (.num hitPair8Gas),
           .tonEnvOp .setGasLimit,
           instr
-        ]), (oracleGasLimitsExact hitPair8Gas)), rng1)
+        ]
+        (oracleGasLimitsExact hitPair8Gas), rng1)
     else if shape = 27 then
-      (mkCase "fuzz/gas/hit-shared4-exact" (#[
+      (mkCase "fuzz/gas/hit-shared4-exact" #[
         .cell valueC,
         .slice s4A,
         .cell dictShared4,
         intV 4,
-      ],
-        (#[
+      ]
+        #[
           .pushInt (.num hitShared4Gas),
           .tonEnvOp .setGasLimit,
           instr
-        ]), (oracleGasLimitsExact hitShared4Gas)), rng1)
+        ]
+        (oracleGasLimitsExact hitShared4Gas), rng1)
     else if shape = 28 then
       (mkCodeCase "fuzz/raw/f423" (#[
         .cell valueA,

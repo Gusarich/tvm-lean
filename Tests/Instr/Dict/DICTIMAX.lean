@@ -207,54 +207,54 @@ private def genDictIMaxFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (tag, rng2) := randNat rng1 0 999_999
   let case0 : OracleCase :=
     if shape = 0 then
-      mkCase (s!"fuzz/hit/n0/{tag}") [(.cell dictN0), intV 0]
+      mkCase (s!"fuzz/hit/n0/{tag}") #[(.cell dictN0), intV 0]
     else if shape = 1 then
-      mkCase (s!"fuzz/hit/n1/{tag}") [(.cell dictN1), intV 1]
+      mkCase (s!"fuzz/hit/n1/{tag}") #[(.cell dictN1), intV 1]
     else if shape = 2 then
-      mkCase (s!"fuzz/hit/n2/{tag}") [(.cell dictN2), intV 2]
+      mkCase (s!"fuzz/hit/n2/{tag}") #[(.cell dictN2), intV 2]
     else if shape = 3 then
-      mkCase (s!"fuzz/hit/n8/{tag}") [(.cell dictN8), intV 8]
+      mkCase (s!"fuzz/hit/n8/{tag}") #[(.cell dictN8), intV 8]
     else if shape = 4 then
-      mkCase (s!"fuzz/hit/n16/{tag}") [(.cell dictN16), intV 16]
+      mkCase (s!"fuzz/hit/n16/{tag}") #[(.cell dictN16), intV 16]
     else if shape = 5 then
-      mkCase (s!"fuzz/hit/n64/{tag}") [(.cell dictN64), intV 64]
+      mkCase (s!"fuzz/hit/n64/{tag}") #[(.cell dictN64), intV 64]
     else if shape = 6 then
-      mkCase (s!"fuzz/hit/n128/{tag}") [(.cell dictN128), intV 128]
+      mkCase (s!"fuzz/hit/n128/{tag}") #[(.cell dictN128), intV 128]
     else if shape = 7 then
-      mkCase (s!"fuzz/hit/n255/{tag}") [(.cell dictN255), intV 255]
+      mkCase (s!"fuzz/hit/n255/{tag}") #[(.cell dictN255), intV 255]
     else if shape = 8 then
-      mkCase (s!"fuzz/hit/n257/{tag}") [(.cell dictN257), intV 257]
+      mkCase (s!"fuzz/hit/n257/{tag}") #[(.cell dictN257), intV 257]
     else if shape = 9 then
-      mkCase (s!"fuzz/miss/null/{tag}") [(.null), intV 8]
+      mkCase (s!"fuzz/miss/null/{tag}") #[(.null), intV 8]
     else if shape = 10 then
-      mkCase (s!"fuzz/miss/null-edge/{tag}") [(.null), intV 257]
+      mkCase (s!"fuzz/miss/null-edge/{tag}") #[(.null), intV 257]
     else if shape = 11 then
       mkCase (s!"fuzz/underflow/empty/{tag}") #[]
     else if shape = 12 then
-      mkCase (s!"fuzz/underflow/one/{tag}") [intV 8]
+      mkCase (s!"fuzz/underflow/one/{tag}") #[intV 8]
     else if shape = 13 then
-      mkCase (s!"fuzz/err/nan/{tag}") [(.null), .int .nan]
+      mkCase (s!"fuzz/err/nan/{tag}") #[(.null), .int .nan]
     else if shape = 14 then
-      mkCase (s!"fuzz/err/negative/{tag}") [(.null), intV (-1)]
+      mkCase (s!"fuzz/err/negative/{tag}") #[(.null), intV (-1)]
     else if shape = 15 then
-      mkCase (s!"fuzz/err/too-large/{tag}") [(.null), intV 999]
+      mkCase (s!"fuzz/err/too-large/{tag}") #[(.null), intV 999]
     else if shape = 16 then
-      mkCase (s!"fuzz/err/root-type-slice/{tag}") [(.slice sampleSlice), intV 8]
+      mkCase (s!"fuzz/err/root-type-slice/{tag}") #[(.slice sampleSlice), intV 8]
     else if shape = 17 then
-      mkCase (s!"fuzz/err/root-type-tuple/{tag}") [(.tuple #[]), intV 8]
+      mkCase (s!"fuzz/err/root-type-tuple/{tag}") #[(.tuple #[]), intV 8]
     else if shape = 18 then
-      mkCase (s!"fuzz/err/malformed-root/{tag}") [(.cell malformedDictCell), intV 8]
+      mkCase (s!"fuzz/err/malformed-root/{tag}") #[(.cell malformedDictCell), intV 8]
     else if shape = 19 then
       mkCaseCode (s!"fuzz/decode/f48c/{tag}") (#[(.null), intV 8]) (raw16 0xf48c)
     else if shape = 20 then
       mkCaseCode (s!"fuzz/decode/f488/{tag}") (#[(.null), intV 8]) (raw16 0xf488)
     else if shape = 21 then
-      mkCase (s!"fuzz/gas/exact/{tag}") [(.cell dictN8), intV 8]
-        (#[(.pushInt (.num dictIMaxExactGas), .tonEnvOp .setGasLimit, dictIMaxInstr])
-        ) dictIMaxGasExact
+      mkCase (s!"fuzz/gas/exact/{tag}") #[(.cell dictN8), intV 8]
+        #[.pushInt (.num dictIMaxExactGas), .tonEnvOp .setGasLimit, dictIMaxInstr]
+        dictIMaxGasExact
     else
-      mkCase (s!"fuzz/gas/exact-minus-one/{tag}") [(.cell dictN8), intV 8]
-        (#[(.pushInt (.num dictIMaxExactGasMinusOne), .tonEnvOp .setGasLimit, dictIMaxInstr])
+      mkCase (s!"fuzz/gas/exact-minus-one/{tag}") #[(.cell dictN8), intV 8]
+        #[.pushInt (.num dictIMaxExactGasMinusOne), .tonEnvOp .setGasLimit, dictIMaxInstr]
         dictIMaxGasExactMinusOne
   ({ name := case0.name, instr := case0.instr, program := case0.program, codeCell? := case0.codeCell?, initStack := case0.initStack, gasLimits := case0.gasLimits, fuel := case0.fuel }, rng2)
 
@@ -270,55 +270,55 @@ def suite : InstrSuite where
     { name := "unit/exec/hit/n0" -- [B2][B3][B5]
       run := do
         expectOkStack "hit/n0"
-          (runDictIMaxDirect [(.cell dictN0), intV 0])
-          #[sampleValueA, intV 0, intV (-1)]
+          (runDictIMaxDirect #[(.cell dictN0), intV 0])
+          #[.slice sampleValueA, intV 0, intV (-1)]
     },
     { name := "unit/exec/hit/n1" -- [B6]
       run := do
         expectOkStack "hit/n1"
-          (runDictIMaxDirect [(.cell dictN1), intV 1])
-          #[sampleValueA, intV 0, intV (-1)]
+          (runDictIMaxDirect #[(.cell dictN1), intV 1])
+          #[.slice sampleValueA, intV 0, intV (-1)]
     },
     { name := "unit/exec/hit/n2" -- [B6]
       run := do
         expectOkStack "hit/n2"
-          (runDictIMaxDirect [(.cell dictN2), intV 2])
-          #[sampleValueA, intV 1, intV (-1)]
+          (runDictIMaxDirect #[(.cell dictN2), intV 2])
+          #[.slice sampleValueA, intV 1, intV (-1)]
     },
     { name := "unit/exec/hit/n8" -- [B5][B6]
       run := do
         expectOkStack "hit/n8"
-          (runDictIMaxDirect [(.cell dictN8), intV 8])
-          #[sampleValueA, intV 127, intV (-1)]
+          (runDictIMaxDirect #[(.cell dictN8), intV 8])
+          #[.slice sampleValueA, intV 127, intV (-1)]
     },
     { name := "unit/exec/miss-null" -- [B4]
       run := do
         expectOkStack "miss-null"
-          (runDictIMaxDirect [(.null), intV 8])
+          (runDictIMaxDirect #[(.null), intV 8])
           #[intV 0]
     },
     { name := "unit/exec/underflow-empty" -- [B2]
       run := do
         expectErr "underflow-empty" (runDictIMaxDirect #[]) .stkUnd
-        expectErr "underflow-one" (runDictIMaxDirect [intV 8]) .stkUnd
+        expectErr "underflow-one" (runDictIMaxDirect #[intV 8]) .stkUnd
     },
     { name := "unit/exec/n-errors" -- [B2]
       run := do
-        expectErr "nan" (runDictIMaxDirect [(.null), .int .nan]) .rangeChk
-        expectErr "negative" (runDictIMaxDirect [(.null), intV (-1)]) .rangeChk
-        expectErr "too-large" (runDictIMaxDirect [(.null), intV 9999]) .rangeChk
-        expectErr "edge-too-large" (runDictIMaxDirect [(.null), intV 258]) .rangeChk
+        expectErr "nan" (runDictIMaxDirect #[(.null), .int .nan]) .rangeChk
+        expectErr "negative" (runDictIMaxDirect #[(.null), intV (-1)]) .rangeChk
+        expectErr "too-large" (runDictIMaxDirect #[(.null), intV 9999]) .rangeChk
+        expectErr "edge-too-large" (runDictIMaxDirect #[(.null), intV 258]) .rangeChk
     },
     { name := "unit/exec/root-type-errors" -- [B3]
       run := do
-        expectErr "root-slice" (runDictIMaxDirect [(.slice sampleSlice), intV 8]) .typeChk
-        expectErr "root-tuple" (runDictIMaxDirect [(.tuple #[]), intV 8]) .typeChk
-        expectErr "root-cont" (runDictIMaxDirect [(.cont (.quit 0)), intV 8]) .typeChk
+        expectErr "root-slice" (runDictIMaxDirect #[(.slice sampleSlice), intV 8]) .typeChk
+        expectErr "root-tuple" (runDictIMaxDirect #[(.tuple #[]), intV 8]) .typeChk
+        expectErr "root-cont" (runDictIMaxDirect #[(.cont (.quit 0)), intV 8]) .typeChk
     },
     { name := "unit/exec/malformed-root" -- [B4]
       run := do
-        expectErr "malformed-cell" (runDictIMaxDirect [(.cell malformedDictCell), intV 8]) .cellUnd
-        expectErr "malformed-cell-2" (runDictIMaxDirect [(.cell malformedDictCell2), intV 8]) .cellUnd
+        expectErr "malformed-cell" (runDictIMaxDirect #[(.cell malformedDictCell), intV 8]) .cellUnd
+        expectErr "malformed-cell-2" (runDictIMaxDirect #[(.cell malformedDictCell2), intV 8]) .cellUnd
     },
     { name := "unit/asm/ok" -- [B7]
       run := do
@@ -352,8 +352,8 @@ def suite : InstrSuite where
     { name := "unit/exec/gas/exact" -- [B9]
       run := do
         expectOkStack "exact"
-          (runDictIMaxDirect [(.cell dictN8), intV 8])
-          #[sampleValueA, intV 127, intV (-1)]
+          (runDictIMaxDirect #[(.cell dictN8), intV 8])
+          #[.slice sampleValueA, intV 127, intV (-1)]
     }
   ]
   oracle := #[
@@ -361,45 +361,45 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/empty" #[],
     mkCase "oracle/underflow/one-elem" #[intV 8],
     -- [B2]
-    mkCase "oracle/n/nan" [(.null), .int .nan],
-    mkCase "oracle/n/zero" [(.null), intV 0],
-    mkCase "oracle/n/one" [(.null), intV 1],
-    mkCase "oracle/n/two" [(.null), intV 2],
-    mkCase "oracle/n/eight" [(.null), intV 8],
-    mkCase "oracle/n/sixteen" [(.null), intV 16],
-    mkCase "oracle/n/sixtyfour" [(.null), intV 64],
-    mkCase "oracle/n/onetwentyeight" [(.null), intV 128],
-    mkCase "oracle/n/twofiftyfive" [(.null), intV 255],
-    mkCase "oracle/n/twofiftyseven" [(.null), intV 257],
-    mkCase "oracle/n/negative" [(.null), intV (-1)],
-    mkCase "oracle/n/too-large" [(.null), intV 999],
-    mkCase "oracle/n/edge" [(.null), intV 258],
+    mkCase "oracle/n/nan" #[(.null), .int .nan],
+    mkCase "oracle/n/zero" #[(.null), intV 0],
+    mkCase "oracle/n/one" #[(.null), intV 1],
+    mkCase "oracle/n/two" #[(.null), intV 2],
+    mkCase "oracle/n/eight" #[(.null), intV 8],
+    mkCase "oracle/n/sixteen" #[(.null), intV 16],
+    mkCase "oracle/n/sixtyfour" #[(.null), intV 64],
+    mkCase "oracle/n/onetwentyeight" #[(.null), intV 128],
+    mkCase "oracle/n/twofiftyfive" #[(.null), intV 255],
+    mkCase "oracle/n/twofiftyseven" #[(.null), intV 257],
+    mkCase "oracle/n/negative" #[(.null), intV (-1)],
+    mkCase "oracle/n/too-large" #[(.null), intV 999],
+    mkCase "oracle/n/edge" #[(.null), intV 258],
     -- [B3]
-    mkCase "oracle/root-type-slice" [(.slice sampleSlice), intV 8],
-    mkCase "oracle/root-type-cont" [(.cont (.quit 0)), intV 8],
+    mkCase "oracle/root-type-slice" #[(.slice sampleSlice), intV 8],
+    mkCase "oracle/root-type-cont" #[(.cont (.quit 0)), intV 8],
     -- [B4]
-    mkCase "oracle/root-malformed-1" [(.cell malformedDictCell), intV 8],
-    mkCase "oracle/root-malformed-2" [(.cell malformedDictCell2), intV 8],
+    mkCase "oracle/root-malformed-1" #[(.cell malformedDictCell), intV 8],
+    mkCase "oracle/root-malformed-2" #[(.cell malformedDictCell2), intV 8],
     -- [B4][B5]
-    mkCase "oracle/miss/null/zero" [(.null), intV 0],
-    mkCase "oracle/miss/null/eight" [(.null), intV 8],
-    mkCase "oracle/miss/null/sixteen" [(.null), intV 16],
-    mkCase "oracle/miss/null/sixtyfour" [(.null), intV 64],
-    mkCase "oracle/miss/null/onetwentyeight" [(.null), intV 128],
-    mkCase "oracle/miss/null/twofiftyfive" [(.null), intV 255],
-    mkCase "oracle/miss/null/twofiftyseven" [(.null), intV 257],
+    mkCase "oracle/miss/null/zero" #[(.null), intV 0],
+    mkCase "oracle/miss/null/eight" #[(.null), intV 8],
+    mkCase "oracle/miss/null/sixteen" #[(.null), intV 16],
+    mkCase "oracle/miss/null/sixtyfour" #[(.null), intV 64],
+    mkCase "oracle/miss/null/onetwentyeight" #[(.null), intV 128],
+    mkCase "oracle/miss/null/twofiftyfive" #[(.null), intV 255],
+    mkCase "oracle/miss/null/twofiftyseven" #[(.null), intV 257],
     -- [B5][B6]
-    mkCase "oracle/hit/n0" [(.cell dictN0), intV 0],
-    mkCase "oracle/hit/n1" [(.cell dictN1), intV 1],
-    mkCase "oracle/hit/n2" [(.cell dictN2), intV 2],
-    mkCase "oracle/hit/n8" [(.cell dictN8), intV 8],
-    mkCase "oracle/hit/n16" [(.cell dictN16), intV 16],
-    mkCase "oracle/hit/n64" [(.cell dictN64), intV 64],
-    mkCase "oracle/hit/n128" [(.cell dictN128), intV 128],
-    mkCase "oracle/hit/n255" [(.cell dictN255), intV 255],
-    mkCase "oracle/hit/n257" [(.cell dictN257), intV 257],
-    mkCase "oracle/hit/extra-prefix" [intV 7, .cell dictN8, intV 8],
-    mkCase "oracle/hit/two-prefix" [intV 7, intV 8, .cell dictN8, intV 8],
+    mkCase "oracle/hit/n0" #[(.cell dictN0), intV 0],
+    mkCase "oracle/hit/n1" #[(.cell dictN1), intV 1],
+    mkCase "oracle/hit/n2" #[(.cell dictN2), intV 2],
+    mkCase "oracle/hit/n8" #[(.cell dictN8), intV 8],
+    mkCase "oracle/hit/n16" #[(.cell dictN16), intV 16],
+    mkCase "oracle/hit/n64" #[(.cell dictN64), intV 64],
+    mkCase "oracle/hit/n128" #[(.cell dictN128), intV 128],
+    mkCase "oracle/hit/n255" #[(.cell dictN255), intV 255],
+    mkCase "oracle/hit/n257" #[(.cell dictN257), intV 257],
+    mkCase "oracle/hit/extra-prefix" #[intV 7, .cell dictN8, intV 8],
+    mkCase "oracle/hit/two-prefix" #[intV 7, intV 8, .cell dictN8, intV 8],
     -- [B7][B8]
     mkCaseCode "oracle/asm/decode-valid/f48c" #[] (raw16 0xf48c),
     mkCaseCode "oracle/asm/decode-valid/f48f" #[] (raw16 0xf48f),
@@ -409,10 +409,10 @@ def suite : InstrSuite where
     mkCaseCode "oracle/asm/decode-gapped/f4a0" #[] (raw16 0xf4a0),
     mkCaseCode "oracle/asm/decode-truncated" #[] (raw8 0xf4),
     -- [B9]
-    mkCase "oracle/gas/exact" [(.cell dictN8), intV 8]
+    mkCase "oracle/gas/exact" #[(.cell dictN8), intV 8]
       (#[.pushInt (.num dictIMaxExactGas), .tonEnvOp .setGasLimit, dictIMaxInstr])
       dictIMaxGasExact,
-    mkCase "oracle/gas/exact-minus-one" [(.cell dictN8), intV 8]
+    mkCase "oracle/gas/exact-minus-one" #[(.cell dictN8), intV 8]
       (#[.pushInt (.num dictIMaxExactGasMinusOne), .tonEnvOp .setGasLimit, dictIMaxInstr])
       dictIMaxGasExactMinusOne
   ]

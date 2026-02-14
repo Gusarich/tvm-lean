@@ -186,48 +186,48 @@ private def genDictIremMaxCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 20
   let (case0, rng2) :=
     if shape = 0 then
-      (mkCase "fuzz/ok/null-n0" (#[] ++ [dictNull, intV 0]), rng1)
+      (mkCase "fuzz/ok/null-n0" (#[dictNull, intV 0]), rng1)
     else if shape = 1 then
-      (mkCase "fuzz/ok/null-n8" (#[] ++ [dictNull, intV 8]), rng1)
+      (mkCase "fuzz/ok/null-n8" (#[dictNull, intV 8]), rng1)
     else if shape = 2 then
-      (mkCase "fuzz/ok/null-n257" (#[] ++ [dictNull, intV 257]), rng1)
+      (mkCase "fuzz/ok/null-n257" (#[dictNull, intV 257]), rng1)
     else if shape = 3 then
-      (mkCase "fuzz/ok/single-ref8" (#[] ++ [ .cell dictSingleRef8, intV 8 ]), rng1)
+      (mkCase "fuzz/ok/single-ref8" (#[ .cell dictSingleRef8, intV 8 ]), rng1)
     else if shape = 4 then
-      (mkCase "fuzz/ok/two-ref8" (#[] ++ [ .cell dictTwoRef8, intV 8 ]), rng1)
+      (mkCase "fuzz/ok/two-ref8" (#[ .cell dictTwoRef8, intV 8 ]), rng1)
     else if shape = 5 then
-      (mkCase "fuzz/ok/three-ref8" (#[] ++ [ .cell dictThreeRef8, intV 8 ]), rng1)
+      (mkCase "fuzz/ok/three-ref8" (#[ .cell dictThreeRef8, intV 8 ]), rng1)
     else if shape = 6 then
-      (mkCase "fuzz/ok/single-ref257" (#[] ++ [ .cell dictSingleRef8, intV 257 ]), rng1)
+      (mkCase "fuzz/ok/single-ref257" (#[ .cell dictSingleRef8, intV 257 ]), rng1)
     else if shape = 7 then
-      (mkCase "fuzz/ok/two-ref257" (#[] ++ [ .cell dictTwoRef257, intV 257 ]), rng1)
+      (mkCase "fuzz/ok/two-ref257" (#[ .cell dictTwoRef257, intV 257 ]), rng1)
     else if shape = 8 then
-      (mkCase "fuzz/ok/slice-value" (#[] ++ [ .cell dictSliceSingle8, intV 8 ]), rng1)
+      (mkCase "fuzz/ok/slice-value" (#[ .cell dictSliceSingle8, intV 8 ]), rng1)
     else if shape = 9 then
       (mkCase "fuzz/err/underflow-empty" #[], rng1)
     else if shape = 10 then
-      (mkCase "fuzz/err/type-top-int" (#[] ++ [ .cell valueA, intV 8 ]), rng1)
+      (mkCase "fuzz/err/type-top-int" (#[ .cell valueA, intV 8 ]), rng1)
     else if shape = 11 then
-      (mkCase "fuzz/err/type-top-tuple" (#[] ++ [ .tuple #[], intV 8 ]), rng1)
+      (mkCase "fuzz/err/type-top-tuple" (#[ .tuple #[], intV 8 ]), rng1)
     else if shape = 12 then
-      (mkCase "fuzz/err/type-key-nan" (#[] ++ [ .cell dictSingleRef8, (.int .nan) ]), rng1)
+      (mkCase "fuzz/err/type-key-nan" (#[ .cell dictSingleRef8, (.int .nan) ]), rng1)
     else if shape = 13 then
-      (mkCase "fuzz/err/n-1" (#[] ++ [ .cell dictSingleRef8, intV (-1) ]), rng1)
+      (mkCase "fuzz/err/n-1" (#[ .cell dictSingleRef8, intV (-1) ]), rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/n-258" (#[] ++ [ .cell dictSingleRef8, intV 258 ]), rng1)
+      (mkCase "fuzz/err/n-258" (#[ .cell dictSingleRef8, intV 258 ]), rng1)
     else if shape = 15 then
-      (mkCase "fuzz/err/root-non-dict-cell" (#[] ++ [ .cell malformedDict, intV 8 ]), rng1)
+      (mkCase "fuzz/err/root-non-dict-cell" (#[ .cell malformedDict, intV 8 ]), rng1)
     else if shape = 16 then
-      (mkCase "fuzz/gas/exact" (#[] ++ [ .cell dictNull, intV 8])
+      (mkCase "fuzz/gas/exact" (#[ dictNull, intV 8])
         (#[.pushInt (.num baseGas), .tonEnvOp .setGasLimit, instr]), rng1)
     else if shape = 17 then
-      (mkCase "fuzz/gas/exact-minus-one" (#[] ++ [ .cell dictNull, intV 8])
+      (mkCase "fuzz/gas/exact-minus-one" (#[ dictNull, intV 8])
         (#[.pushInt (.num baseGasMinusOne), .tonEnvOp .setGasLimit, instr]), rng1)
     else if shape = 18 then
-      (mkCase "fuzz/gas/removed-two-ref8" (#[] ++ [ .cell dictTwoRef8, intV 8 ])
+      (mkCase "fuzz/gas/removed-two-ref8" (#[ .cell dictTwoRef8, intV 8 ])
         (#[.pushInt (.num removeTwoRef8Gas), .tonEnvOp .setGasLimit, instr]), rng1)
     else if shape = 19 then
-      (mkCase "fuzz/gas/removed-two-ref8-oog" (#[] ++ [ .cell dictTwoRef8, intV 8 ])
+      (mkCase "fuzz/gas/removed-two-ref8-oog" (#[ .cell dictTwoRef8, intV 8 ])
         (#[.pushInt (.num removeTwoRef8GasMinusOne), .tonEnvOp .setGasLimit, instr]), rng1)
     else
       (mkCodeCase "fuzz/raw/f49d" #[.cell dictSingleRef8, intV 8] rawOpcodeF49D, rng1)
@@ -241,12 +241,10 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ←
-        runHandlerDirectWithNext execInstrDictDictGetMinMax .add (VM.push (intV 909)) (#[] ++ [intV 1, intV 2])
-        if st == #[intV 1, intV 2, intV 909] then
-          pure ()
-        else
-          throw (IO.userError s!"fallback failed: expected {reprStr #[intV 1, intV 2, intV 909]}, got {reprStr st}") },
+        expectOkStack
+          "dispatch/fallback"
+          (runHandlerDirectWithNext execInstrDictDictGetMinMax .add (VM.push (intV 909)) (#[intV 1, intV 2]))
+          #[intV 1, intV 2, intV 909] },
     { name := "unit/opcode/assemble/exact" -- [B8]
       run := do
         match assembleCp0 [instr] with
@@ -259,12 +257,12 @@ def suite : InstrSuite where
             throw (IO.userError s!"assemble DICTIREMMAX failed: {reprStr e}") },
     { name := "unit/opcode/assemble/reject-oob-args" -- [B8]
       run := do
-        match assembleCp0 [ExecInstr.dictGetMinMax 1] with
+        match assembleCp0 [.dictGetMinMax 1] with
         | .ok _ => throw (IO.userError "assemble unexpectedly accepted out-of-range args=1")
         | .error _ => pure () },
     { name := "unit/decode/branches" -- [B9]
       run := do
-        let s0 := Slice.ofCell (rawOpcodeF49B ++ rawOpcodeF49C ++ rawOpcodeF49D ++ rawOpcodeF49E)
+        let s0 := Slice.ofCell (Cell.mkOrdinary (rawOpcodeF49B.bits ++ rawOpcodeF49C.bits ++ rawOpcodeF49D.bits ++ rawOpcodeF49E.bits) #[])
         let s1 ← expectDecodeStep "decode/prev" s0 (.dictGetMinMax 27) 16
         let s2 ← expectDecodeStep "decode/self" s1 (.dictGetMinMax 28) 16
         let s3 ← expectDecodeStep "decode/next" s2 (.dictGetMinMax 29) 16
@@ -278,50 +276,50 @@ def suite : InstrSuite where
         | .ok _ => throw (IO.userError "decode unexpectedly accepted truncated opcode") }
   ]
   oracle := #[
-    mkCase "ok/miss/null/0" (#[] ++ [dictNull, intV 0]), -- [B3][B4]
-    mkCase "ok/miss/null/8" (#[] ++ [dictNull, intV 8]), -- [B3][B4]
-    mkCase "ok/miss/null/257" (#[] ++ [dictNull, intV 257]), -- [B3][B4]
-    mkCase "ok/hit/single-ref8" (#[] ++ [ .cell dictSingleRef8, intV 8 ]), -- [B4][B5][B6][B7]
-    mkCase "ok/hit/single-ref8-alt" (#[] ++ [ .cell dictSingleRef8, intV 5 ]), -- [B4][B5][B6][B7]
-    mkCase "ok/hit/single-ref8-slice" (#[] ++ [ .cell dictSliceSingle8, intV 8 ]), -- [B6]
-    mkCase "ok/hit/single-ref257-zero" (#[] ++ [ .cell dictSingleRef257, intV 257 ]), -- [B4][B5][B7]
-    mkCase "ok/hit/single-ref257-min" (#[] ++ [ .cell dictSingleRef257, intV 257 ]), -- [B4][B5][B7]
-    mkCase "ok/hit/two-ref8" (#[] ++ [ .cell dictTwoRef8, intV 8 ]), -- [B4][B5][B6][B7]
-    mkCase "ok/hit/two-ref8-alt-n1" (#[] ++ [ .cell dictTwoRef8, intV 1 ]), -- [B4][B5][B6][B7]
-    mkCase "ok/hit/three-ref8" (#[] ++ [ .cell dictThreeRef8, intV 8 ]), -- [B4][B5][B6][B7]
-    mkCase "ok/hit/two-ref257" (#[] ++ [ .cell dictTwoRef257, intV 257 ]), -- [B4][B5][B7]
-    mkCase "ok/code/raw/f49c" (#[] ++ [dictNull, intV 8]) rawOpcodeF49C, -- [B9]
-    mkCase "ok/code/raw/f49b" (#[] ++ [dictNull, intV 8]) rawOpcodeF49B, -- [B9]
-    mkCase "ok/code/raw/f49d" (#[] ++ [dictNull, intV 8]) rawOpcodeF49D, -- [B9]
-    mkCase "ok/code/raw/f49e" (#[] ++ [dictNull, intV 8]) rawOpcodeF49E, -- [B9]
+    mkCase "ok/miss/null/0" (#[dictNull, intV 0]), -- [B3][B4]
+    mkCase "ok/miss/null/8" (#[dictNull, intV 8]), -- [B3][B4]
+    mkCase "ok/miss/null/257" (#[dictNull, intV 257]), -- [B3][B4]
+    mkCase "ok/hit/single-ref8" (#[ .cell dictSingleRef8, intV 8 ]), -- [B4][B5][B6][B7]
+    mkCase "ok/hit/single-ref8-alt" (#[ .cell dictSingleRef8, intV 5 ]), -- [B4][B5][B6][B7]
+    mkCase "ok/hit/single-ref8-slice" (#[ .cell dictSliceSingle8, intV 8 ]), -- [B6]
+    mkCase "ok/hit/single-ref257-zero" (#[ .cell dictSingleRef257, intV 257 ]), -- [B4][B5][B7]
+    mkCase "ok/hit/single-ref257-min" (#[ .cell dictSingleRef257, intV 257 ]), -- [B4][B5][B7]
+    mkCase "ok/hit/two-ref8" (#[ .cell dictTwoRef8, intV 8 ]), -- [B4][B5][B6][B7]
+    mkCase "ok/hit/two-ref8-alt-n1" (#[ .cell dictTwoRef8, intV 1 ]), -- [B4][B5][B6][B7]
+    mkCase "ok/hit/three-ref8" (#[ .cell dictThreeRef8, intV 8 ]), -- [B4][B5][B6][B7]
+    mkCase "ok/hit/two-ref257" (#[ .cell dictTwoRef257, intV 257 ]), -- [B4][B5][B7]
+    mkCodeCase "ok/code/raw/f49c" (#[dictNull, intV 8]) rawOpcodeF49C, -- [B9]
+    mkCodeCase "ok/code/raw/f49b" (#[dictNull, intV 8]) rawOpcodeF49B, -- [B9]
+    mkCodeCase "ok/code/raw/f49d" (#[dictNull, intV 8]) rawOpcodeF49D, -- [B9]
+    mkCodeCase "ok/code/raw/f49e" (#[dictNull, intV 8]) rawOpcodeF49E, -- [B9]
     mkCase "err/underflow/empty" (#[]), -- [B2]
-    mkCase "err/underflow/one-item" (#[] ++ [dictNull]), -- [B2]
-    mkCase "err/underflow/two-items" (#[] ++ [dictNull, intV 8]), -- [B2]
-    mkCase "err/type/top-int" (#[] ++ [ .cell valueA, intV 8 ]), -- [B2]
-    mkCase "err/type/top-tuple" (#[] ++ [ .tuple #[], intV 8 ]), -- [B2]
-    mkCase "err/type/key-non-int" (#[] ++ [ .cell dictSingleRef8, .slice badValueSlice ]), -- [B2]
-    mkCase "err/type/key-nan" (#[] ++ [ .cell dictSingleRef8, .int .nan ]), -- [B2]
-    mkCase "err/n/negative" (#[] ++ [ .cell dictSingleRef8, intV (-1) ]), -- [B2]
-    mkCase "err/n/too-large" (#[] ++ [ .cell dictSingleRef8, intV 258 ]), -- [B2]
-    mkCase "err/n/too-large-257-1" (#[] ++ [ .cell dictSingleRef8, intV 258 ]), -- [B2]
-    mkCase "err/root-non-dict-cell" (#[] ++ [ .cell malformedDict, intV 8 ]), -- [B2][B5]
-    mkCase "err/mismatch-n-width" (#[] ++ [ .cell dictSingleRef8, intV 256 ]), -- [B2]
-    mkCase "err/mismatch-n-width-alt" (#[] ++ [ .cell dictSingleRef257, intV 8 ]), -- [B2]
-    mkCase "gas/exact/base-miss" (#[] ++ [dictNull, intV 8])
+    mkCase "err/underflow/one-item" (#[dictNull]), -- [B2]
+    mkCase "err/underflow/two-items" (#[dictNull, intV 8]), -- [B2]
+    mkCase "err/type/top-int" (#[ .cell valueA, intV 8 ]), -- [B2]
+    mkCase "err/type/top-tuple" (#[ .tuple #[], intV 8 ]), -- [B2]
+    mkCase "err/type/key-non-int" (#[ .cell dictSingleRef8, .slice badValueSlice ]), -- [B2]
+    mkCase "err/type/key-nan" (#[ .cell dictSingleRef8, .int .nan ]), -- [B2]
+    mkCase "err/n/negative" (#[ .cell dictSingleRef8, intV (-1) ]), -- [B2]
+    mkCase "err/n/too-large" (#[ .cell dictSingleRef8, intV 258 ]), -- [B2]
+    mkCase "err/n/too-large-257-1" (#[ .cell dictSingleRef8, intV 258 ]), -- [B2]
+    mkCase "err/root-non-dict-cell" (#[ .cell malformedDict, intV 8 ]), -- [B2][B5]
+    mkCase "err/mismatch-n-width" (#[ .cell dictSingleRef8, intV 256 ]), -- [B2]
+    mkCase "err/mismatch-n-width-alt" (#[ .cell dictSingleRef257, intV 8 ]), -- [B2]
+    mkCase "gas/exact/base-miss" (#[dictNull, intV 8])
       #[.pushInt (.num baseGas), .tonEnvOp .setGasLimit, instr] -- [B10]
-      (gasLimits := baseGas),
-    mkCase "gas/exact-minus-one-miss" (#[] ++ [dictNull, intV 8])
+      (gasLimits := oracleGasLimitsExact baseGas),
+    mkCase "gas/exact-minus-one-miss" (#[dictNull, intV 8])
       #[.pushInt (.num baseGasMinusOne), .tonEnvOp .setGasLimit, instr] -- [B10]
-      (gasLimits := baseGasMinusOne),
-    mkCase "gas/removed-two-ref8" (#[] ++ [ .cell dictTwoRef8, intV 8 ])
+      (gasLimits := oracleGasLimitsExactMinusOne baseGasMinusOne),
+    mkCase "gas/removed-two-ref8" (#[ .cell dictTwoRef8, intV 8 ])
       #[.pushInt (.num removeTwoRef8Gas), .tonEnvOp .setGasLimit, instr]
       (oracleGasLimitsExact removeTwoRef8Gas), -- [B5][B10]
-    mkCase "gas/removed-two-ref8-oog" (#[] ++ [ .cell dictTwoRef8, intV 8 ])
+    mkCase "gas/removed-two-ref8-oog" (#[ .cell dictTwoRef8, intV 8 ])
       #[.pushInt (.num removeTwoRef8GasMinusOne), .tonEnvOp .setGasLimit, instr]
       (oracleGasLimitsExact removeTwoRef8GasMinusOne), -- [B5][B10]
-    mkCase "ok/program/trimmed-stack" (#[] ++ [ .cell dictSingleRef8, intV 8]) (#[] ++ #[instr, .pushInt (.num 777)]), -- [B5]
-    mkCase "err/raw/truncated8" #[] rawTruncated8, -- [B9]
-    mkCase "ok/raw/neighbor-chain" (#[] ++ [ .cell dictSingleRef8, intV 8 ]) (#[.dictGetMinMax 28]) -- [B9]
+    mkCase "ok/program/trimmed-stack" (#[ .cell dictSingleRef8, intV 8]) (#[instr, .pushInt (.num 777)]), -- [B5]
+    mkCodeCase "err/raw/truncated8" #[] rawTruncated8, -- [B9]
+    mkCase "ok/raw/neighbor-chain" (#[ .cell dictSingleRef8, intV 8 ]) (#[.dictGetMinMax 28]) -- [B9]
   ]
   fuzz := #[
     { seed := fuzzSeed

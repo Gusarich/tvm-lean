@@ -264,7 +264,7 @@ def suite : InstrSuite where
           #[root, intV 0]
 
         expectErr "unit/exec/key-underflow" (runDictADDBDirect (mkADDBStackBits 4 (natToBits 1 1) .null)) .cellUnd
-        expectErr "unit/exec/type-key" (runDictADDBDirect (mkADDBStackBits 4 (natToBits 1 1) (.int (.num 7))) .typeChk
+        expectErr "unit/exec/type-key" (runDictADDBDirect (mkADDBStackBits 4 (natToBits 1 1) (.int (.num 7)))) .typeChk
         expectErr "unit/exec/type-value" (runDictADDBDirect #[.int (.num 1), .slice (mkSliceWithBitsRefs (natToBits 1 1)), .cell (mkDictCellFromBits (natToBits 1 1)), intV 4]) .typeChk
         expectErr "unit/exec/dict-structural" (runDictADDBDirect (mkADDBStackBits 4 (natToBits 1 4) (.cell malformedDict))) .dictErr
     }
@@ -277,14 +277,14 @@ def suite : InstrSuite where
     mkCase "ok/miss/null-n8" (mkADDBStackBits 8 (natToBits 127 8) .null),
 
     -- [B1,B3] Add miss with prefix mismatch in non-empty dictionary.
-    mkCase "ok/miss/prefix-mismatch-n1" (mkADDBStackBits 1 (natToBits 0 1) (.cell (mkDictCellFromBits (natToBits 1 1))),
-    mkCase "ok/miss/prefix-mismatch-n4" (mkADDBStackBits 4 (natToBits 0 4) (.cell (mkDictCellFromBits (natToBits 15 4))),
-    mkCase "ok/miss/prefix-mismatch-n8" (mkADDBStackBits 8 (natToBits 0 8) (.cell (mkDictCellFromBits (natToBits 255 8))),
+    mkCase "ok/miss/prefix-mismatch-n1" (mkADDBStackBits 1 (natToBits 0 1) (.cell (mkDictCellFromBits (natToBits 1 1)))),
+    mkCase "ok/miss/prefix-mismatch-n4" (mkADDBStackBits 4 (natToBits 0 4) (.cell (mkDictCellFromBits (natToBits 15 4)))),
+    mkCase "ok/miss/prefix-mismatch-n8" (mkADDBStackBits 8 (natToBits 0 8) (.cell (mkDictCellFromBits (natToBits 255 8)))),
 
     -- [B2] Add hit (unchanged root).
-    mkCase "ok/hit-root-n1" (mkADDBStackBits 1 (natToBits 1 1) (.cell (mkDictCellFromBits (natToBits 1 1))),
-    mkCase "ok/hit-root-n4" (mkADDBStackBits 4 (natToBits 3 4) (.cell (mkDictCellFromBits (natToBits 3 4))),
-    mkCase "ok/hit-root-n4-max" (mkADDBStackBits 4 (natToBits 15 4) (.cell (mkDictCellFromBits (natToBits 15 4))),
+    mkCase "ok/hit-root-n1" (mkADDBStackBits 1 (natToBits 1 1) (.cell (mkDictCellFromBits (natToBits 1 1)))),
+    mkCase "ok/hit-root-n4" (mkADDBStackBits 4 (natToBits 3 4) (.cell (mkDictCellFromBits (natToBits 3 4)))),
+    mkCase "ok/hit-root-n4-max" (mkADDBStackBits 4 (natToBits 15 4) (.cell (mkDictCellFromBits (natToBits 15 4)))),
 
     -- [B4] Input validation: n range.
     mkCase "err/range-n-high" (mkADDBStack 1024 (mkSliceWithBitsRefs #[])),
@@ -320,9 +320,9 @@ def suite : InstrSuite where
     mkCase "gas/exact-insert-minus-one" (mkADDBStackBits 8 (natToBits 1 8) .null) (oracleGasLimitsExactMinusOne dictADDBGasInsertMinusOne),
 
     -- Additional high-width noise cases.
-    mkCase "ok/noise/n16-hit" (mkADDBStackBits 16 (natToBits 65535 16) (.cell (mkDictCellFromBits (natToBits 65535 16))),
+    mkCase "ok/noise/n16-hit" (mkADDBStackBits 16 (natToBits 65535 16) (.cell (mkDictCellFromBits (natToBits 65535 16)))),
     mkCase "ok/noise/n16-miss" (mkADDBStackBits 16 (natToBits 32767 16) .null),
-    mkCase "ok/noise/n32-hit" (mkADDBStackBits 32 (natToBits 1 32) (.cell (mkDictCellFromBits (natToBits 1 32))),
+    mkCase "ok/noise/n32-hit" (mkADDBStackBits 32 (natToBits 1 32) (.cell (mkDictCellFromBits (natToBits 1 32)))),
     mkCase "ok/noise/n32-miss" (mkADDBStackBits 32 (natToBits 2 32) .null)
   ]
   fuzz := #[

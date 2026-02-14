@@ -248,7 +248,7 @@ private def genDICTDEL (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 10 then
     (mkCase s!"fuzz/int-unsigned-negative/{tag}" (mkIntStack (.cell dictSliceUnsigned4) 4 (-1)) dictDelIntUnsignedCode, rng2)
   else if shape = 11 then
-    (mkCase s!"fuzz/int-key-nan/{tag}" (mkIntStack (.cell dictSliceSigned4) 4 (.nan)) dictDelIntSignedCode, rng2)
+    (mkCase s!"fuzz/int-key-nan/{tag}" (#[.int .nan, .cell dictSliceSigned4, intV 4]) dictDelIntSignedCode, rng2)
   else if shape = 12 then
     (mkCase s!"fuzz/type-root-builder/{tag}" #[.builder Builder.empty, .slice (mkSliceFromBits (natToBits 2 4)), intV 4] dictDelSliceCode, rng2)
   else if shape = 13 then
@@ -279,7 +279,7 @@ def suite : InstrSuite where
         expectOkStack
           "match-slice-hit"
           (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell dictSlice4Single) 4 (natToBits 2 4)))
-          #[.null, valueSliceA, intV (-1)]
+          #[.null, .slice valueSliceA, intV (-1)]
     },
     { name := "unit/dispatch/match-slice-miss-preserves-root"
       run := do
@@ -293,11 +293,11 @@ def suite : InstrSuite where
         expectOkStack
           "match-int-hit-signed"
           (runDictDelDirect (dictDelInstr true false) (mkIntStack (.cell dictSliceSigned4) 4 (-3)))
-          #[.cell (mkDictSliceRoot! "dict/del/signed/tail" 4 #[(4, valueSliceB)] false), valueSliceA, intV (-1)]
+          #[.cell (mkDictSliceRoot! "dict/del/signed/tail" 4 #[(4, valueSliceB)] false), .slice valueSliceA, intV (-1)]
         expectOkStack
           "match-int-hit-unsigned"
           (runDictDelDirect (dictDelInstr true true) (mkIntStack (.cell dictSliceUnsigned4) 4 (9)))
-          #[.cell (mkDictSliceRoot! "dict/del/unsigned/tail" 4 #[(5, valueSliceA)] true), valueSliceB, intV (-1)]
+          #[.cell (mkDictSliceRoot! "dict/del/unsigned/tail" 4 #[(5, valueSliceA)] true), .slice valueSliceB, intV (-1)]
     },
     { name := "unit/runtime/underflow"
       run := do
@@ -310,7 +310,7 @@ def suite : InstrSuite where
         expectErr "n-type" (runDictDelDirect (dictDelInstr false false)
           #[.cell dictSlice4Single, .slice (mkSliceFromBits (natToBits 2 4)), .cell Cell.empty]) .typeChk
         expectErr "n-nan" (runDictDelDirect (dictDelInstr false false)
-          #[.cell dictSlice4Single, .slice (mkSliceFromBits (natToBits 2 4)), .nan]) .rangeChk
+          #[.cell dictSlice4Single, .slice (mkSliceFromBits (natToBits 2 4)), .int .nan]) .rangeChk
         expectErr "n-negative" (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell dictSlice4Single) (-1) (natToBits 2 4))) .rangeChk
         expectErr "n-too-large" (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell dictSlice4Single) 1024 (natToBits 2 4))) .rangeChk
     },
@@ -323,7 +323,7 @@ def suite : InstrSuite where
         expectErr "int-key-type-error" (runDictDelDirect (dictDelInstr true false)
           (mkSliceStack (.cell dictSliceSigned4) 4 (natToBits 2 4))) .typeChk
         expectErr "int-key-nan" (runDictDelDirect (dictDelInstr true false)
-          (mkIntStack (.cell dictSliceSigned4) 4 (.nan))) .intOv
+          (#[.int .nan, .cell dictSliceSigned4, intV 4])) .intOv
     },
     { name := "unit/runtime/key-range"
       run := do
@@ -373,8 +373,8 @@ def suite : InstrSuite where
     -- [B4] key/value parsing modes and type checks.
     mkCase "oracle/type/key-not-slice" (mkIntStack (.cell dictSlice4Single) 4 2),
     mkCase "oracle/type/dict-not-cell" (mkSliceStack (.builder Builder.empty) 4 (natToBits 2 4)),
-    mkCase "oracle/type/nan-in-key-signed" (mkIntStack (.cell dictSliceSigned4) 4 (.nan)),
-    mkCase "oracle/type/nan-in-key-unsigned" (mkIntStack (.cell dictSliceUnsigned4) 4 (.nan)),
+    mkCase "oracle/type/nan-in-key-signed" (#[.int .nan, .cell dictSliceSigned4, intV 4]),
+    mkCase "oracle/type/nan-in-key-unsigned" (#[.int .nan, .cell dictSliceUnsigned4, intV 4]),
 
     -- [B5] key conversion and key length failures.
     mkCase "oracle/key/slice-underflow" (mkSliceStack (.cell dictSlice8Single) 8 (natToBits 5 3)),
@@ -401,7 +401,7 @@ def suite : InstrSuite where
 
     -- [B7] malformed dictionary structure.
     mkCase "oracle/malformed/dict-root-bad-structure" (mkSliceStack (.cell malformedDict) 4 (natToBits 2 4)),
-    mkCase "oracle/malformed/nested-key-value-shape" (mkSliceStack (.cell (mkDictSliceRoot! "dict/malformed/value-shape" 4 #[(2, mkSliceFromBits (natToBits 0b1 1))] false) 4 (natToBits 2 4)),
+    mkCase "oracle/malformed/nested-key-value-shape" (mkSliceStack (.cell (mkDictSliceRoot! "dict/malformed/value-shape" 4 #[(2, mkSliceFromBits (natToBits 0b1 1))] false)) 4 (natToBits 2 4)),
 
     -- [B9] decode boundary behavior.
     mkCase "oracle/decode/below-boundary" #[] (rawCell16 0xf458),

@@ -259,11 +259,10 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st ← runDictiaddrefFallback #[]
-        if st == #[.int (.num 123), intV 909] then
-          pure ()
-        else
-          throw (IO.userError s!"fallback: expected #[123,909], got {reprStr st}") },
+        expectOkStack
+          "fallback"
+          (runDictiaddrefFallback #[])
+          #[.int (.num 123), intV 909] },
     { name := "unit/encoding/assemble-exact" -- [B6]
       run := do
         match assembleCp0 [dictiaddrefInstr] with

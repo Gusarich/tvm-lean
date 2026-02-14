@@ -75,7 +75,7 @@ private def mkDictSetSliceRoot! (label : String) (n : Nat) (entries : Array (Int
     for entry in entries do
       let (k, v) := entry
       let keyBits :=
-        match dictKeyBits? k n false with
+        match dictKeyBits? k n true with
         | some b => b
         | none => panic! s!"{label}: invalid key/range ({k}, n={n})"
       match dictSetSliceWithCells root keyBits v .set with
