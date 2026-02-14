@@ -216,7 +216,7 @@ private def missNullGasMinusOne : Int :=
   if missNullGas > 0 then missNullGas - 1 else 0
 
 private def mkDictCaseStack (newValue : Cell) (key : Int) (dict : Value) (n : Int := 8) : Array Value :=
-  #[.cell newValue, .int (.num key), dict, .int n]
+  #[.cell newValue, .int (.num key), dict, .int (.num n)]
 
 private def mkCase
     (name : String)
@@ -327,7 +327,7 @@ private def genDICTISETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 20 then
       (mkCase "fuzz/err/malformed-root" (mkDictCaseStack valueCellA 5 (.cell malformedDictRoot) 8), rng1)
     else if shape = 21 then
-      (mkCodeCase "fuzz/raw/f412" (mkDictCaseStack valueCellA 5 (.null) 8 valueSlice? ) rawF412, rng1)
+      (mkCodeCase "fuzz/raw/f412" (mkDictCaseStack valueCellA 5 (.null) 8) rawF412, rng1)
     else if shape = 22 then
       (mkCodeCase "fuzz/raw/f413" (#[.cell valueCellA, .slice valueBitsOnly, .null, intV 8]) rawF413, rng1)
     else if shape = 23 then
@@ -382,7 +382,7 @@ def suite : InstrSuite where
       run := do
         match runDICTISETREFDispatchFallback (mkDictCaseStack valueCellA 5 (.cell dictSigned8Single) 8) with
         | .ok st =>
-            if st == #[.cell valueCellA, .int (.num 5), .cell dictSigned8Single, intV 8, .int dispatchSentinel] then
+            if st == #[.cell valueCellA, .int (.num 5), .cell dictSigned8Single, intV 8, .int (.num dispatchSentinel)] then
               pure ()
             else
               throw (IO.userError s!"dispatch/fallback: expected stack unchanged + sentinel, got {reprStr st}")
@@ -413,7 +413,7 @@ def suite : InstrSuite where
         let s3 ← expectDecodeStep "decode/f414" s2 (.dictSet true false false .set)
         let s4 ← expectDecodeStep "decode/f415" s3 (.dictSet true false true .set)
         let _ ← expectDecodeStep "decode/f416" s4 (.dictSet true true false .set)
-        let _ ← expectDecodeStep "decode/f417" (_ := s4) (.dictSet true true true .set)
+        let _ ← expectDecodeStep "decode/f417" s4 (.dictSet true true true .set)
         expectDecodeInvOpcode "decode/underflow-low" rawF411
         expectDecodeInvOpcode "decode/over" rawF418
         expectDecodeInvOpcode "decode/truncated" rawF4 }
