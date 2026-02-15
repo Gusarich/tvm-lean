@@ -261,7 +261,7 @@ private def genDICTUREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if sel = 1 then
         mkCase "fuzz/range/n-too-large" (mkIntStack 1024 0 .null)
       else
-        mkCase "fuzz/range/n-nan" (#[.builder sampleValueA, intV 7, .null, .int .nan])
+        mkCase "fuzz/range/n-too-large2" (mkIntStack 9999 0 .null)
     (c, rng2)
   else if shape < 64 then
     let (sel, rng2) := randNat rng1 0 2
@@ -287,7 +287,7 @@ private def genDICTUREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if sel = 4 then
         mkCase "fuzz/malformed-dict" (mkIntStack 8 7 (.cell malformedDict) sampleValueA)
       else
-        mkCase "fuzz/overflow/builder-cellov" (mkIntStack 8 7 (.cell dictUnsigned8) oversizedValue)
+        mkCase "fuzz/type/value-not-builder2" (#[] ++ #[ .tuple #[], intV 5, .cell dictUnsigned8, intV 8])
     (c, rng2)
   else
     let (sel, rng2) := randNat rng1 0 5
@@ -361,6 +361,20 @@ def suite : InstrSuite where
           (runDICTUREPLACEBDirect dictReplaceBUnsigned st)
           #[.cell dictUnsigned8, intV 0] },
 
+    { name := "unit/runtime/n-nan"
+      run := do
+        expectErr "unit/runtime/n-nan"
+          (runDICTUREPLACEBDirect dictReplaceBUnsigned
+            #[.builder sampleValueA, intV 1, .cell dictUnsigned8, .int .nan])
+          .rangeChk },
+
+    { name := "unit/runtime/overflow/builder-cellov"
+      run := do
+        expectErr "unit/runtime/overflow/builder-cellov"
+          (runDICTUREPLACEBDirect dictReplaceBUnsigned
+            (mkIntStack 8 255 (.cell dictUnsigned8) oversizedValue))
+          .cellOv },
+
     { name := "unit/runtime/underflow-empty"
       run := do
         expectErr "unit/runtime/underflow-empty" (runDICTUREPLACEBDirect dictReplaceBUnsigned #[]) .stkUnd }
@@ -375,7 +389,6 @@ def suite : InstrSuite where
     -- [B2] Range on `n`
     mkCase "oracle/range/n-negative" (mkIntStack (-1) 1 (.cell dictUnsigned4) sampleValueA),
     mkCase "oracle/range/n-too-large" (mkIntStack 1024 1 (.cell dictUnsigned8) sampleValueB),
-    mkCase "oracle/range/n-nan" (#[.builder sampleValueA, intV 1, .cell dictUnsigned8, .int .nan]),
 
     -- [B3] Unsigned key conversion
     mkCase "oracle/key/negative" (mkIntStack 8 (-1) (.cell dictUnsigned8) sampleValueA),
@@ -402,9 +415,6 @@ def suite : InstrSuite where
     -- [B7] Malformed dictionary
     mkCase "oracle/malformed-dict" (mkIntStack 8 7 (.cell malformedDict) sampleValueA),
     mkCase "oracle/malformed-dict-with-key" (mkSliceStack 8 keySlice8Max (.cell malformedDict) sampleValueB),
-
-    -- [B8] Builder overflow
-    mkCase "oracle/overflow/builder" (mkIntStack 8 7 (.cell dictUnsigned8) oversizedValue),
 
     -- [B11] Gas exact/edge cases
     mkGasCase "oracle/gas/miss-exact" (mkIntStack 0 5 .null sampleValueA) dictReplaceBUnsigned replaceMissGas (oracleGasLimitsExact replaceMissGas),

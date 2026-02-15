@@ -277,7 +277,7 @@ private def genDICTIGETJMP (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 7 then
       mkCase "fuzz/err/key-type" instrSignedJmp (#[(.cell dictSigned4Root), .slice (markerSlice 0x77AA), intV 4])
     else if shape = 8 then
-      mkCase "fuzz/err/key-nan" instrSignedJmp (#[(.cell dictSigned4Root), .int .nan, intV 4])
+      mkCase "fuzz/err/key-not-int" instrSignedJmp (#[(.cell dictSigned4Root), .tuple #[], intV 4])
     else if shape = 9 then
       mkCase "fuzz/signed/miss/oob-pos" instrSignedJmp (#[(.cell dictSigned4Root), intV (-9), intV 4])
     else if shape = 10 then
@@ -433,7 +433,6 @@ def suite : InstrSuite where
     -- [B5] Key type/range and conversion miss.
     mkCase "oracle/err/key-type" instrSignedJmp (#[(.cell dictSigned4Hit), .slice (markerSlice 0xCAFE), intV 4]),
     mkCase "oracle/err/key-cell" instrSignedJmp (#[(.cell dictSigned4Hit), .cell Cell.empty, intV 4]),
-    mkCase "oracle/err/key-nan" instrSignedJmp (#[(.cell dictSigned4Hit), .int .nan, intV 4]),
     mkCase "oracle/miss-signed-oob-positive-no-z" instrSignedJmp (#[(.cell dictSigned4Hit), intV 8, intV 4]),
     mkCase "oracle/miss-signed-oob-negative-no-z" instrSignedJmp (#[(.cell dictSigned4Hit), intV (-9), intV 4]),
     mkCase "oracle/miss-signed-oob-positive-z" instrSignedJmpZ (#[(.cell dictSigned4Hit), intV 8, intV 4]),

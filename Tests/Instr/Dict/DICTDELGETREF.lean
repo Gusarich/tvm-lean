@@ -408,7 +408,6 @@ def suite : InstrSuite where
     mkCase "err/underflow-2" #[intV 1, .cell dict4SingleRef], -- [B2]
     mkCase "err/n-too-large" (stack3 (.slice (key4 0xA)) (.cell dict4SingleRef) 1024), -- [B3]
     mkCase "err/n-negative" (stack3 (.slice (key4 0xA)) (.cell dict4SingleRef) (-1)), -- [B3]
-    mkCase "err/n-nan" #[.slice (key4 0xA), .cell dict4SingleRef, .int .nan], -- [B3]
     mkCase "err/dict-type-int" (stack3 (.slice (key4 0xA)) (.int (.num 0)) 4), -- [B4]
     mkCase "err/dict-type-slice" (stack3 (.slice (key4 0xA)) (.slice key0) 4), -- [B4]
     mkCase "err/key-type-cell" (stack3 (.cell valueCellA) (.cell dict4SingleRef) 4), -- [B4]

@@ -278,9 +278,6 @@ def suite : InstrSuite where
       ,
     mkCase "err/n-not-int" (#[] ++ #[ .cell dictSlice4, .null, mkSliceV 4 0 ]) -- [B2]
       ,
-    mkCase "err/n-nan-int" (#[] ++ #[ .cell dictInt8Signed, .int (.nan), intV 5 ])
-      (program := #[.dictGetNear 12]) -- [B2]
-      ,
     mkCase "err/root-type-error-slice" (#[] ++ #[ .int (.num 17), intV 8, mkSliceV 8 1 ])
       (program := #[.dictGetNear 4]) -- [B2]
       ,

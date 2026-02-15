@@ -219,7 +219,7 @@ private def genPFXDICTGETJMP (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 3 then
       mkCase "fuzz/err/n-type" #[(.slice shortKeyBits), dictJmpHit, (.tuple #[])]
     else if shape = 4 then
-      mkCase "fuzz/err/n-nan" #[(.slice shortKeyBits), dictJmpHit, .int .nan]
+      mkCase "fuzz/err/n-too-large2" #[(.slice shortKeyBits), dictJmpHit, intV 9999]
     else if shape = 5 then
       mkCase "fuzz/err/n-negative" #[(.slice shortKeyBits), dictJmpHit, intV (-1)]
     else if shape = 6 then
@@ -235,7 +235,7 @@ private def genPFXDICTGETJMP (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 11 then
       mkCase "fuzz/err/key-cell" #[(.cell Cell.empty), dictJmpHit, intV 4]
     else if shape = 12 then
-      mkCase "fuzz/err/key-nan" #[(.int .nan), dictJmpHit, intV 4]
+      mkCase "fuzz/err/key-tuple" #[(.tuple #[]), dictJmpHit, intV 4]
     else if shape = 13 then
       mkCase "fuzz/miss/no-root" #[(.slice longMissBits), .null, intV 4]
     else if shape = 14 then
@@ -360,7 +360,6 @@ def suite : InstrSuite where
 
     -- [B3] Invalid `n` values.
     mkCase "oracle/err/n-type" #[(.slice shortKeyBits), dictJmpHit, .tuple #[]],
-    mkCase "oracle/err/n-nan" #[(.slice shortKeyBits), dictJmpHit, .int .nan],
     mkCase "oracle/err/n-negative" #[(.slice shortKeyBits), dictJmpHit, intV (-1)],
     mkCase "oracle/err/n-too-large" #[(.slice shortKeyBits), dictJmpHit, intV 1024],
 
@@ -374,7 +373,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/key-null" #[(.null), dictJmpHit, intV 4],
     mkCase "oracle/err/key-builder" #[(.builder Builder.empty), dictJmpHit, intV 4],
     mkCase "oracle/err/key-tuple" #[(.tuple #[]), dictJmpHit, intV 4],
-    mkCase "oracle/err/key-nan" #[(.int .nan), dictJmpHit, intV 4],
 
     -- [B6] Miss path.
     mkCase "oracle/miss/no-root-short" #[(.slice shortMissBits), .null, intV 4],

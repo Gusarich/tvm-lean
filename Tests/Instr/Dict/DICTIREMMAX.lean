@@ -210,7 +210,7 @@ private def genDictIremMaxCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 11 then
       (mkCase "fuzz/err/type-top-tuple" (#[ .tuple #[], intV 8 ]), rng1)
     else if shape = 12 then
-      (mkCase "fuzz/err/type-key-nan" (#[ .cell dictSingleRef8, (.int .nan) ]), rng1)
+      (mkCase "fuzz/err/type-key-not-int" (#[ .cell dictSingleRef8, (.tuple #[]) ]), rng1)
     else if shape = 13 then
       (mkCase "fuzz/err/n-1" (#[ .cell dictSingleRef8, intV (-1) ]), rng1)
     else if shape = 14 then
@@ -298,7 +298,6 @@ def suite : InstrSuite where
     mkCase "err/type/top-int" (#[ .cell valueA, intV 8 ]), -- [B2]
     mkCase "err/type/top-tuple" (#[ .tuple #[], intV 8 ]), -- [B2]
     mkCase "err/type/key-non-int" (#[ .cell dictSingleRef8, .slice badValueSlice ]), -- [B2]
-    mkCase "err/type/key-nan" (#[ .cell dictSingleRef8, .int .nan ]), -- [B2]
     mkCase "err/n/negative" (#[ .cell dictSingleRef8, intV (-1) ]), -- [B2]
     mkCase "err/n/too-large" (#[ .cell dictSingleRef8, intV 258 ]), -- [B2]
     mkCase "err/n/too-large-257-1" (#[ .cell dictSingleRef8, intV 258 ]), -- [B2]

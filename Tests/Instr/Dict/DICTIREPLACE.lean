@@ -593,7 +593,6 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-negative" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null (-1)) (#[instrSlice]),
     mkCase "oracle/err/n-too-large" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null 1024) (#[instrSlice]),
-    mkCase "oracle/err/n-nan" (#[.slice sampleSliceD, .slice (mkSliceKey 4 3), .null, .int .nan]) (#[instrSlice]),
 
     -- [B4]
     mkCase "oracle/err/slice-key-short" (mkSliceStack sampleSliceD (mkSliceKey 3 5) (.cell dictSliceSigned4) 4) (#[instrSlice]),

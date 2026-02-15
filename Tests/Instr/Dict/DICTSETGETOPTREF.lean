@@ -382,8 +382,8 @@ private def genDictSetGetOptRefFuzz (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 11 then
       (mkCase "fuzz/slice/delete/miss" rawSetGetOptRef (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 1 4) 4 .null), rng1)
     else if shape = 12 then
-      (mkCase "fuzz/int-key-nan" rawSetGetOptRefInt
-        (#[.cell valueD, .int .nan, .cell signedNibbleRoot4, intV 4]), rng1)
+      (mkCase "fuzz/int-key-too-large2" rawSetGetOptRefInt
+        (#[.cell valueD, intV 9999, .cell signedNibbleRoot4, intV 4]), rng1)
     else if shape = 13 then
       (mkCase "fuzz/n-negative" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 3 (-1) (.cell valueD)), rng1)
     else if shape = 14 then
@@ -589,6 +589,13 @@ def suite : InstrSuite where
           (runDictSetGetOptRefDirect (dictSetGetOptRefInstr true false)
             (#[(.cell valueD), .int .nan, .cell signedNibbleRoot4, intV 4]))
           .rangeChk
+    },
+    { name := "unit/runtime/n-nan"
+      run := do
+        expectErr "runtime/n-nan"
+          (runDictSetGetOptRefDirect (dictSetGetOptRefInstr true true)
+            (#[.cell valueD, intV 0, .cell unsignedNibbleRoot4, .int .nan]))
+          .rangeChk
     }
   ]
   oracle := #[
@@ -602,9 +609,6 @@ def suite : InstrSuite where
     mkCase "oracle/n-negative" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 0 (-1) (.cell valueD)),
     -- [B3][B7]
     mkCase "oracle/n-overflow" rawSetGetOptRefUInt (mkIntSetStack (.cell unsignedNibbleRoot4) 0 1024 (.cell valueD)),
-    -- [B3][B7]
-    mkCase "oracle/n-nan" rawSetGetOptRefUInt
-      (#[.cell valueD, intV 0, .cell unsignedNibbleRoot4, .int .nan]),
     -- [B4][B7]
     mkCase "oracle/type-dict" rawSetGetOptRefInt (mkIntSetStack (.tuple #[]) 3 4 (.cell valueD)),
     -- [B5][B6]
@@ -613,9 +617,6 @@ def suite : InstrSuite where
     mkCase "oracle/type-key-slice" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 3 4 .null),
     -- [B7][B8]
     mkCase "oracle/type-new-value" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 3 4 (.int (.num 7))),
-    -- [B6][B10]
-    mkCase "oracle/int-nan" rawSetGetOptRefInt
-      (#[.cell valueD, .int .nan, .cell signedNibbleRoot4, intV 4]),
     -- [B6][B9]
     mkCase "oracle/int-signed-out-of-range-high" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 8 4 (.cell valueD)),
     -- [B6][B9]

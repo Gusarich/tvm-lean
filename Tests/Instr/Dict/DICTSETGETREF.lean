@@ -440,7 +440,7 @@ private def genDICTSETGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 5 then
       (mkCase s!"fuzz/err/n-too-large/{tag}" (mkStack valueA slice4A (.cell dict4Single) 1024), rng2)
     else if shape = 6 then
-      (mkCase s!"fuzz/err/n-nan/{tag}" (#[.cell valueA, .slice slice4A, .cell dict4Single, .int .nan]), rng2)
+      (mkCase s!"fuzz/err/n-too-large2/{tag}" (mkStack valueA slice4A (.cell dict4Single) 9999), rng2)
     else if shape = 7 then
       (mkCase s!"fuzz/err/type-value/{tag}" (mkStack valueA slice4A (.cell dict4Single) 4), rng2)
       
@@ -713,7 +713,6 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-negative" (mkStack valueA slice4A (.cell dict4Single) (-1)),
     mkCase "oracle/err/n-too-large" (mkStack valueA slice4A (.cell dict4Single) 1024),
-    mkCase "oracle/err/n-nan" (#[.cell valueA, .slice slice4A, .cell dict4Single, .int .nan]),
     -- [B4]
     mkCase "oracle/err/type-value" (mkStack valueA slice4A (.cell dict4Single) 4),
     mkCase "oracle/err/type-key" (mkStack valueA (mkSliceFromBits key3) (.cell dict4Single) 4),

@@ -331,7 +331,7 @@ private def genDictRemMinFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 15 then
       (mkCase "fuzz/err/underflow-one" #[dictNull], rng1)
     else if shape = 16 then
-      (mkCase "fuzz/err/type-top-int" #[.cell dictSingle8, .int .nan], rng1)
+      (mkCase "fuzz/err/type-too-large-n2" #[.cell dictSingle8, intV 9999], rng1)
     else if shape = 17 then
       (mkCase "fuzz/err/type-negative-n" #[.cell dictSingle8, intV (-1)], rng1)
     else if shape = 18 then
@@ -495,7 +495,6 @@ def suite : InstrSuite where
     mkCase "oracle/miss/type-root-non-cell" #[.tuple #[], intV 8],
     mkCase "oracle/miss/type-root-cont" #[.cont (.quit 0), intV 8],
     mkCase "oracle/miss/root-malformed" #[.cell malformedDict, intV 8],
-    mkCase "oracle/miss/type-nan" #[.null, .int .nan],
     mkCase "oracle/miss/type-negative" #[.null, intV (-1)],
     mkCase "oracle/miss/type-too-large" #[.null, intV 1024],
     mkCodeCase "oracle/code/f492" #[.cell dictSingle8, intV 8] rawOpcodeF492,

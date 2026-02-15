@@ -478,7 +478,6 @@ def suite : InstrSuite where
     -- [B8] type errors by argument order.
     mkCase "err/type/dict-not-maybe-cell" (mkIntStack 4 0 (.int (.num 7)) sampleValueA),
     mkCase "err/type/key-not-int" (#[ .builder sampleValueA, .slice slice8ExactA, .cell dictSigned8, intV 8 ]),
-    mkCase "err/type/key-nan" (#[ .builder sampleValueA, .int .nan, .cell dictSigned8, intV 8 ]),
     mkCase "err/type/value-not-builder" (#[ .int (.num 7), intV 3, .cell dictSigned4, intV 4 ]),
     mkCase "err/type/slice-value-on-int" (mkSliceStack 8 slice8ExactA (.cell dictSigned8) sampleValueA) dictReplaceBSigned, -- [B8] wrong top for int-key
 

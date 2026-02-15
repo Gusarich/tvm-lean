@@ -312,7 +312,6 @@ def suite : InstrSuite where
     mkCase "err/type-value-not-cell" #[.null, .slice s8A, .cell dictRoot8SingleA, intV 8] , -- [B5]
     mkCase "err/n-negative" #[.cell valueA, .slice s8A, .cell dictRoot8SingleA, intV (-1)] , -- [B3]
     mkCase "err/n-too-large" #[.cell valueA, .slice s8A, .cell dictRoot8SingleA, intV 1024] , -- [B3]
-    mkCase "err/n-nan" #[.cell valueA, .slice s8A, .cell dictRoot8SingleA, .int .nan] , -- [B3]
     mkCase "err/key-too-short-3-of-8" #[.cell valueA, .slice s3A, .cell dictRoot8SingleA, intV 8] , -- [B4]
     mkCase "err/key-too-short-n1" #[.cell valueA, .slice s0A, .cell dictRoot8SingleA, intV 1] , -- [B4]
     mkCase "err/dict-err-malformed-root" #[.cell valueA, .slice s8A, .cell malformedDict, intV 8] , -- [B7]

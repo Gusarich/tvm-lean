@@ -215,7 +215,7 @@ private def genDictIGETJMPZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 10 then
       mkCase "[fuzz] n-null" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (.null))
     else if shape = 11 then
-      mkCase "[fuzz] n-nan" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (.int .nan))
+      mkCase "[fuzz] n-type" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (.tuple #[]))
     else if shape = 12 then
       mkCase "[fuzz] n-negative" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (intV (-1)))
     else if shape = 13 then
@@ -223,7 +223,7 @@ private def genDictIGETJMPZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 14 then
       mkCase "[fuzz] key-null" false (mkDictCaseStack (.null) (.cell dictSignedHitRoot) (intV 4))
     else if shape = 15 then
-      mkCase "[fuzz] key-nan" false (mkDictCaseStack (.int .nan) (.cell dictSignedHitRoot) (intV 4))
+      mkCase "[fuzz] key-not-int" false (mkDictCaseStack (.tuple #[]) (.cell dictSignedHitRoot) (intV 4))
     else if shape = 16 then
       mkCase "[fuzz] dict-builder" false (mkDictCaseStack (intV 3) badValue (intV 4))
     else if shape = 17 then
@@ -420,13 +420,11 @@ def suite : InstrSuite where
 
     -- [B3] runtime argument shape and type errors.
     mkCase "[B3] n-null" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (.null)),
-    mkCase "[B3] n-nan" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (.int .nan)),
     mkCase "[B3] n-negative" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (intV (-1))),
     mkCase "[B3] n-too-large" false (mkDictCaseStack (intV 3) (.cell dictSignedHitRoot) (intV 1024)),
     mkCase "[B3] key-null" false (mkDictCaseStack (.null) (.cell dictSignedHitRoot) (intV 4)),
     mkCase "[B3] key-cell" false (mkDictCaseStack (.cell dictSignedHitRoot) (.cell dictSignedHitRoot) (intV 4)),
     mkCase "[B3] key-builder" false (mkDictCaseStack (.builder Builder.empty) (.cell dictSignedHitRoot) (intV 4)),
-    mkCase "[B3] key-nan" false (mkDictCaseStack (.int .nan) (.cell dictSignedHitRoot) (intV 4)),
     mkCase "[B3] dict-builder" false (mkDictCaseStack (intV 3) badValue (intV 4)),
     mkCase "[B3] dict-cellslice" false (mkDictCaseStack (intV 3) (.slice mkMethodValue) (intV 4)),
     mkCase "[B3] dict-null-tail" false (#[.cell dictSignedMissRoot, (intV 7), (.null), intV 4]),

@@ -283,7 +283,7 @@ private def genDictUMaxRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       (mkCase "fuzz/underflow/one" #[intV 8], rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/nan" #[.null, .int .nan], rng1)
+      (mkCase "fuzz/err/too-large2" #[.null, intV 9999], rng1)
     else if shape = 15 then
       (mkCase "fuzz/err/negative" #[.null, intV (-1)], rng1)
     else if shape = 16 then
@@ -516,7 +516,6 @@ def suite : InstrSuite where
     mkCase "oracle/mismatch/narrower-width" #[.cell dictU16, intV 8], -- [B6]
     mkCase "oracle/underflow/empty" #[], -- [B2]
     mkCase "oracle/underflow/one" #[intV 8], -- [B2]
-    mkCase "oracle/err/nan" #[.null, .int .nan], -- [B2]
     mkCase "oracle/err/negative" #[.null, intV (-1)], -- [B2]
     mkCase "oracle/err/too-large" #[.null, intV 9999], -- [B2]
     mkCase "oracle/err/edge" #[.null, intV 257], -- [B2]

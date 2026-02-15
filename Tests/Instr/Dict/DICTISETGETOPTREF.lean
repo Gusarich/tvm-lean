@@ -348,14 +348,14 @@ private def genDictISetGetOptRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
     else if shape = 9 then
       (mkCase "fuzz/set/slice/delete-miss" rawSetGetOptRef (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 4 4) 4 .null), rng1)
     else if shape = 10 then
-      (mkCase "fuzz/set/int/nan-key" rawSetGetOptRefInt (#[(.cell valueGoodC), .int .nan, .cell signedNibbleRoot4, intV 4]), rng1)
+      (mkCase "fuzz/set/int/key-oob-high" rawSetGetOptRefInt (#[(.cell valueGoodC), intV 8, .cell signedNibbleRoot4, intV 4]), rng1)
     else if shape = 11 then
       (mkCase "fuzz/set/int/n-out-of-range" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 16 4 (.cell valueGoodC)), rng1)
     else if shape = 12 then
       (mkCase "fuzz/set/int/negative-n" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-3) (-1) (.cell valueGoodC)), rng1)
     else if shape = 13 then
-      (mkCase "fuzz/set/int/nan-n" rawSetGetOptRefInt
-        (#[.cell valueGoodC, intV (-3), .cell signedNibbleRoot4, .int .nan]), rng1)
+      (mkCase "fuzz/set/int/n-too-large2" rawSetGetOptRefInt
+        (#[.cell valueGoodC, intV (-3), .cell signedNibbleRoot4, intV 1024]), rng1)
     else if shape = 14 then
       (mkCase "fuzz/set/slice/underflow" rawSetGetOptRef (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 2 4) 8 (.cell valueGoodC)), rng1)
     else if shape = 15 then
@@ -589,7 +589,6 @@ def suite : InstrSuite where
     -- [B3][B4]
     mkCase "oracle/err-n-too-large" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-3) 1024 (.cell valueGoodC)),
     -- [B3][B4]
-    mkCase "oracle/err-n-nan" rawSetGetOptRefInt (#[.cell signedNibbleRoot4, intV (-3), .int .nan, .cell valueGoodC]),
     -- [B4][B14]
     mkCase "oracle/err-type-dict" rawSetGetOptRefInt (#[.cell valueGoodC, .int (.num 5), .tuple #[], intV 4]),
     -- [B5][B4]
@@ -615,7 +614,6 @@ def suite : InstrSuite where
     -- [B6]
     mkCase "oracle/int/key-out-of-range-low" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-9) 4 (.cell valueGoodC)),
     -- [B6]
-    mkCase "oracle/int/key-nan" rawSetGetOptRefInt (#[.cell valueGoodC, .int .nan, .cell signedNibbleRoot4, intV 4]),
     -- [B9]
     mkCase "oracle/int/key-out-of-range-unsigned" rawSetGetOptRefUInt (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueGoodC)),
     -- [B7]

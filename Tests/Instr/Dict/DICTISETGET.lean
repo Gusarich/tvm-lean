@@ -542,7 +542,7 @@ private def genDICTISETGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 22 then
       (mkCase "fuzz/n-too-large" (mkSignedStack valueA 1 (.cell dictSigned4) 1024), rng2)
     else if shape = 23 then
-      (mkCase "fuzz/n-nan" (#[.slice valueA, .int (.num 1), .cell dictSigned4, .int .nan]), rng2)
+      (mkCase "fuzz/n-too-large2" (mkSignedStack valueA 1 (.cell dictSigned4) 9999), rng2)
     else if shape = 24 then
       (mkCase "fuzz/type/value-not-slice" #[.int (.num 1), .int (.num 1), .cell dictSigned4, intV 4], rng2)
     else if shape = 25 then
@@ -764,7 +764,6 @@ def suite : InstrSuite where
     -- [B2] n argument range/type validation.
     mkCase "oracle/err/n-too-large" (mkSignedStack valueA 1 (.cell dictSigned4) 1024),
     -- [B2] n argument range/type validation.
-    mkCase "oracle/err/n-nan" #[.slice valueA, .int (.num 1), .cell dictSigned4, .int .nan],
     -- [B3] signed key overflow conversion failure.
     mkCase "oracle/err/signed-key-high" (mkSignedStack valueA 8 (.cell dictSigned4) 4),
     -- [B3] signed key underflow conversion failure.

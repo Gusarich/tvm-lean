@@ -444,13 +444,13 @@ def genDICTIREPLACEGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 16 then
       (mkCodeCase "fuzz/err/type-dict" #[.slice keySlice5_8, intV 5, intV 8, intV 8] rawF42A, rng1)
     else if shape = 17 then
-      (mkCodeCase "fuzz/err/type-value" #[.int .nan, intV 5, .cell dictSliceSingle8, intV 8] rawF42A, rng1)
+      (mkCodeCase "fuzz/err/type-value" #[intV 7, intV 5, .cell dictSliceSingle8, intV 8] rawF42A, rng1)
     else if shape = 18 then
       (mkCase "fuzz/err/n-negative" (mkSliceCaseStack (.slice valueSliceA) keySlice5_8 (.cell dictSliceSingle8) (-1)) , rng1)
     else if shape = 19 then
       (mkCase "fuzz/err/n-large" (mkSliceCaseStack (.slice valueSliceA) keySlice5_8 (.cell dictSliceSingle8) 1024), rng1)
     else if shape = 20 then
-      (mkCase "fuzz/err/n-nan" (#[(.slice valueSliceA), .slice keySlice5_8, .cell dictSliceSingle8, .int .nan]) , rng1)
+      (mkCase "fuzz/err/n-too-large2" (mkSliceCaseStack (.slice valueSliceA) keySlice5_8 (.cell dictSliceSingle8) 9999), rng1)
     else if shape = 21 then
       (mkCase "fuzz/err/key-short" (mkSliceCaseStack (.slice valueSliceA) keySliceShort4 (.cell dictSliceSingle8) 8), rng1)
     else if shape = 22 then
@@ -614,7 +614,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/type-key-not-slice" (#[(.slice valueSliceA), intV 5, .cell dictSliceSingle8, intV 8]),
     mkCase "oracle/err/n-negative" (mkSliceCaseStack (.slice valueSliceA) keySlice5_8 (.cell dictSliceSingle8) (-1)),
     mkCase "oracle/err/n-too-large" (mkSliceCaseStack (.slice valueSliceA) keySlice5_8 (.cell dictSliceSingle8) 1024),
-    mkCase "oracle/err/n-nan" (#[(.slice valueSliceA), .slice keySlice5_8, .cell dictSliceSingle8, .int .nan]),
     mkCase "oracle/err/key-short" (mkSliceCaseStack (.slice valueSliceA) keySlice4_4 (.cell dictSliceSingle8) 8),
     mkCase "oracle/err/int-key-out-of-range-high" (mkIntCaseStack (.slice valueSliceA) 8 (.cell dictIntSigned8Single) 4),
     mkCase "oracle/err/int-key-out-of-range-low" (mkIntCaseStack (.slice valueSliceA) (-9) (.cell dictIntSigned8Single) 4),

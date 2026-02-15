@@ -256,7 +256,7 @@ private def genDictISetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   | 11 =>
       (caseDictISet "fuzz/err/n/too-large" byRef (mkCaseStack byRef 0 .null 1024), rng3)
   | 12 =>
-      (caseDictISet "fuzz/err/n/nan" byRef (mkCaseStackWithNVal byRef 0 .null .nan), rng3)
+      (caseDictISet "fuzz/err/n/too-large2" byRef (mkCaseStack byRef 0 .null 9999), rng3)
   | 13 =>
       (caseDictISet "fuzz/err/type/key" byRef (#[.slice mkValidSliceValue, .null, .cell dictSignedOtherSlice, intV 4]), rng3)
   | 14 =>
@@ -376,8 +376,6 @@ def suite : InstrSuite where
     caseDictISet "oracle/err/n-negative" false (mkCaseStack false (-3) (.cell dictSignedOtherSlice) (-1))
     ,
     caseDictISet "oracle/err/n-too-large" false (mkCaseStack false (-3) (.cell dictSignedOtherSlice) 1024)
-    ,
-    caseDictISet "oracle/err/n-nan" false (mkCaseStackWithNVal false (-3) (.cell dictSignedOtherSlice) .nan)
     ,
     caseDictISet "oracle/err/type-root" false (mkCaseStack false (-3) (.tuple #[]) 4)
     ,

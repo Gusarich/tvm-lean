@@ -266,7 +266,7 @@ private def genDICTMINREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 12 then
       (mkCase "fuzz/err/type-root" #[.slice badValueSlice, intV 8], rng1)
     else if shape = 13 then
-      (mkCase "fuzz/err/type-nan" #[dictNull, .int .nan], rng1)
+      (mkCase "fuzz/err/n-overflow2" #[dictNull, intV 9999], rng1)
     else if shape = 14 then
       (mkCase "fuzz/err/n-neg" #[dictNull, intV (-1)], rng1)
     else if shape = 15 then
@@ -397,7 +397,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/underflow-one" #[dictNull],
     mkCase "oracle/err/type-root" #[.cont (.quit 0), intV 8],
     mkCase "oracle/err/type-root-slice" #[.slice badValueSlice, intV 8],
-    mkCase "oracle/err/type-top" #[.null, .int .nan],
     mkCase "oracle/err/n-negative" #[dictNull, intV (-1)],
     mkCase "oracle/err/n-overflow" #[dictNull, intV 2000],
     mkCase "oracle/err/byref-shape" #[.cell dictSliceSingle8, intV 8],

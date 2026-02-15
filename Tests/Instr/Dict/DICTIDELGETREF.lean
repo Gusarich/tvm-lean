@@ -265,7 +265,7 @@ private def genDictIdelGetRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     (mkCase (s!"fuzz/err/range/key-low/{tag}") #[.cell intSignedRoot4, intV (-9), intV 4], rng2)
   else if shape = 14 then
     let (tag, rng2) := randNat rng1 0 999_999
-    (mkCase (s!"fuzz/err/range/key-nan/{tag}") #[.cell intSignedRoot4, .int .nan, intV 4], rng2)
+    (mkCase (s!"fuzz/err/type/key-not-int/{tag}") #[.cell intSignedRoot4, .tuple #[], intV 4], rng2)
   else if shape = 15 then
     let (tag, rng2) := randNat rng1 0 999_999
     (mkCase (s!"fuzz/err/dicterr/bits/{tag}") (mkIntCaseStack (.cell intSignedBadBitsRoot4) 3 4), rng2)
@@ -421,8 +421,6 @@ def suite : InstrSuite where
     , mkCase "err/range/key-high" #[.cell intSignedRoot4, intV 8, intV 4]
     -- [B3] int key out-of-range low.
     , mkCase "err/range/key-low" #[.cell intSignedRoot4, intV (-9), intV 4]
-    -- [B3] int key NaN.
-    , mkCase "err/range/key-nan" #[.cell intSignedRoot4, .int .nan, intV 4]
     -- [B5] Ref payload with non-zero bits.
     , mkCase "err/dicterr/payload-bits" (mkIntCaseStack (.cell intSignedBadBitsRoot4) 3 4)
     -- [B5] Ref payload with no refs.

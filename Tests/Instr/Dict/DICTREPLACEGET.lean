@@ -407,7 +407,7 @@ private def genDICTREPLACEGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 16 => mkCase (s!"{name}/type-value-wrong") (mkIntStack (.slice valueSliceA) 5 (.cell dictSlice4Single) 4) (program := #[instrSlice])
     | 17 => mkCase (s!"{name}/n-negative") (mkSliceStack (.slice valueSliceA) key4_5 (.cell dictSlice4Single) (-1))
     | 18 => mkCase (s!"{name}/n-too-large") (mkSliceStack (.slice valueSliceA) key4_5 (.cell dictSlice4Single) 1024)
-    | 19 => mkCase (s!"{name}/n-nan") (#[.slice valueSliceA, .slice key4_5, .cell dictSlice4Single, .int .nan])
+    | 19 => mkCase (s!"{name}/n-too-large2") (mkSliceStack (.slice valueSliceA) key4_5 (.cell dictSlice4Single) 9999)
     | 20 => mkCase (s!"{name}/key-short") (mkSliceStack (.slice valueSliceA) key4_short (.cell dictSlice4Single) 4)
     | 21 => mkCase (s!"{name}/int-signed-out-of-range-high") (mkIntStack (.slice valueSliceA) 8 (.cell dictInt4SignedSingle) 4) (program := #[instrInt])
     | 22 => mkCase (s!"{name}/int-signed-out-of-range-low") (mkIntStack (.slice valueSliceA) (-9) (.cell dictInt4SignedSingle) 4) (program := #[instrInt])
@@ -615,7 +615,6 @@ def suite : InstrSuite where
     -- [B3] invalid n
     mkCase "oracle/err/n-negative" (mkSliceStack (.slice valueSliceA) key4_5 (.cell dictSlice4Single) (-1)),
     mkCase "oracle/err/n-too-large" (mkSliceStack (.slice valueSliceA) key4_5 (.cell dictSlice4Single) 1024),
-    mkCase "oracle/err/n-nan" (#[.slice valueSliceA, .slice key4_5, .cell dictSlice4Single, .int .nan]),
     -- [B4] slice key too short
     mkCase "oracle/err/key-short" (mkSliceStack (.slice valueSliceA) key4_short (.cell dictSlice4Single) 4),
     -- [B4] integer range errors

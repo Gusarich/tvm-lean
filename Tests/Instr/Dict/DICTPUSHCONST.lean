@@ -121,13 +121,11 @@ private def mkCase
     (root : Cell)
     (keyBits : Nat)
     (stack : Array Value := #[])
-    (program : Array Instr := #[])
     (gasLimits : OracleGasLimits := {})
     (fuel : Nat := 1_000_000) : OracleCase :=
-  let p : Array Instr := if program.isEmpty then #[.dictPushConst root keyBits] else program
   { name := name
     instr := suiteId
-    program := p
+    codeCell? := some (makeRawCode keyBits root)
     initStack := stack
     gasLimits := gasLimits
     fuel := fuel }
@@ -185,10 +183,9 @@ private def pickN (i : Nat) : Nat :=
   | 2 => 2
   | 3 => 42
   | 4 => 255
-  | 5 => 1023
-  | 6 => 1024
-  | 7 => 4096
-  | _ => 1_000_000
+  | 5 => 777
+  | 6 => 1022
+  | _ => 1023
 
 private def genDictPushConstFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 21
@@ -212,9 +209,9 @@ private def genDictPushConstFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 5 then
       mkCase "fuzz/ok/1023" root 1023 stack
     else if shape = 6 then
-      mkCase "fuzz/ok/1024" root 1024 stack
+      mkCase "fuzz/ok/1022" root 1022 stack
     else if shape = 7 then
-      mkCase "fuzz/ok/1000000" root 1000000 (if stack.isEmpty then #[] else stack)
+      mkCase "fuzz/ok/777" root 777 stack
     else if shape = 8 then
       mkCodeCase "fuzz/raw/ok/0" stack (makeRawCode 0 root (natToBits 0xf40a 16))
     else if shape = 9 then
@@ -236,17 +233,15 @@ private def genDictPushConstFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 17 then
       mkCodeCase "fuzz/raw/err/invalid-upper" stack rawInvalidUpper
     else if shape = 18 then
-      mkCase "fuzz/gas/exact" root n
-        (program := #[.pushInt (.num dictPushGas), .tonEnvOp .setGasLimit, .dictPushConst root n])
+      mkCase "fuzz/gas/exact" root n stack
         (gasLimits := dictPushGasLimitsExact)
     else if shape = 19 then
-      mkCase "fuzz/gas/exact-minus-one" root n
-        (program := #[.pushInt (.num dictPushGasMinusOne), .tonEnvOp .setGasLimit, .dictPushConst root n])
+      mkCase "fuzz/gas/exact-minus-one" root n stack
         (gasLimits := dictPushGasLimitsExactMinusOne)
     else if shape = 20 then
-      mkCase "fuzz/ok/boundary-0" root 0 (program := #[.dictPushConst root 0])
+      mkCase "fuzz/ok/boundary-0" root 0 stack
     else
-      mkCase "fuzz/ok/boundary-1023" root 1023 (program := #[.dictPushConst root 1023])
+      mkCase "fuzz/ok/boundary-1023" root 1023 stack
   let (tag, rng5) := randNat rng4 0 999_999
   ({ case0 with name := s!"{case0.name}/{tag}" }, rng5)
 
@@ -326,20 +321,15 @@ def suite : InstrSuite where
     mkCase "oracle/ok/direct/null/2" dictCellA 2, -- [B2]
     mkCase "oracle/ok/direct/null/255" dictCellA 255, -- [B2]
     mkCase "oracle/ok/direct/null/1023" dictCellA 1023, -- [B2]
-    mkCase "oracle/ok/direct/null/1024" dictCellA 1024, -- [B2]
-    mkCase "oracle/ok/direct/null/4096" dictCellA 4096, -- [B2]
-    mkCase "oracle/ok/direct/null/large" dictCellA 1_000_000, -- [B2]
     mkCase "oracle/ok/direct/null/tail-a" dictCellA 16 #[intV 1, .null], -- [B2][B3]
     mkCase "oracle/ok/direct/null/tail-b" dictCellA 17 #[.cell dictCellB, intV 7, .builder Builder.empty], -- [B2][B3]
     mkCase "oracle/ok/direct/cell-b/0" dictCellB 0, -- [B2]
     mkCase "oracle/ok/direct/cell-b/7" dictCellB 7, -- [B2]
     mkCase "oracle/ok/direct/cell-b/1023" dictCellB 1023, -- [B2]
     mkCase "oracle/ok/direct/cell-c/255" dictCellC 255, -- [B2]
-    mkCase "oracle/ok/direct/cell-c/4096" dictCellC 4096, -- [B2]
     mkCase "oracle/ok/direct/cell-c/tail" dictCellC 777 #[.null, intV 123, .slice (Slice.ofCell dictCellA)], -- [B2][B3]
     mkCase "oracle/ok/direct/cell-d/0" dictCellD 0, -- [B2]
-    mkCase "oracle/ok/direct/cell-d/1024" dictCellD 1024, -- [B2]
-    mkCase "oracle/ok/direct/cell-d/tail" dictCellD 1234 #[.cell dictCellNoise, intV (-9), .tuple #[]], -- [B2][B3]
+    mkCase "oracle/ok/direct/cell-d/tail/210" dictCellD 210 #[.cell dictCellNoise, intV (-9), .tuple #[]], -- [B2][B3]
     mkCodeCase "oracle/raw/ok/0" #[] (makeRawCode 0 dictCellA), -- [B5][B6]
     mkCodeCase "oracle/raw/ok/1" #[] (makeRawCode 1 dictCellA), -- [B5][B6]
     mkCodeCase "oracle/raw/ok/42" #[] (makeRawCode 42 dictCellB), -- [B5][B6]
@@ -347,12 +337,8 @@ def suite : InstrSuite where
     mkCodeCase "oracle/raw/ok/1023" #[] (makeRawCode 1023 dictCellD), -- [B5][B6]
     mkCodeCase "oracle/raw/ok/chain/0" #[] (Cell.mkOrdinary (natToBits (makeRaw24 4) 24 ++ natToBits 0xf40a 16) #[dictCellA]), -- [B5][B6][B10]
     mkCodeCase "oracle/raw/ok/chain/1023" #[] (Cell.mkOrdinary (natToBits (makeRaw24 1023) 24 ++ natToBits 0xf40b 16) #[dictCellB]), -- [B5][B6][B10]
-    mkCase "oracle/gas/exact" dictCellA 0
-      (program := #[.pushInt (.num dictPushGas), .tonEnvOp .setGasLimit, .dictPushConst dictCellA 0])
-      (gasLimits := dictPushGasLimitsExact), -- [B11]
-    mkCase "oracle/gas/exact-minus-one" dictCellA 0
-      (program := #[.pushInt (.num dictPushGasMinusOne), .tonEnvOp .setGasLimit, .dictPushConst dictCellA 0])
-      (gasLimits := dictPushGasLimitsExactMinusOne), -- [B11]
+    mkCase "oracle/gas/exact" dictCellA 0 (gasLimits := dictPushGasLimitsExact), -- [B11]
+    mkCase "oracle/gas/exact-minus-one" dictCellA 0 (gasLimits := dictPushGasLimitsExactMinusOne), -- [B11]
     mkCodeCase "oracle/raw/err/missing-ref" #[] rawMissingRef8bit, -- [B8]
     mkCodeCase "oracle/raw/err/missing-ref-tail" #[] rawMissingRefTail, -- [B8]
     mkCodeCase "oracle/raw/err/truncated-23" #[] rawTruncated23, -- [B9]

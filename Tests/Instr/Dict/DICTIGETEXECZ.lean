@@ -305,7 +305,7 @@ private def genDICTIGETEXECZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 3 then
       mkCase "fuzz/err/n-type" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) (Int.ofNat 4) |>.set! 2 (.tuple #[]))
     else if shape = 4 then
-      mkCase "fuzz/err/n-nan" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 2 (.int .nan))
+      mkCase "fuzz/err/n-too-large-2000" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 2 (intV 2000))
     else if shape = 5 then
       mkCase "fuzz/err/n-negative" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) (-1))
     else if shape = 6 then
@@ -319,7 +319,7 @@ private def genDICTIGETEXECZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 10 then
       mkCase "fuzz/err/key-cell" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 0 (.cell Cell.empty))
     else if shape = 11 then
-      mkCase "fuzz/err/key-nan" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 0 (.int .nan))
+      mkCase "fuzz/err/key-not-int" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 0 (.tuple #[]))
     else if shape = 12 then
       mkCase "fuzz/miss/oob-pos" (mkDictCaseStack 8 (.cell dictSigned4MissRoot) 4)
     else if shape = 13 then
@@ -492,14 +492,12 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" #[.null], -- [B2]
     mkCase "oracle/underflow/two" #[.null, (.cell dictSigned4HitRoot)], -- [B2]
     mkCase "oracle/n/not-int" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 2 (.tuple #[])), -- [B3]
-    mkCase "oracle/n/nan" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 2 (.int .nan)), -- [B3]
     mkCase "oracle/n/negative" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) (-1)), -- [B3]
     mkCase "oracle/n/too-large" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 1024), -- [B3]
     mkCase "oracle/dict/builder" (mkDictCaseStack 3 (.builder Builder.empty) 4), -- [B4]
     mkCase "oracle/dict/tuple" (mkDictCaseStack 3 (.tuple #[]) 4), -- [B4]
     mkCase "oracle/key/null" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 0 (.null)), -- [B5]
     mkCase "oracle/key/cell" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 0 (.cell Cell.empty)), -- [B5]
-    mkCase "oracle/key/nan" (mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4 |>.set! 0 (.int .nan)), -- [B5]
     mkCase "oracle/miss/oob-positive" (mkDictCaseStack 8 (.cell dictSigned4MissRoot) 4), -- [B6]
     mkCase "oracle/miss/oob-negative" (mkDictCaseStack (-9) (.cell dictSigned4MissRoot) 4), -- [B6]
     mkCase "oracle/miss/in-tree" (mkDictCaseStack 2 (.cell dictSigned4MissRoot) 4), -- [B6]

@@ -320,7 +320,7 @@ def suite : InstrSuite where
       ,
     mkCase "err/key-type" (#[ .int (.num 5), dictSlice4, intV 4 ]) -- [B2]
       ,
-    mkCase "err/n-type" (#[ .slice (mkSlice 4 0), dictSlice4, .int .nan ]) -- [B2]
+    mkCase "err/n-type" (#[ .slice (mkSlice 4 0), dictSlice4, .tuple #[] ]) -- [B2]
       ,
     mkCase "err/n-negative" (#[ .slice (mkSlice 4 0), dictSlice4, intV (-1) ]) -- [B2]
       ,

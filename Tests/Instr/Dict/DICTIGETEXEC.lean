@@ -266,10 +266,10 @@ private def genDictIGETExecFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         .tuple #[]
       ])
     else if shape = 8 then
-      mkCase "fuzz/err-n-nan" unsigned doCall pushZ (#[
+      mkCase "fuzz/err-n-too-large-2000" unsigned doCall pushZ (#[
         if unsigned then intV 13 else intV 3,
         if unsigned then dictUnsignedHitRoot else dictSignedHitRoot,
-        .int .nan
+        intV 2000
       ])
     else if shape = 9 then
       mkCase "fuzz/err-n-negative" unsigned doCall pushZ (#[
@@ -294,7 +294,7 @@ private def genDictIGETExecFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       mkCase "fuzz/err-key-cell" unsigned doCall pushZ (mkDictCaseStack (if unsigned then 13 else 3) (if unsigned then dictUnsignedHitRoot else dictSignedHitRoot) 4 |>.set! 0 (.cell Cell.empty))
     else if shape = 14 then
-      mkCase "fuzz/err-key-nan" unsigned doCall pushZ (mkDictCaseStack (if unsigned then 13 else 3) (if unsigned then dictUnsignedHitRoot else dictSignedHitRoot) 4 |>.set! 0 (.int .nan))
+      mkCase "fuzz/err-key-not-int" unsigned doCall pushZ (mkDictCaseStack (if unsigned then 13 else 3) (if unsigned then dictUnsignedHitRoot else dictSignedHitRoot) 4 |>.set! 0 (.tuple #[]))
     else if shape = 15 then
       mkCase "fuzz/malformed-root" unsigned doCall pushZ (mkDictCaseStack (if unsigned then 13 else 3) (.cell malformedDictRoot) 4)
     else if shape = 16 then
@@ -496,7 +496,6 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" false false false #[.null],
     mkCase "oracle/underflow/two" false false false #[dictSignedHitRoot, intV 3],
     mkCase "oracle/n/not-int" false false false (mkDictCaseStack 3 dictSignedHitRoot 4 |>.set! 2 (.tuple #[])),
-    mkCase "oracle/n/nan" false false false (mkDictCaseStack 3 dictSignedHitRoot 4 |>.set! 2 (.int .nan)),
     mkCase "oracle/n/negative" false false false (mkDictCaseStack 3 dictSignedHitRoot (-1)),
     mkCase "oracle/n/too-large" false false false (mkDictCaseStack 3 dictSignedHitRoot 1024),
     -- [B4] dict argument.
@@ -505,7 +504,6 @@ def suite : InstrSuite where
     -- [B5] key validation and conversion.
     mkCase "oracle/key/null" false false false (mkDictCaseStack 3 dictSignedHitRoot 4 |>.set! 1 (.null)),
     mkCase "oracle/key/cell" false false false (mkDictCaseStack 3 dictSignedHitRoot 4 |>.set! 1 (.cell Cell.empty)),
-    mkCase "oracle/key/nan" false false false (mkDictCaseStack 3 dictSignedHitRoot 4 |>.set! 1 (.int .nan)),
     mkCase "oracle/key/signed-oob-pos" false false false (mkDictCaseStack 8 dictSignedHitRoot 4),
     mkCase "oracle/key/signed-oob-neg" false false false (mkDictCaseStack (-9) dictSignedHitRoot 4),
     mkCase "oracle/key/unsigned-oob-pos" true false false (mkDictCaseStack 16 dictUnsignedHitRoot 4),

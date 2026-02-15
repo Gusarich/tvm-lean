@@ -450,7 +450,7 @@ private def genDICTSETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 5 then
     (mkCase "fuzz/n-too-large" (mkSliceStack sampleSliceA (natToBits 5 8) .null 1024) (#[dictSetSlice]), rng2)
   else if shape = 6 then
-    (mkCase "fuzz/n-nan" #[.slice sampleSliceA, .slice sampleSliceA, .null, .int .nan] (#[dictSetSlice]), rng2)
+    (mkCase "fuzz/n-too-large2" (mkSliceStack sampleSliceA (natToBits 5 8) .null 9999) (#[dictSetSlice]), rng2)
   else if shape = 7 then
     (mkCase "fuzz/dict-not-maybe-cell" (mkSliceStack sampleSliceA (natToBits 5 8) (.tuple #[]) 8) (#[dictSetSlice]), rng2)
   else if shape = 8 then
@@ -464,7 +464,7 @@ private def genDICTSETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 12 then
     (mkCase "fuzz/slice-key-short" (mkSliceStack sampleSliceA (natToBits 5 3) .null 8) (#[dictSetSlice]), rng2)
   else if shape = 13 then
-    (mkCase "fuzz/int-key-nan" #[.slice sampleSliceA, .int .nan, .null, intV 8] (#[dictSetSigned]), rng2)
+    (mkCase "fuzz/int-key-oob-signed-high2" (mkIntStack (.slice sampleSliceA) 9999 .null 8) (#[dictSetSigned]), rng2)
   else if shape = 14 then
     (mkCase "fuzz/int-key-oob-signed-high" (mkIntStack (.slice sampleSliceA) 128 .null 8) (#[dictSetSigned]), rng2)
   else if shape = 15 then
@@ -687,7 +687,6 @@ def suite : InstrSuite where
   , mkCase "oracle/underflow-three" #[.slice sampleSliceA, .int (.num 5), .null] -- [B2]
     , mkCase "oracle/n-negative" (mkSliceStack sampleSliceA (natToBits 5 8) .null (-1)) -- [B3]
     , mkCase "oracle/n-too-large" (mkSliceStack sampleSliceA (natToBits 5 8) .null 1024) -- [B3]
-    , mkCase "oracle/n-nan" #[.slice sampleSliceA, .slice (mkSliceFromBits (natToBits 5 8)), .null, .int .nan] -- [B3]
     , mkCase "oracle/type-dict" (mkSliceStack sampleSliceA (natToBits 5 8) (.tuple #[]) 8) -- [B4]
     , mkCase "oracle/key-type-slice" (mkIntStack (.slice sampleSliceA) 5 (.cell dictSlice8) 8) -- [B5]
     , mkCase "oracle/key-type-int" (mkSliceStack sampleSliceA (natToBits 5 8) (.cell dictInt8Signed) 8) (#[dictSetSigned]) -- [B6]

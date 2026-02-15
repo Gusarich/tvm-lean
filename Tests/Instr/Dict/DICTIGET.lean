@@ -396,7 +396,6 @@ def suite : InstrSuite where
     -- [B3] `n` errors.
     mkCase "type/n-null" #[.cell dictN8Root, intV 5, .null],
     mkCase "type/n-builder" #[.cell dictN8Root, intV 5, .builder Builder.empty],
-    mkCase "type/n-nan" #[.cell dictN8Root, intV 5, .int .nan],
     mkCase "range/n-negative" #[.cell dictN8Root, intV 5, intV (-1)],
     mkCase "range/n-too-large" #[.cell dictN8Root, intV 5, intV 1024],
     mkCase "range/n-max" #[.cell dictN8Root, intV 5, intV 1023],
@@ -409,7 +408,6 @@ def suite : InstrSuite where
     mkCase "type/key-null" #[.cell dictN8Root, .null, intV 8],
     mkCase "type/key-cell" #[.cell dictN8Root, .cell Cell.empty, intV 8],
     mkCase "type/key-slice" #[.cell dictN8Root, .slice (Slice.ofCell (Cell.mkOrdinary (natToBits 1 1) #[])), intV 8],
-    mkCase "type/key-nan" #[.cell dictN8Root, .int .nan, intV 8],
 
     -- [B6] key-bit conversion misses.
     mkCase "conversion/out-of-range-positive" #[.cell dictN8Root, intV 128, intV 8],

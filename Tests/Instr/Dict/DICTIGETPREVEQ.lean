@@ -228,7 +228,6 @@ def suite : InstrSuite where
     mkCase "err/range-n-too-large" (stack3 (-1) .null 1024), -- [B5]
     mkCase "err/range-n-negative" (stack3 (-1) .null (-1)), -- [B5]
     mkCase "err/key-type" #[.null, .cell dict8A, intV 8], -- [B5]
-    mkCase "err/key-nan" #[.int .nan, .cell dict8A, intV 8], -- [B5]
     mkCase "err/dict-type" (stack3 (-1) (.int (.num 0)) 8), -- [B5]
     mkCase "err/n-type" #[.int (.num 7), .cell dict8A, .null], -- [B5]
     mkCase "err/malformed-dict" (stack3 (-1) (.cell malformedDict) 8), -- [B6]

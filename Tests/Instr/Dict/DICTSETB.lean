@@ -278,13 +278,13 @@ private def genDictSetBFuzz (rng0 : StdGen) : OracleCase × StdGen :=
     let (idx, rng2) := randNat rng1 0 3
     let c :=
       if idx = 0 then
-        mkCase "fuzz/range/slice-nan" #[.builder valueA, .slice (mkSliceFromBits (natToBits 0 8)), dictNull, .int .nan]
+        mkCase "fuzz/range/slice-too-large2" (mkSliceStack dictNull 9999 (natToBits 0 8) valueA)
       else if idx = 1 then
         mkCase "fuzz/range/slice-neg" (mkSliceStack dictNull (-1) (natToBits 0 8) valueA)
       else if idx = 2 then
         mkCase "fuzz/range/slice-too-large" (mkSliceStack dictNull 1024 (natToBits 0 8) valueA)
       else
-        mkCase "fuzz/range/int-nan" #[.builder valueA, .int .nan, dictNull, intV 5]
+        mkCase "fuzz/range/int-oob-hi2" (mkIntStack dictNull 5 9999 valueA)
     (c, rng2)
   else if shape < 34 then
     -- Integer-key conversion failures [B3]
@@ -485,7 +485,6 @@ def suite : InstrSuite where
     mkCase "err/underflow/one" #[.builder valueA], -- [B2][B5]
     mkCase "err/underflow/two" #[.builder valueA, intV 8], -- [B2][B5]
     mkCase "err/underflow/three" (mkSliceStack dictNull 8 (natToBits 5 8) valueA), -- [B2][B5]
-    mkCase "err/nan" (#[.builder valueA, .slice (mkSliceFromBits (natToBits 7 8)), dictNull, .int .nan]), -- [B2]
     mkCase "err/n-neg" (mkSliceStack dictNull (-1) (natToBits 7 8) valueA), -- [B2]
     mkCase "err/n-too-large" (mkSliceStack dictNull 1024 (natToBits 7 8) valueA), -- [B2]
     mkCase "err/int-key-range-hi" (mkIntStack dictNull 8 256 valueA) (program := #[instrSetUInt]), -- [B3]

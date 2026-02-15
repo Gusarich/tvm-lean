@@ -51,7 +51,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - `0xf444` and `0xf448` must fail as `.invOpcode`; too-short bitstrings must also fail.
 
 10. [B10] Gas accounting.
-   - Base gas is `computeExactGasBudget` plus variable creation gas on miss paths.
+   - Base gas is `computeExactGasBudget` plus variable created-cell gas for dict updates.
+   - NaN cases are unit-only due to oracle encoding limits.
    - Misses must be checked at `exact` and `exact-1` budgets.
 
 11. [B11] Fuzzer branch coverage.
@@ -265,19 +266,23 @@ private def createBitsSlice4 : Nat :=
 private def createBitsSliceMiss32 : Nat :=
   createdBitsForSet none (natToBits 0xD 4)
 
-private def createBitsSigned4 : Nat :=
-  createdBitsForSet none (dictKeyBits! "create-signed4" 4 false 5)
+private def createBitsSignedMiss : Nat :=
+  createdBitsForSet (some dictSigned4) (dictKeyBits! "create-signed-miss" 4 false 6)
 
-private def createBitsUnsigned4 : Nat :=
-  createdBitsForSet none (dictKeyBits! "create-unsigned4" 4 true 5)
+private def createBitsUnsignedMiss : Nat :=
+  createdBitsForSet (some dictUnsigned8) (dictKeyBits! "create-unsigned-miss" 8 true 7)
 
-private def dictSetGetBExactGas : Int := computeExactGasBudget instrSlice
+private def dictSetGetBExactGasSlice : Int := computeExactGasBudget instrSlice
+private def dictSetGetBExactGasSigned : Int := computeExactGasBudget instrSigned
+private def dictSetGetBExactGasUnsigned : Int := computeExactGasBudget instrSignedUnsigned
+
+private def dictSetGetBExactGas : Int := dictSetGetBExactGasSlice
 private def dictSetGetBMissSliceGas : Int :=
-  dictSetGetBExactGas + (Int.ofNat createBitsSlice4) * cellCreateGasPrice
+  dictSetGetBExactGasSlice + (Int.ofNat createBitsSlice4) * cellCreateGasPrice
 private def dictSetGetBMissSignedGas : Int :=
-  dictSetGetBExactGas + (Int.ofNat createBitsSigned4) * cellCreateGasPrice
+  dictSetGetBExactGasSigned + (Int.ofNat createBitsSignedMiss) * cellCreateGasPrice
 private def dictSetGetBMissUnsignedGas : Int :=
-  dictSetGetBExactGas + (Int.ofNat createBitsUnsigned4) * cellCreateGasPrice
+  dictSetGetBExactGasUnsigned + (Int.ofNat createBitsUnsignedMiss) * cellCreateGasPrice
 private def dictSetGetBMissSliceGasMinusOne : Int :=
   if dictSetGetBMissSliceGas > 0 then dictSetGetBMissSliceGas - 1 else 0
 private def dictSetGetBMissSignedGasMinusOne : Int :=
@@ -344,8 +349,8 @@ private def genDictSetGetBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
           #[.builder valueA, .slice keySlice4A, .cell dictSlice4Single, intV 1024], rng2)
     | 12 =>
         (mkDictSetGetBCase
-          "fuzz/n-nan"
-          #[.builder valueA, .slice keySlice4A, .cell dictSlice4Single, .int .nan], rng2)
+          "fuzz/n-too-large2"
+          #[.builder valueA, .slice keySlice4A, .cell dictSlice4Single, intV 9999], rng2)
     | 13 =>
         (mkDictSetGetBCase
           "fuzz/key-int-out-of-range/signed"
@@ -650,12 +655,6 @@ def suite : InstrSuite where
       , .cell dictSlice4Single
       , intV 1024
     ]),
-    mkDictSetGetBCase "oracle/err/n-nan" (#[
-      .builder valueA
-      , .slice keySlice4A
-      , .cell dictSlice4Single
-      , .int .nan
-    ]),
     -- [B5] type errors.
     mkDictSetGetBCase "oracle/err/dict-type" (#[
       .builder valueA
@@ -675,12 +674,6 @@ def suite : InstrSuite where
       , .cell dictSlice4Single
       , intV 4
     ],
-    mkDictSetGetBCase "oracle/err/int-key-nan" (#[
-      .builder valueA
-      , .int (.num 7)
-      , .cell dictSigned4
-      , .int .nan
-    ]) #[instrSigned],
     mkDictSetGetBCase "oracle/err/int-key-out-of-range/signed" (#[
       .builder valueA
       , .int (.num 8)

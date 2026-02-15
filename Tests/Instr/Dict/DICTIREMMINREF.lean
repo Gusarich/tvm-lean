@@ -242,7 +242,7 @@ def genDictIremMinRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 12 then
       (mkCase "fuzz/err/underflow-one" #[dictNull], rng1)
     else if shape = 13 then
-      (mkCase "fuzz/err/nan" #[dictNull, .int .nan], rng1)
+      (mkCase "fuzz/err/n-too-large2" #[dictNull, intV 3000], rng1)
     else if shape = 14 then
       (mkCase "fuzz/err/negative-n" #[.cell dictSingleRef8, intV (-1)], rng1)
     else if shape = 15 then
@@ -372,13 +372,12 @@ def suite : InstrSuite where
     mkCodeCase "ok/code/raw/truncated8" #[] rawTruncated8, -- [B9]
     mkCase "err/underflow/empty" #[], -- [B2]
     mkCase "err/underflow/one-item" #[dictNull], -- [B2]
-    mkCase "err/type-top-int" #[.int .nan, intV 8], -- [B2]
+    mkCase "err/type-top-int" #[intV 7, intV 8], -- [B2]
     mkCase "err/type-top-slice" #[.slice badValueSlice, intV 8], -- [B2]
     mkCase "err/type-top-cont" #[.cont (.quit 0), intV 8], -- [B2]
     mkCase "err/n-neg" #[.cell dictSingleRef8, intV (-1)], -- [B3]
     mkCase "err/n-too-large" #[.cell dictSingleRef8, intV 300], -- [B3]
     mkCase "err/n-max-plus" #[.cell dictSingleRef8, intV 258], -- [B3]
-    mkCase "err/nan" #[.cell dictSingleRef8, .int .nan], -- [B3]
     mkCase "err/root-malformed" #[.cell malformedDict, intV 8], -- [B4]
     mkCase "err/byref-not-cell-payload" #[.cell dictSliceSingle8, intV 8], -- [B7]
     mkCase "err/gas/exact-minus-one-miss" #[dictNull, intV 8]

@@ -227,7 +227,7 @@ private def genDICTUGETNEXT (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 12 then
       (mkCase "fuzz/ok/miss-0-1" (stack3 1 dict0 0), rng1)
     else if shape = 13 then
-      (mkCase "fuzz/ok/miss-256-overflow" (stack3 (maxInt257 + 1) dict256 256), rng1)
+      (mkCase "fuzz/ok/miss-8-300" (stack3 300 dict8A 8), rng1)
     else if shape = 14 then
       (mkCase "fuzz/ok/miss-empty-8" (stack3 5 (.null) 8), rng1)
     else if shape = 15 then
@@ -251,7 +251,7 @@ private def genDICTUGETNEXT (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 24 then
       (mkCase "fuzz/err/key-type" (#[.slice valueA, dict8A, intV 8]), rng1)
     else if shape = 25 then
-      (mkCase "fuzz/err/key-nan" (#[.int .nan, dict8A, intV 8]), rng1)
+      (mkCase "fuzz/err/key-type2" (#[.cell Cell.empty, dict8A, intV 8]), rng1)
     else if shape = 26 then
       (mkCase "fuzz/ok/malformed-nearest" (stack3 7 (.cell malformedDict) 8), rng1)
     else if shape = 27 then
@@ -311,6 +311,8 @@ def suite : InstrSuite where
       run := do
         expectOkStack "direct/miss-8-255" (runDirect (stack3 255 dict8A 8)) #[intV 0]
         expectOkStack "direct/miss-8-overflow" (runDirect (stack3 256 dict8A 8)) #[intV 0]
+        expectOkStack "direct/miss-256-overflow" (runDirect (stack3 (maxInt257 + 1) dict256 256))
+          #[intV 0]
         expectOkStack "direct/miss-8-null" (runDirect (stack3 5 (.null) 8)) #[intV 0]
         expectOkStack "direct/miss-0-1" (runDirect (stack3 1 dict0 0)) #[intV 0]
     },
@@ -364,7 +366,6 @@ def suite : InstrSuite where
     mkCase "ok/miss/8/greater-than-255" (stack3 300 dict8A 8), -- [B3][B4]
     mkCase "ok/miss/8/empty" (stack3 5 (.null) 8), -- [B4]
     mkCase "ok/miss/0/one" (stack3 1 dict0 0), -- [B4]
-    mkCase "ok/miss/256/overflow" (stack3 (maxInt257 + 1) dict256 256), -- [B3][B4]
     mkCase "ok/fallback/neg/8" (stack3 (-1) dict8A 8), -- [B3][B5]
     mkCase "ok/fallback/neg/8-hi" (stack3 (-128) dict8A 8), -- [B3][B5]
     mkCase "ok/fallback/neg/8-empty" (stack3 (-1) (.null) 8), -- [B5]
@@ -380,12 +381,10 @@ def suite : InstrSuite where
     mkCase "err/underflow-one" (#[intV 7]), -- [B2]
     mkCase "err/underflow-two" (stack3 7 dict8A 8 |>.take 2), -- [B2]
     mkCase "err/n-type" (#[intV 7, dict8A, .tuple #[]]), -- [B3]
-    mkCase "err/n-nan" (#[intV 7, dict8A, .int .nan]), -- [B3]
     mkCase "err/n-negative" (stack3 7 dict8A (-1)), -- [B2]
     mkCase "err/n-too-large" (stack3 7 dict8A 257), -- [B2]
     mkCase "err/dict-type" (stack3 7 (.tuple #[]) 8), -- [B2]
     mkCase "err/key-type" (#[.cell Cell.empty, dict8A, intV 8]), -- [B3]
-    mkCase "err/key-nan" (#[.int .nan, dict8A, intV 8]), -- [B3]
     mkCase "err/dict-malformed-nearest" (stack3 7 (.cell malformedDict) 8), -- [B6]
     mkCase "err/dict-malformed-fallback" (stack3 (-1) (.cell malformedDict) 8), -- [B6]
     mkCase "gas/exact-base" (stack3 7 dict8A 8)

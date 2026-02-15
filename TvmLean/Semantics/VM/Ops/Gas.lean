@@ -41,4 +41,10 @@ def VM.registerCellLoad (c : Cell) : VM Unit := do
   if decide (st.gas.gasRemaining < 0) then
     throw .outOfGas
 
+def VM.consumeGas (amount : Int) : VM Unit := do
+  modify fun st => st.consumeGas amount
+  let st ← get
+  if decide (st.gas.gasRemaining < 0) then
+    throw .outOfGas
+
 end TvmLean

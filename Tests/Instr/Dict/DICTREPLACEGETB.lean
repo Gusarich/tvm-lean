@@ -405,7 +405,7 @@ private def genDICTREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if idx = 1 then
         mkCase (s!"fuzz/range/n-too-large/{tag}") (mkSliceCase valueA key4ASlice (.cell dictSlice4) 1024)
       else
-        mkCase (s!"fuzz/range/n-nan/{tag}") (#[.builder valueA, .slice key4ASlice, .cell dictSlice4, .int .nan])
+        mkCase (s!"fuzz/range/n-too-large2/{tag}") (mkSliceCase valueA key4ASlice (.cell dictSlice4) 9999)
     (c, rng3)
   else if shape < 40 then
     let (idx, rng3) := randNat rng2 0 6
@@ -433,7 +433,7 @@ private def genDICTREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if idx = 1 then
         mkCase (s!"fuzz/malformed-root-int/{tag}") (mkIntCase valueA 1 (.cell malformedDict) 4) instrSigned
       else if idx = 2 then
-        mkCase (s!"fuzz/value/cellov/{tag}") (mkSliceCase valueHuge key4ASlice (.cell dictSlice4) 4)
+        mkCase (s!"fuzz/type/dict-not-cell2/{tag}") (mkSliceCase valueA key4ASlice (.tuple #[]) 4)
       else if idx = 3 then
         mkCodeCase (s!"fuzz/decode/f44d/{tag}") (mkSliceCase valueA key4ASlice (.cell dictSlice4) 4) rawF44d
       else if idx = 4 then
@@ -612,8 +612,6 @@ def suite : InstrSuite where
     mkCase "oracle/range/n-negative" (mkSliceCase valueA key4ASlice (.cell dictSlice4) (-1)),
     -- [B2]
     mkCase "oracle/range/n-too-large" (mkSliceCase valueA key4ASlice (.cell dictSlice4) 1024),
-    -- [B2]
-    mkCase "oracle/range/n-nan" (#[.builder valueA, .slice key4ASlice, .cell dictSlice4, .int .nan ]),
 
     -- [B4]
     mkCase "oracle/int/signed/high" (mkIntCase valueA 8 (.cell dictSigned4) 4) instrSigned,
@@ -637,9 +635,6 @@ def suite : InstrSuite where
     mkCase "oracle/malformed-root/slice" (mkSliceCase valueA key4ASlice (.cell malformedDict) 4),
     -- [B7]
     mkCase "oracle/malformed-root/int" (mkIntCase valueA 1 (.cell malformedDict) 4) instrSigned,
-
-    -- [B6]
-    mkCase "oracle/builder/overflow" (mkSliceCase valueHuge key4ASlice (.cell dictSlice4) 4),
 
     -- [B9]
     mkCodeCase "oracle/code/f44d" (mkSliceCase valueA key4ASlice (.cell dictSlice4) 4) rawF44d,

@@ -251,8 +251,8 @@ private def genDICTUGETEXECZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         #[.null, .tuple #[], intV 4]
     else if shape = 4 then
       mkNamed
-        "fuzz/err-n-nan"
-        #[.cell dictUnsigned4HitRoot, intV 3, .int .nan]
+        "fuzz/err-n-too-large2"
+        #[.cell dictUnsigned4HitRoot, intV 3, intV 9999]
     else if shape = 5 then
       mkNamed "fuzz/err-n-negative" (mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) (-1))
     else if shape = 6 then
@@ -271,8 +271,8 @@ private def genDICTUGETEXECZFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         (mkDictCaseStack 3 (.cell dictUnsigned4Root) 4 |>.set! 0 (.cell Cell.empty))
     else if shape = 11 then
       mkNamed
-        "fuzz/err-key-nan"
-        (mkDictCaseStack 3 (.cell dictUnsigned4Root) 4 |>.set! 0 (.int .nan))
+        "fuzz/err-key-tuple"
+        (mkDictCaseStack 3 (.cell dictUnsigned4Root) 4 |>.set! 0 (.tuple #[]))
     else if shape = 12 then
       mkNamed "fuzz/miss-oob-positive" (mkDictCaseStack 16 (.cell dictUnsigned4Root) 4)
     else if shape = 13 then
@@ -419,7 +419,6 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" #[.null], -- [B2]
     mkCase "oracle/underflow/two" #[.null, (.cell dictUnsigned4HitRoot)], -- [B2]
     mkCase "oracle/n/not-int" (#[intV 3, .cell dictUnsigned4HitRoot, .tuple #[]]), -- [B3]
-    mkCase "oracle/n/nan" (#[intV 3, .cell dictUnsigned4HitRoot, .int .nan]), -- [B3]
     mkCase "oracle/n/negative" (mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) (-1)), -- [B3]
     mkCase "oracle/n/too-large" (mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) 1024), -- [B3]
     -- [B4][B5] dict/key validation.
@@ -427,7 +426,6 @@ def suite : InstrSuite where
     mkCase "oracle/dict-tuple" (mkDictCaseStack 3 (.tuple #[]) 4), -- [B4]
     mkCase "oracle/key-null" (mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) 4 |>.set! 0 (.null)), -- [B5]
     mkCase "oracle/key-cell" (mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) 4 |>.set! 0 (.cell Cell.empty)), -- [B5]
-    mkCase "oracle/key-nan" (mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) 4 |>.set! 0 (.int .nan)), -- [B5]
     -- [B6] miss path with pushZ.
     mkCase "oracle/miss/out-of-range-pos" (mkDictCaseStack 16 (.cell dictUnsigned4Root) 4), -- [B6]
     mkCase "oracle/miss/out-of-range-neg" (mkDictCaseStack (-1) (.cell dictUnsigned4Root) 4), -- [B6]

@@ -306,7 +306,7 @@ private def genDictUMINFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       (mkCase "fuzz/miss/underflow/one" #[.null], rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/nan" #[.cell dict8Root, .int .nan], rng1)
+      (mkCase "fuzz/err/overflow2" #[.cell dict8Root, intV 9999], rng1)
     else if shape = 15 then
       (mkCase "fuzz/err/negative-n" #[.cell dict8Root, intV (-1)], rng1)
     else if shape = 16 then
@@ -443,7 +443,6 @@ def suite : InstrSuite where
     mkCase "oracle/underflow-one" #[(.null)], -- [B2]
     mkCase "oracle/err/type-root" #[.builder Builder.empty, intV 8], -- [B3]
     mkCase "oracle/err/type-non-int" #[.cell dict8Root, .null], -- [B2]
-    mkCase "oracle/err/nan" #[.cell dict8Root, .int .nan], -- [B2]
     mkCase "oracle/err/negative-n" #[.cell dict8Root, intV (-1)], -- [B2]
     mkCase "oracle/err/overflow" #[.cell dict8Root, intV 999], -- [B2]
     mkCase "oracle/err/edge-257" #[.cell dict8Root, intV 257], -- [B2]

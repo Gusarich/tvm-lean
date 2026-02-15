@@ -271,7 +271,7 @@ private def genDICTIREPLACEGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen
     else if shape = 8 then
       mkCase (s!"fuzz/err/n-too-large/{tag}") (mkDictCaseStack (.cell valueA) 5 (.cell dictSigned8Single) 1024) -- [B3]
     else if shape = 9 then
-      mkCase (s!"fuzz/err/n-nan/{tag}") (#[.cell valueA, intV 5, .cell dictSigned8Single, .int .nan]) -- [B3]
+      mkCase (s!"fuzz/err/n-too-large2/{tag}") (mkDictCaseStack (.cell valueA) 5 (.cell dictSigned8Single) 9999) -- [B3]
     else if shape = 10 then
       mkCase (s!"fuzz/err/key-range-high/{tag}") (mkDictCaseStack (.cell valueA) 16 (.cell dictSigned8Single) 4) -- [B3]
     else if shape = 11 then
@@ -372,7 +372,6 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-too-large" (mkDictCaseStack (.cell valueA) 5 (.cell dictSigned8Single) 1024),
     -- [B3]
-    mkCase "oracle/err/n-nan" (#[.cell valueA, intV 5, .cell dictSigned8Single, .int .nan]),
     -- [B3]
     mkCase "oracle/err/key-range-positive" (mkDictCaseStack (.cell valueA) 16 (.cell dictSigned8Single) 4),
     -- [B3]

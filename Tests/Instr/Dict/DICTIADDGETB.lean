@@ -321,8 +321,8 @@ private def genDictIAddGetBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         (mkDictIAddGetBCase "fuzz/err/n-negative" stack #[instrUnsigned], rng3)
     | 13 =>
         let stack : Array Value :=
-          #[.builder valueA, .int (.num 3), .cell dictUnsigned4, .int .nan]
-        (mkDictIAddGetBCase "fuzz/err/n-nan" stack #[instrUnsigned], rng3)
+          #[.builder valueA, .int (.num 3), .cell dictUnsigned4, .tuple #[]]
+        (mkDictIAddGetBCase "fuzz/err/n-type" stack #[instrUnsigned], rng3)
     | 14 =>
         let stack : Array Value :=
           mkDictCaseStack valueA 42 (.cell dictSigned4) 4
@@ -464,7 +464,6 @@ def suite : InstrSuite where
     -- [B4] `n` validation errors.
     , mkDictIAddGetBCase "oracle/err/n-negative" (mkDictCaseStack valueA 3 (.cell dictSigned4) (-1)) (#[instrSigned])
     , mkDictIAddGetBCase "oracle/err/n-too-large" (mkDictCaseStack valueA 3 (.cell dictSigned4) 1024) (#[instrSigned])
-    , mkDictIAddGetBCase "oracle/err/n-nan" #[.builder valueA, .int (.num 3), .cell dictUnsigned4, .int .nan] (#[instrUnsigned])
     , mkDictIAddGetBCase "oracle/err/n-type" #[.builder valueA, .int (.num 3), .cell dictUnsigned4, .tuple #[]] (#[instrUnsigned])
     -- [B4] integer key conversion errors (signed and unsigned ranges).
     , mkDictIAddGetBCase "oracle/err/key-range/unsigned/negative" (mkDictCaseStack valueA (-1) (.cell dictUnsigned4) 4) (#[instrUnsigned])
@@ -477,7 +476,6 @@ def suite : InstrSuite where
     , mkDictIAddGetBCase "oracle/err/key-type" #[.builder valueA, .slice (mkSliceFromBits (natToBits 0x3 2)), .cell dictSigned4, intV 4] (#[instrSigned])
     , mkDictIAddGetBCase "oracle/err/dict-type" (mkDictCaseStack valueA 4 (.tuple #[]) 4) (#[instrSigned])
     , mkDictIAddGetBCase "oracle/err/value-type" (#[.int (.num 4), .int (.num 4), .cell dictSigned4, intV 4]) (#[instrSigned])
-    , mkDictIAddGetBCase "oracle/err/value-type/intnan-key" (#[.builder valueA, .int .nan, .cell dictSigned4, intV 4]) (#[instrSigned])
     -- [B8] malformed dictionary structure.
     , mkDictIAddGetBCase "oracle/err/malformed-root/signed" (mkDictCaseStack valueA 4 (.cell malformedDictRoot) 4) (#[instrSigned])
     , mkDictIAddGetBCase "oracle/err/malformed-root/unsigned" (mkDictCaseStack valueA 4 (.cell malformedDictRoot) 4) (#[instrUnsigned])

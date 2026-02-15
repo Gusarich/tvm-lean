@@ -313,7 +313,6 @@ def suite : InstrSuite where
     mkCase "err/underflow-two" #[.slice hint4_8, .null], -- [B2]
     mkCase "err/range-n-too-large" (stackWithHint hint4_8 (.cell dict4) 1024), -- [B3]
     mkCase "err/range-n-negative" (stackWithHint hint4_8 (.cell dict4) (-1)), -- [B3]
-    mkCase "err/range-n-nan" (#[.slice hint4_8, .cell dict4, .int .nan]), -- [B3]
     mkCase "err/type-dict-not-cell" (stackWithHint hint4_8 (intV 7) 4), -- [B4]
     mkCase "err/type-keyhint-not-slice" (#[.int (.num 7), .cell dict4, intV 4]), -- [B5]
     mkCase "err/keyhint-too-short-n4" (stackWithHint hint8_short (.cell dict4) 4), -- [B6]

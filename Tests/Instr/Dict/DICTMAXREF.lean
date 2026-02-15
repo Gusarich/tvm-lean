@@ -246,7 +246,7 @@ private def genDictMaxRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 16 then
       (mkCase "fuzz/underflow/one" #[.null], rng1)
     else if shape = 17 then
-      (mkCase "fuzz/err/n-nan" #[dictNull, .int .nan], rng1)
+      (mkCase "fuzz/err/n-overflow2" #[dictNull, intV 9999], rng1)
     else if shape = 18 then
       (mkCase "fuzz/err/n-negative" #[dictNull, intV (-1)], rng1)
     else if shape = 19 then
@@ -447,7 +447,6 @@ def suite : InstrSuite where
     mkCase "oracle/hit/single1023" #[.cell dictSingle1023, intV 1023], -- [B4][B6]
     mkCase "oracle/underflow/empty" #[], -- [B2]
     mkCase "oracle/underflow/one" #[intV 8], -- [B2]
-    mkCase "oracle/err/n-nan" #[dictNull, .int .nan], -- [B2]
     mkCase "oracle/err/n-negative" #[dictNull, intV (-1)], -- [B2]
     mkCase "oracle/err/n-overflow" #[dictNull, intV 1024], -- [B2]
     mkCase "oracle/err/root-tuple" #[.tuple #[], intV 8], -- [B6]

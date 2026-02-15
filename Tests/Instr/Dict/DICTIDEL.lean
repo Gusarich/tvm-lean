@@ -364,7 +364,7 @@ private def genDICTIDEL (rng0 : StdGen) : OracleCase × StdGen :=
     | 9 =>
         (mkCaseSlice "fuzz/slice-underflow" #[(.cell dictSliceSignedN8One), .slice key3ShortSlice, intV 8], rng1)
     | 10 =>
-        (mkCaseSigned "fuzz/nan-n" #[(.cell dictSliceSignedN8One), intV 7, .int .nan], rng1)
+        (mkCaseSigned "fuzz/n-type" #[(.cell dictSliceSignedN8One), intV 7, .tuple #[]], rng1)
     | 11 =>
         (mkCaseSigned "fuzz/n-negative" #[(.cell dictSliceSignedN8One), intV 7, intV (-1)], rng1)
     | 12 =>
@@ -500,8 +500,6 @@ def suite : InstrSuite where
     mkCaseSigned "oracle/underflow-empty" #[],
     -- [B2]
     mkCaseSigned "oracle/underflow-one-item" #[.cell dictSliceSignedN8One],
-    -- [B3]
-    mkCaseSigned "oracle/nan" #[.cell dictSliceSignedN8One, intV 7, .int .nan],
     -- [B3]
     mkCaseSigned "oracle/n-negative" #[.cell dictSliceSignedN8One, intV 7, intV (-1)],
     -- [B3]

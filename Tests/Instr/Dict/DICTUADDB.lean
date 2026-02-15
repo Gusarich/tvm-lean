@@ -324,7 +324,7 @@ private def genDICTUADDBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   | 12 =>
       (mkCase "fuzz/err/n/too-large" (mkCaseStack 1024 0 .null), rng4)
   | 13 =>
-      (mkCase "fuzz/err/n/nan" #[.builder builderVal, intV 1, .cell dictU1, .int .nan], rng4)
+      (mkCase "fuzz/err/n/too-large2" (mkCaseStack 9999 1 (.cell dictU1)), rng4)
   | 14 =>
       (mkCase "fuzz/err/type/dict" (mkCaseStack nI inRangeKey (.int (.num 7))), rng4)
   | 15 =>
@@ -445,8 +445,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/n-range/negative" (mkCaseStack (-1) 0 .null),
     -- [B4] n/stack/range validation.
     mkCase "oracle/err/n-range/too-large" (mkCaseStack 1024 0 .null),
-    -- [B4] n/stack/range validation.
-    mkCase "oracle/err/n-range/nan" (#[(.builder builderVal), intV 1, .cell dictU4, .int .nan]),
 
     -- [B4] Type validation failure.
     mkCase "oracle/err/type/dict" (mkCaseStack 4 3 (.int (.num 7))),

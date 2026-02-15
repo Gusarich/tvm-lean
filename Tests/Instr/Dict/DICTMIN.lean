@@ -306,7 +306,7 @@ private def genDictMinFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       mkCase "fuzz/err/type-n-null" (#[(.cell dict8Root), .null])
     else if shape = 14 then
-      mkCase "fuzz/err/type-n-nan" (#[(.cell dict8Root), .int .nan])
+      mkCase "fuzz/err/type-n-overflow2" (#[(.cell dict8Root), intV 9999])
     else if shape = 15 then
       mkCase "fuzz/err/type-n-negative" (#[(.cell dict8Root), intV (-1)])
     else if shape = 16 then
@@ -424,7 +424,6 @@ def suite : InstrSuite where
     mkCase "err/underflow-empty" #[],
     mkCase "err/underflow-one" #[.null],
     mkCase "err/type-n-null" #[.cell dict8Root, .null],
-    mkCase "err/type-n-nan" #[.cell dict8Root, .int .nan],
     mkCase "err/type-n-negative" #[.cell dict8Root, intV (-1)],
     mkCase "err/type-n-overflow" #[.cell dict8Root, intV 1024],
 

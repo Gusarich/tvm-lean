@@ -261,7 +261,7 @@ private def genDICTIMinRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 11 then
       (mkCase "fuzz/err/type-root" #[.tuple #[], intV 8], rng1)
     else if shape = 12 then
-      (mkCase "fuzz/err/type-nan" #[dictNull, .int .nan], rng1)
+      (mkCase "fuzz/err/type-n-too-large2" #[dictNull, intV 9999], rng1)
     else if shape = 13 then
       (mkCase "fuzz/err/type-negative-n" #[.cell dictSingleRef8, intV (-1)], rng1)
     else if shape = 14 then
@@ -439,7 +439,6 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" #[dictNull], -- [B2]
     mkCase "oracle/err/root-tuple" #[.tuple #[], intV 8], -- [B2]
     mkCase "oracle/err/root-cont" #[.cont (.quit 0), intV 8], -- [B2]
-    mkCase "oracle/err/nan" #[dictNull, .int .nan], -- [B2]
     mkCase "oracle/err/n-negative" #[.cell dictSingleRef8, intV (-1)], -- [B2][B5]
     mkCase "oracle/err/n-too-large" #[.cell dictSingleRef8, intV 9999], -- [B2]
     mkCase "oracle/err/n-edge-258" #[.cell dictSingleRef8, intV 258], -- [B2]

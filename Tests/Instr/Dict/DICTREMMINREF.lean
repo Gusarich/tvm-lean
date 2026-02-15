@@ -295,7 +295,7 @@ private def genDICTREMMINREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       (mkCase "fuzz/err/underflow-one" #[dictNull], rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/nan" #[dictNull, .int .nan], rng1)
+      (mkCase "fuzz/err/too-large-n2" #[dictNull, intV 9999], rng1)
     else if shape = 15 then
       (mkCase "fuzz/err/negative-n" #[dictNull, intV (-1)], rng1)
     else if shape = 16 then
@@ -456,7 +456,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/underflow-one" #[dictNull], -- [B2]
     mkCase "oracle/err/type-root-tuple" #[.tuple #[], intV 8], -- [B3]
     mkCase "oracle/err/type-root-cont" #[.cont (.quit 0), intV 8], -- [B3]
-    mkCase "oracle/err/nan" #[dictNull, .int .nan], -- [B2]
     mkCase "oracle/err/n-negative" #[dictNull, intV (-1)], -- [B2]
     mkCase "oracle/err/n-too-large" #[dictNull, intV 1024], -- [B2]
     mkCase "oracle/err/n-over" #[dictNull, intV 3000], -- [B2]

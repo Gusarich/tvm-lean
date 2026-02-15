@@ -288,7 +288,7 @@ private def genDICTREPLACEFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 16 then
     (mkCase "fuzz/range/n-too-large" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null 1024) (#[instrSlice]), rng2) -- [B2]
   else if shape = 17 then
-    (mkCase "fuzz/range/n-nan" #[(.slice sampleSliceD), (.slice (mkSliceKey 4 3)), .null, .int .nan] (#[instrSlice]), rng2) -- [B2]
+    (mkCase "fuzz/range/n-too-large2" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null 9999) (#[instrSlice]), rng2) -- [B2]
   else if shape = 18 then
     (mkCase "fuzz/gas/miss-slice-exact" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null 4)
       (mkGasProgram missGasSlice instrSlice) (oracleGasLimitsExact missGasSlice), rng2) -- [B10] [B11]
@@ -498,7 +498,6 @@ def suite : InstrSuite where
     -- [B2]
     mkCase "oracle/range/n-negative" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null (-1)),
     mkCase "oracle/range/n-too-large" (mkSliceStack sampleSliceD (mkSliceKey 4 3) .null 1024),
-    mkCase "oracle/range/n-nan" #[(.slice sampleSliceD), (.slice (mkSliceKey 4 3)), .null, .int .nan],
 
     -- [B3]
     mkCase "oracle/key-short" (mkSliceStack sampleSliceD (mkSliceKey 3 3) (.cell dictSlice4) 4),

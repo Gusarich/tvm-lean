@@ -211,14 +211,14 @@ private def genDictUGETExecFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 1 => mkCase "fuzz/underflow/1" doCall pushZ #[.null]
     | 2 => mkCase "fuzz/underflow/2" doCall pushZ #[dictUnsignedHitRoot, intV 13]
     | 3 => mkCase "fuzz/err/n/not-int" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 2 (.tuple #[]))
-    | 4 => mkCase "fuzz/err/n/nan" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 2 (.int .nan))
+    | 4 => mkCase "fuzz/err/n/too-large2" false false (mkDictCaseStack 13 dictUnsignedHitRoot 9999)
     | 5 => mkCase "fuzz/err/n/negative" false false (mkDictCaseStack 13 dictUnsignedHitRoot (-1))
     | 6 => mkCase "fuzz/err/n/too-large" false false (mkDictCaseStack 13 dictUnsignedHitRoot 1024)
     | 7 => mkCase "fuzz/err/dict-builder" false false (mkDictCaseStack 13 (.builder Builder.empty) 4)
     | 8 => mkCase "fuzz/err/dict-tuple" false false (mkDictCaseStack 13 (.tuple #[]) 4)
     | 9 => mkCase "fuzz/err/key-null" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.null))
     | 10 => mkCase "fuzz/err/key-cell" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.cell Cell.empty))
-    | 11 => mkCase "fuzz/err/key-nan" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.int .nan))
+    | 11 => mkCase "fuzz/err/key-tuple" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.tuple #[]))
     | 12 => mkCase "fuzz/miss/oor-pos" false false (mkDictCaseStack 16 dictUnsignedHitRoot 4)
     | 13 => mkCase "fuzz/miss/oor-neg" false false (mkDictCaseStack (-1) dictUnsignedHitRoot 4)
     | 14 => mkCase "fuzz/miss/oor-pos-z" false true (mkDictCaseStack 16 dictUnsignedHitRoot 4)
@@ -323,7 +323,6 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" false false #[.null], -- [B2]
     mkCase "oracle/underflow/two" false false #[dictUnsignedHitRoot, intV 13], -- [B2]
     mkCase "oracle/n/not-int" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 2 (.tuple #[])), -- [B3]
-    mkCase "oracle/n/nan" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 2 (.int .nan)), -- [B3]
     mkCase "oracle/n/negative" false false (mkDictCaseStack 13 dictUnsignedHitRoot (-1)), -- [B3]
     mkCase "oracle/n/too-large" false false (mkDictCaseStack 13 dictUnsignedHitRoot 1024), -- [B3]
 
@@ -332,7 +331,6 @@ def suite : InstrSuite where
 
     mkCase "oracle/key/null" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.null)), -- [B5]
     mkCase "oracle/key/cell" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.cell Cell.empty)), -- [B5]
-    mkCase "oracle/key/nan" false false (mkDictCaseStack 13 dictUnsignedHitRoot 4 |>.set! 0 (.int .nan)), -- [B5]
 
     mkCase "oracle/miss/oor-pos" false false (mkDictCaseStack 16 dictUnsignedHitRoot 4), -- [B6]
     mkCase "oracle/miss/oor-neg" false false (mkDictCaseStack (-1) dictUnsignedHitRoot 4), -- [B6]

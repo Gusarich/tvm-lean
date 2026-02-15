@@ -234,7 +234,7 @@ private def genDictiaddrefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 21 then
       (mkCase "fuzz/err/range-n-too-large" #[.cell value, intV 7, .null, intV 1024], rng3)
     else if shape = 22 then
-      (mkCase "fuzz/err/range-key-nan" #[.cell dictValA, .int .nan, .null, intV 8], rng3)
+      (mkCase "fuzz/err/type-key-not-int/tuple" #[.cell dictValA, .tuple #[], .null, intV 8], rng3)
     else if shape = 23 then
       (mkCase "fuzz/err/range-key-too-large" #[.cell value, intV 256, .null, intV 8], rng3)
     else if shape = 24 then
@@ -363,8 +363,6 @@ def suite : InstrSuite where
     mkCase "err/range-n-negative" #[.cell dictValA, intV 7, .null, intV (-1)]
     ,
     mkCase "err/range-n-too-large" #[.cell dictValA, intV 7, .null, intV 1024]
-    ,
-    mkCase "err/range-key-nan" #[.cell dictValA, .int .nan, .null, intV 8]
     ,
     mkCase "err/range-key-out-of-range" #[.cell dictValA, intV 256, .null, intV 8]
     ,

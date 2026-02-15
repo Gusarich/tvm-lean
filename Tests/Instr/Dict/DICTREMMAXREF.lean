@@ -256,7 +256,7 @@ def genDictRemMaxRefCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 15 then
       (mkCase "fuzz/err/underflow-one" (#[dictNull]), rng1)
     else if shape = 16 then
-      (mkCase "fuzz/err/type-key-nan" ((#[Value.cell dictSingleRef8, Value.int .nan] : Array Value)), rng1)
+      (mkCase "fuzz/err/n-too-large2" (#[.cell dictSingleRef8, intV 9999]), rng1)
     else if shape = 17 then
       (mkCase "fuzz/err/type-dict-noncell" (#[.tuple #[], intV 8]), rng1)
     else if shape = 18 then
@@ -412,7 +412,6 @@ def suite : InstrSuite where
     mkCase "err/type/top-tuple" (#[.tuple #[], intV 8]), -- [B2]
     mkCase "err/type/dict-not-cell" (#[.cont (.quit 0), intV 8]), -- [B2]
     mkCase "err/type/key-non-int" (#[Value.cell dictSingleRef8, Value.slice badValueSlice]), -- [B2]
-    mkCase "err/type/key-nan" (#[Value.cell dictSingleRef8, Value.int .nan]), -- [B2]
     mkCase "err/n/negative" (#[.cell dictSingleRef8, intV (-1)]), -- [B2]
     mkCase "err/n/too-large" (#[.cell dictSingleRef8, intV 1024]), -- [B2]
     mkCase "err/root-non-dict" (#[.cell malformedDict, intV 8]), -- [B4][B5]

@@ -372,7 +372,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/underflow-two" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A]),
     mkCase "oracle/err/underflow-three" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A]),
     mkCase "oracle/err/n-not-int" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, Value.tuple #[]]),
-    mkCase "oracle/err/n-nan" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, Value.int .nan]),
     mkCase "oracle/err/n-negative" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, intV (-1)]),
     mkCase "oracle/err/n-too-large" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, intV 1024]),
     mkCase "oracle/err/dict-not-cell" ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.builder Builder.empty, intV 8]),

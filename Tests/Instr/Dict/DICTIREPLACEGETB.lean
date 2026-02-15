@@ -340,7 +340,7 @@ private def genDICTIREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       else if sel = 1 then
         mkCase "fuzz/range/n-too-large" (mkIntStack 1024 0 (.cell dictSigned8) valueA)
       else if sel = 2 then
-        mkCase "fuzz/type/nan" (#[.builder valueA, intV 1, .cell dictSigned8, .int .nan])
+        mkCase "fuzz/range/n-too-large2" (mkIntStack 9999 0 (.cell dictSigned8) valueA)
       else if sel = 3 then
         mkCase "fuzz/range/int-key-high" (mkIntStack 4 8 (.cell dictSigned4) valueA)
       else if sel = 4 then
@@ -453,7 +453,6 @@ def suite : InstrSuite where
 
     -- [B6] integer validation
     mkCase "err/nan-key/signed" (#[.builder valueA, .slice slice8A, .cell dictSigned8, intV 8]), -- [B6]
-    mkCase "err/key-nan/signed" (#[.builder valueA, .int .nan, .cell dictSigned8, intV 8]), -- [B6]
     mkCase "err/key-out-of-range/signed-high" (mkIntStack 4 8 (.cell dictSigned4) valueA), -- [B6]
     mkCase "err/key-out-of-range/signed-low" (mkIntStack 4 (-9) (.cell dictSigned4) valueA), -- [B6]
     mkCase "err/key-out-of-range/unsigned" (mkIntStack 8 (-1) (.cell dictUnsigned8) valueA) #[instrSignedUnsigned], -- [B6]

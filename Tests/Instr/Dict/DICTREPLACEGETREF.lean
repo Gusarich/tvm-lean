@@ -278,6 +278,9 @@ private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
 private def runDICTREPLACEGETREFDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.dictGet false false false) (VM.push (.int (.num 909))) stack
 
+private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrDictExt instr stack
+
 private def genDICTREPLACEGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 35
   let (tag, rng2) := randNat rng1 0 999_999
@@ -317,7 +320,7 @@ private def genDICTREPLACEGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
     else if shape = 13 then
       mkCase (s!"fuzz/err/n-too-large/{tag}") (mkDictCaseStack (.cell valueA) key5 (.cell dict8Single) 1024) -- [B3]
     else if shape = 14 then
-      mkCase (s!"fuzz/err/n-nan/{tag}") (#[.cell valueA, .slice key5, .cell dict8Single, .int .nan]) -- [B3]
+      mkCase (s!"fuzz/err/n-too-large2/{tag}") (mkDictCaseStack (.cell valueA) key5 (.cell dict8Single) 9999) -- [B3]
     else if shape = 15 then
       mkCase (s!"fuzz/err/type-dict/{tag}") (mkDictCaseStack (.cell valueA) key5 (.tuple #[]) 8) -- [B5]
     else if shape = 16 then
@@ -431,6 +434,13 @@ def suite : InstrSuite where
     { name := "unit/asm/encodes" -- [B10]
       run := do
         expectAssembleOk16 "asm/encodes" instr }
+    ,
+    { name := "unit/runtime/n-nan" -- [B3]
+      run := do
+        let key5 : Slice := mkSliceFromBits (key8 5)
+        expectErr "n-nan"
+          (runDirect (#[.cell valueA, .slice key5, .cell dict8Single, .int .nan]))
+          .rangeChk }
   ]
   oracle := #[
     -- [B2]
@@ -445,8 +455,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/n-negative" (mkDictCaseStack (.cell valueA) (mkSliceFromBits (key8 5)) (.cell dict8Single) (-1)),
     -- [B3]
     mkCase "oracle/err/n-too-large" (mkDictCaseStack (.cell valueA) (mkSliceFromBits (key8 5)) (.cell dict8Single) 1024),
-    -- [B3]
-    mkCase "oracle/err/n-nan" (#[.cell valueA, .slice (mkSliceFromBits (key8 5)), .cell dict8Single, .int .nan]),
     -- [B4]
     mkCase "oracle/err/key-short" (mkDictCaseStack (.cell valueA) (mkSliceFromBits (natToBits 5 3)) (.cell dict8Single) 8),
     -- [B4][B6]

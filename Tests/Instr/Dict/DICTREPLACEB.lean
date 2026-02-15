@@ -211,6 +211,9 @@ private def expectDecodeInv (label : String) (code : Cell) : IO Unit := do
   | .ok (instr, bits, _) =>
       throw (IO.userError s!"{label}: expected invOpcode, got {reprStr instr} with {bits} bits")
 
+private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrDictDictReplaceB dictReplaceBSlice stack
+
 private def replaceCreated (root : Cell) (key : BitString) : Nat :=
   match dictSetBuilderWithCells (some root) key sampleValueA .replace with
   | .ok (_, _, created, _) => created
@@ -267,7 +270,7 @@ private def genDICTREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if sel = 1 then
         mkCase "fuzz/range/n-too-large" (mkSliceStack 1024 slice8ExactA (.cell dictSlice8) sampleValueA)
       else
-        mkCase "fuzz/range/n-nan" (#[.builder sampleValueA, .slice slice8ExactA, .cell dictSlice8, .int .nan])
+        mkCase "fuzz/range/n-too-large2" (mkSliceStack 9999 slice8ExactA (.cell dictSlice8) sampleValueA)
     (c, rng2)
   else if shape < 68 then
     -- [B9] cell_und
@@ -295,7 +298,7 @@ private def genDICTREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         else if sel = 4 then
         mkCase "fuzz/malformed-dict" (mkSliceStack 8 slice8ExactA (.cell malformedDict) sampleValueA)
       else
-        mkCase "fuzz/builder/cellov" (mkSliceStack 8 slice8ExactA (.cell dictSlice8) oversizedValue)
+        mkCase "fuzz/type/dict-not-maybe-cell-tuple" (mkSliceStack 8 slice8ExactA (.tuple #[]) sampleValueA)
     (c, rng2)
   else
     -- [B13/B14] gas branches
@@ -339,6 +342,18 @@ def suite : InstrSuite where
         expectDecodeInv "decode/0xf448-invalid" rawF448
         expectDecodeInv "decode/0xf44c-invalid" rawF44C
     }
+    ,
+    { name := "unit/runtime/range/n-nan" -- [B8]
+      run := do
+        expectErr "unit/runtime/range/n-nan"
+          (runDirect #[.builder sampleValueA, .slice slice8ExactA, .cell dictSlice8, .int .nan])
+          .rangeChk }
+    ,
+    { name := "unit/runtime/builder/cellov" -- [B12]
+      run := do
+        expectErr "unit/runtime/builder/cellov"
+          (runDirect (mkSliceStack 8 slice8ExactA (.cell dictSlice8) oversizedValue))
+          .cellOv }
   ]
   oracle := #[
     -- [B5] hit path: replace existing key (n=8).
@@ -360,7 +375,6 @@ def suite : InstrSuite where
     -- [B8] range errors on `n`.
     mkCase "err/range/n-negative" (mkSliceStack (-1) slice8ExactA (.cell dictSlice8) sampleValueA),
     mkCase "err/range/n-too-large" (mkSliceStack 1024 slice8ExactA (.cell dictSlice8) sampleValueA),
-    mkCase "err/range/n-nan" (#[.builder sampleValueA, .slice slice8ExactA, .cell dictSlice8, .int .nan]),
 
     -- [B9] cell_und from short slice key.
     mkCase "err/cellund/too-few-bits-8" (mkSliceStack 8 sliceTooShortFor8 (.cell dictSlice8) sampleValueA),
@@ -381,9 +395,6 @@ def suite : InstrSuite where
 
     -- [B11] malformed dictionary errors propagated from dictionary primitives.
     mkCase "err/dict/malformed-slice" (mkSliceStack 8 slice8ExactA (.cell malformedDict) sampleValueA),
-
-    -- [B12] builder overflow into dictSetBuilderWithCells.
-    mkCase "err/builder/cellov" (mkSliceStack 8 slice8ExactA (.cell dictSlice8) oversizedValue),
 
     -- [B13] gas exactness branch.
     mkGasCase "gas/miss/exact" (mkSliceStack 0 slice0Exact .null sampleValueA) dictReplaceBSlice replaceMissGas (oracleGasLimitsExact replaceMissGas),

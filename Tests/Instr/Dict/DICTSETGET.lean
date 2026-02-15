@@ -329,7 +329,7 @@ private def genDICTSETGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 19 then
     (mkCase s!"fuzz/err/n-too-large/{tag}" #[.slice valueA, .slice key4, .cell dict4Single, intV 1024], rng2)
   else if shape = 20 then
-    (mkCase s!"fuzz/err/n-nan/{tag}" #[.slice valueA, .slice key4, .cell dict4Single, .int .nan], rng2)
+    (mkCase s!"fuzz/err/n-too-large2/{tag}" #[.slice valueA, .slice key4, .cell dict4Single, intV 9999], rng2)
   else if shape = 21 then
     (mkCase s!"fuzz/err/dict-type/{tag}" #[.slice valueA, .slice key4, .tuple #[], intV 4], rng2)
   else if shape = 22 then
@@ -516,7 +516,6 @@ def suite : InstrSuite where
     mkCase "err/underflow-3" #[.slice key4, .slice valueA, .cell dict4Single], -- [B2]
     mkCase "err/n-neg" #[.slice valueA, .slice key4, .cell dict4Single, intV (-1)], -- [B3]
     mkCase "err/n-too-large" #[.slice valueA, .slice key4, .cell dict4Single, intV 1024], -- [B3]
-    mkCase "err/n-nan" #[.slice valueA, .slice key4, .cell dict4Single, .int .nan], -- [B3]
     mkCase "err/type-dict" #[.slice valueA, .slice key4, .tuple #[], intV 4], -- [B4]
     mkCase "err/type-key" #[.slice valueA, .int (.num 0), .cell dict4Single, intV 4], -- [B4]
     mkCase "err/type-value" #[.int (.num 0), .slice key4, .cell dict4Single, intV 4], -- [B4]

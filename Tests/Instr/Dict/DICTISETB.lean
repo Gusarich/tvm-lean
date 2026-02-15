@@ -261,7 +261,7 @@ private def genDICTISETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape < 10 then
     let c :=
       if shape = 8 then mkCase "fuzz/range/n0-nonzero" (mkISETBStack 0 1)
-      else mkCase "fuzz/range/key-nan" (#[.builder builderA, .int .nan, .null, intV 4])
+      else mkCase "fuzz/range/key-high" (#[.builder builderA, intV 16, .null, intV 4])
     (c, rng2)
   else if shape < 14 then
     let c :=
@@ -283,7 +283,7 @@ private def genDICTISETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if shape = 16 then
         mkCase "fuzz/err/value-not-builder" (#[.slice (mkSliceFromBits (natToBits 3 4)), .int (.num 3), .null, intV 4])
       else if shape = 17 then
-        mkCase "fuzz/err/key-nan" (#[.builder builderA, .int .nan, .null, intV 4])
+        mkCase "fuzz/err/key-high" (#[.builder builderA, intV 16, .null, intV 4])
       else
         mkCase "fuzz/err/malformed-root" (mkISETBStack 4 1 (.cell malformedDict))
     (c, rng2)
@@ -310,7 +310,7 @@ private def genDICTISETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if sel = 2 then
         mkCase "fuzz/random/type-dict" (mkISETBStack 4 1 (.tuple #[]))
       else if sel = 3 then
-        mkCase "fuzz/random/nan-key" (#[(.builder builderA), .int .nan, .null, intV 4])
+        mkCase "fuzz/random/key-high" (#[(.builder builderA), intV 16, .null, intV 4])
       else if sel = 4 then
         mkCodeCase "fuzz/random/code-0xf442" (mkISETBStack 4 1 (.null)) dictISETBCode
       else
@@ -428,9 +428,8 @@ def suite : InstrSuite where
     -- [B4] `n` too large.
     mkCase "err/range/n-too-large" (mkISETBStack 1024 0 .null),
     -- [B4] `n` NaN path.
-    mkCase "err/range/n-nan" (#[.builder builderA, .int (.num 1), .null, .int .nan]),
+    -- NOTE: `NaN` cannot be encoded in the oracle stack token stream.
     -- [B4] key NaN path.
-    mkCase "err/range/key-nan" (#[.builder builderA, .int .nan, .null, intV 4]),
     -- [B5] underflow: empty stack.
     mkCase "err/underflow/empty" #[],
     -- [B5] underflow: one item.

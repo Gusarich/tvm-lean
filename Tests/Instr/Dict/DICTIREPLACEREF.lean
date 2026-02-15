@@ -232,7 +232,7 @@ def genDICTIReplaceRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 16 then
       (mkCase "fuzz/err/type-value" (#[ .cell dictSingle8, intV 8, intV 5, intV 5 ]), rng1)
     else if shape = 17 then
-      (mkCase "fuzz/err/nan-key" (#[ .cell dictSingle8, .int .nan, intV 5, .cell valueA ]), rng1)
+      (mkCase "fuzz/err/n-too-large2" (#[ .cell dictSingle8, intV 9999, intV 5, .cell valueA ]), rng1)
     else if shape = 18 then
       (mkCase "fuzz/err/key-oob" (#[ .cell dictSingle8, intV 1, intV 1, .cell valueA ]), rng1)
     else
@@ -314,7 +314,6 @@ def suite : InstrSuite where
     mkCase "err/type/dict-not-cell" (#[ .tuple #[], intV 8, intV 5, .cell valueA ]), -- [B2]
     mkCase "err/type/key-not-int" (#[ .cell dictSingle8, intV 8, .slice badKeySlice, .cell valueA ]), -- [B2][B3]
     mkCase "err/n/negative" (#[ .cell dictSingle8, intV (-1), intV 5, .cell valueA ]), -- [B3]
-    mkCase "err/n/nan" (#[ .cell dictSingle8, .int .nan, intV 5, .cell valueA ]), -- [B3]
     mkCase "err/n/too-large" (#[ .cell dictSingle8, intV 1024, intV 5, .cell valueA ]), -- [B3]
     mkCase "err/key/out-of-range-n0" (#[ .cell dictSingle0, intV 0, intV 1, .cell valueA ]), -- [B6][B3]
     mkCase "err/key/out-of-range-n1" (#[ .cell dictSingle8, intV 1, intV 1, .cell valueA ]), -- [B6][B3]

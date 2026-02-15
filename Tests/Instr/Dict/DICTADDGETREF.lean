@@ -425,9 +425,6 @@ def suite : InstrSuite where
     -- [B4] runtime failure: n above 1023.
     , caseDictAddGetRef "oracle/err/n-too-large" false
       (mkDictCaseStack (normalNewValue false) (.slice (keySlice4 0xA)) (.cell dictSlice4Single) (intV 1024))
-    -- [B4] runtime failure: n NaN.
-    , caseDictAddGetRef "oracle/err/n-nan" false
-      (mkDictCaseStack (normalNewValue false) (.slice (keySlice4 0xA)) (.cell dictSlice4Single) (.int .nan))
     -- [B4] runtime failure: dict root type error.
     , caseDictAddGetRef "oracle/err/dict-type" false
       (mkDictCaseStack (normalNewValue false) (.slice (keySlice4 0xA)) (.int (.num 0)) (intV 4))

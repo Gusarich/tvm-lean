@@ -215,7 +215,7 @@ private def genDictIAddGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   | 4 =>
       let (mode, rng5) := randNat rng4 0 2
       let nVal : Value :=
-        if mode = 0 then intV (-1) else if mode = 1 then intV 1024 else .int .nan
+        if mode = 0 then intV (-1) else intV 1024
       let stack := mkDictCaseStack (normalNewValue byRef) (if unsigned then intV 13 else intV (-3)) .null nVal
       (caseDictMutGet (s!"/fuzz/n-out-of-range/{tag}") unsigned byRef stack, rng5)
   | 5 =>
@@ -366,9 +366,6 @@ def suite : InstrSuite where
     -- [B4] runtime failure: `n` exceeds 1023.
     , caseDictMutGet "oracle/err/n-too-large" true false
       (mkDictCaseStack (normalNewValue false) (intV 3) .null (intV 1024))
-    -- [B4] runtime failure: `n` is NaN.
-    , caseDictMutGet "oracle/err/n-nan" true false
-      (mkDictCaseStack (normalNewValue false) (intV 3) .null (.int .nan))
     -- [B4] runtime failure: `n` type-check and dict root type-check path.
     , caseDictMutGet "oracle/err/dict-type" true false
       (mkDictCaseStack (normalNewValue false) (intV 3) (.tuple #[]) (intV 4))

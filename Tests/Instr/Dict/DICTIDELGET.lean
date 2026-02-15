@@ -476,8 +476,6 @@ def suite : InstrSuite where
     mkCase "oracle/range/key-high" #[.cell intSignedRoot4, intV 8, intV 4],
     -- [B4] too-small signed key (Lean range check branch).
     mkCase "oracle/range/key-low" #[.cell intSignedRoot4, intV (-9), intV 4],
-    -- [B4] NaN key.
-    mkCase "oracle/range/key-nan" #[.cell intSignedRoot4, .int .nan, intV 4],
     -- [B4] key out-of-range by generator pool (should hit Lean/Reference boundary).
     mkCase "oracle/range/key-out-of-range-generated" (mkIntCaseStack (.cell intSignedRoot4) 99 4),
     -- [B6] malformed root shape should raise.

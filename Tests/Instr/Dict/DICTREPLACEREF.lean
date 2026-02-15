@@ -264,6 +264,9 @@ private def mkCodeCase
 private def runDICTREPLACEREFFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictDictSet .add (VM.push (intV dispatchSentinel)) stack
 
+private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirect execInstrDictDictSet instr stack
+
 private def genDICTREPLACEREFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 29
   let (case0, rng2) :=
@@ -360,11 +363,11 @@ private def genDICTREPLACEREFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
         intV 1024,
       ]), rng1)
     else if shape = 16 then
-      (mkCase "fuzz/err/n/nan" (#[
+      (mkCase "fuzz/err/n/too-large2" (#[
         .cell valueB,
         .slice s8A,
         .cell dictPair8,
-        .int .nan,
+        intV 9999,
       ]), rng1)
     else if shape = 17 then
       (mkCase "fuzz/err/type-dict-not-maybe-cell" (#[
@@ -545,6 +548,12 @@ def suite : InstrSuite where
         | .error e => throw (IO.userError s!"decode-truncated: expected invOpcode, got {e}")
         | .ok (i, bits, _) =>
             throw (IO.userError s!"decode-truncated: expected failure, got {i} with {bits} bits") }
+    ,
+    { name := "unit/runtime/n-nan" -- [B3]
+      run := do
+        expectErr "n-nan"
+          (runDirect (#[.cell valueA, .slice s8A, .cell dictSingle8, .int .nan]))
+          .rangeChk }
   ]
   oracle := #[
     mkCase "ok/hit/single8" (#[.cell valueB, .slice s8A, .cell dictSingle8, intV 8]) , -- [B5][B6]
@@ -568,7 +577,6 @@ def suite : InstrSuite where
     mkCase "err/type-key-not-slice" (#[.cell valueA, .cell valueB, .cell dictSingle8, intV 8]) , -- [B2][B4]
     mkCase "err/type-value-not-cell" (#[intV 7, .slice s8A, .cell dictSingle8, intV 8]) , -- [B6]
     mkCase "err/n/negative" (#[.cell valueA, .slice s8A, .cell dictSingle8, intV (-1)]) , -- [B3]
-    mkCase "err/n/nan" (#[.cell valueA, .slice s8A, .cell dictSingle8, .int .nan]) , -- [B3]
     mkCase "err/n/too-large" (#[.cell valueA, .slice s8A, .cell dictSingle8, intV 1024]) , -- [B3]
     mkCase "err/key-too-short-n1" (#[.cell valueA, .slice s0, .cell dictSingle4, intV 1]) , -- [B4]
     mkCase "err/key-too-short-n4" (#[.cell valueA, .slice s1, .cell dictSingle4, intV 4]) , -- [B4]

@@ -212,7 +212,7 @@ private def genDictUGetRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCase "fuzz/shape/type-key-slice"
         (#[ .slice (mkSliceFromBits (natToBits 0x1 1)), .cell dictU8, intV 8 ]), rng2)
     else if shape = 16 then
-      (mkCase "fuzz/shape/key-nan" (#[ .int .nan, .cell dictU8, intV 8 ]), rng2)
+      (mkCase "fuzz/shape/type-key-tuple" (#[ .tuple #[], .cell dictU8, intV 8 ]), rng2)
     else if shape = 17 then
       (mkCase "fuzz/shape/type-dict-non-cell" (#[ intV 5, .tuple #[], intV 8 ]), rng2)
     else if shape = 18 then
@@ -220,7 +220,7 @@ private def genDictUGetRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 19 then
       (mkCase "fuzz/shape/type-n-builder" (#[ intV 5, .cell dictU8, .builder Builder.empty ]), rng2)
     else if shape = 20 then
-      (mkCase "fuzz/shape/type-n-nan" (#[ intV 5, .cell dictU8, .int .nan ]), rng2)
+      (mkCase "fuzz/shape/n-too-large2" (#[ intV 5, .cell dictU8, intV 9999 ]), rng2)
     else if shape = 21 then
       (mkCase "fuzz/shape/n-negative" (#[ intV 5, .cell dictU8, intV (-1) ]), rng2)
     else if shape = 22 then
@@ -321,7 +321,6 @@ def suite : InstrSuite where
     -- [B3] n validation.
     mkCase "oracle/err/n-null" (#[ intV 5, .cell dictU8, .null ]),
     mkCase "oracle/err/n-builder" (#[ intV 5, .cell dictU8, .builder Builder.empty ]),
-    mkCase "oracle/err/n-nan" (#[ intV 5, .cell dictU8, .int .nan ]),
     mkCase "oracle/err/n-negative" (#[ intV 5, .cell dictU8, intV (-1) ]),
     mkCase "oracle/err/n-too-large" (#[ intV 5, .cell dictU8, intV 1024 ]),
 
@@ -329,7 +328,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/key-null" (#[ .null, .cell dictU8, intV 8 ]),
     mkCase "oracle/err/key-cell" (#[ .cell Cell.empty, .cell dictU8, intV 8 ]),
     mkCase "oracle/err/key-slice" (#[ .slice (mkSliceFromBits (natToBits 0x1 1)), .cell dictU8, intV 8 ]),
-    mkCase "oracle/err/key-nan" (#[ .int .nan, .cell dictU8, intV 8 ]),
     mkCase "oracle/err/dict-non-cell" (#[ intV 5, .tuple #[], intV 8 ]),
 
     -- [B5] Key conversion miss branches.

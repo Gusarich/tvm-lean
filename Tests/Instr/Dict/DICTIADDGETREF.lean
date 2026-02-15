@@ -242,8 +242,8 @@ private def genDictIAddGetRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
           (mkStack validNewValue (intV 1) (.cell dictSigned1Pair) (intV 1)), rng2)
     | 11 =>
         (caseDictIAddGetRef
-          (s!"fuzz/err/key/nan/{tag}")
-          (mkStack validNewValue (.int .nan) (.cell dictSigned4Hit) (intV 4)), rng2)
+          (s!"fuzz/err/key/not-int/{tag}")
+          (mkStack validNewValue (.tuple #[]) (.cell dictSigned4Hit) (intV 4)), rng2)
     | 12 =>
         (caseDictIAddGetRef
           (s!"fuzz/err/key/n0-nonzero/{tag}")
@@ -258,8 +258,8 @@ private def genDictIAddGetRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
           (mkStack validNewValue (intV 3) (.cell dictSigned4Hit) (intV 1024)), rng2)
     | 15 =>
         (caseDictIAddGetRef
-          (s!"fuzz/err/n/nan/{tag}")
-          (mkStack validNewValue (intV 3) (.cell dictSigned4Hit) (.int .nan)), rng2)
+          (s!"fuzz/err/n/not-int/{tag}")
+          (mkStack validNewValue (intV 3) (.cell dictSigned4Hit) (.tuple #[])), rng2)
     | 16 =>
         (caseDictIAddGetRef
           (s!"fuzz/err/dict-type/{tag}")
@@ -387,7 +387,6 @@ def suite : InstrSuite where
     -- [B3] non-zero key with zero width key is rejected.
     , caseDictIAddGetRef "oracle/err/key-range/n0-nonzero" (mkStack validNewValue (intV 1) (.cell dictSigned0Single) (intV 0))
     -- [B3] key conversion fails on NaN.
-    , caseDictIAddGetRef "oracle/err/key/nan" (mkStack validNewValue (.int .nan) (.cell dictSigned4Hit) (intV 4))
     -- [B3] signed boundary failure for n=4 using -8? check with malformed pair root.
     , caseDictIAddGetRef "oracle/err/key-range/boundary-negative" (mkStack validNewValue (intV (-9)) (.cell dictSigned4Pair) (intV 4))
     -- [B4] n validation failure: negative n.
@@ -395,7 +394,6 @@ def suite : InstrSuite where
     -- [B4] n validation failure: >1023.
     , caseDictIAddGetRef "oracle/err/n/too-large" (mkStack validNewValue (intV 3) (.cell dictSigned4Hit) (intV 1024))
     -- [B4] n validation failure: NaN.
-    , caseDictIAddGetRef "oracle/err/n/nan" (mkStack validNewValue (intV 3) (.cell dictSigned4Hit) (.int .nan))
     -- [B5] underflow (empty stack).
     , caseDictIAddGetRef "oracle/err/underflow/empty" #[]
     -- [B5] underflow (one item).

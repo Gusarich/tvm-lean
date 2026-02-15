@@ -393,8 +393,6 @@ def suite : InstrSuite where
     mkCase "err/type-dict-non-cell" (#[.slice (mkSliceFromBits (natToBits 1 8)), .tuple #[], intV 8]) rawGetOptRef,
     -- [B4][B10]
     mkCase "err/type-key-non-slice" (#[.int (.num 1), .cell dictSigned8, intV 8]) rawGetOptRef,
-    -- [B4][B10]
-    mkCase "err/type-key-nan" (#[.int .nan, .cell dictUnsigned8, intV 8]) rawGetOptRefInt,
     -- [B3][B10]
     mkCase "err/range-n-negative" (stackIntKey 0 (.cell dictSigned8) (-1)) rawGetOptRefInt,
     -- [B3][B10]

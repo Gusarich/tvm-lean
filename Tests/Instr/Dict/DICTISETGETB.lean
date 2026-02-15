@@ -476,7 +476,7 @@ private def genDICTISETGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 21 =>
         (mkCase "fuzz/n-too-large" (mkSliceStack valueA slice4A (.cell dictSlice4Single) 1024), rng2)
     | 22 =>
-        (mkCase "fuzz/n-nan" (#[.builder valueA, .slice slice4A, .cell dictSlice4Single, .int .nan]), rng2)
+        (mkCase "fuzz/n-too-large2" (mkSliceStack valueA slice4A (.cell dictSlice4Single) 9999), rng2)
     | 23 =>
         (mkCase "fuzz/type/value" (#[.int (.num 1), .slice slice4A, .cell dictSlice4Single, intV 4]), rng2)
     | 24 =>
@@ -617,9 +617,7 @@ def suite : InstrSuite where
 
     mkCase "oracle/err/range/n-negative" (mkSliceStack valueA slice4A (.cell dictSlice4Single) (-1)), -- [B2]
     mkCase "oracle/err/range/n-too-large" (mkSliceStack valueA slice4A (.cell dictSlice4Single) 1024), -- [B2]
-    mkCase "oracle/err/range/n-nan" (#[.builder valueA, .slice slice4A, .cell dictSlice4Single, .int .nan]), -- [B2]
 
-    mkCase "oracle/err/key-nan" (#[.builder valueA, .int .nan, .cell dictSigned4, intV 4]), -- [B4]
     mkCase "oracle/err/type-key-slice" (mkSliceStack valueA slice4A (.cell dictSigned4) 4), -- [B7]
     mkCase "oracle/err/type-key-not-int" (mkSliceStack valueA slice4A (.cell dictSigned4) 4), -- [B7]
     mkCase "oracle/err/value-not-builder" (#[.int (.num 1), .slice slice4A, .cell dictSlice4Single, intV 4]), -- [B7]
