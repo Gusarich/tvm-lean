@@ -43,7 +43,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - `0xf472` and `0xf474` are neighbors and must decode to `.dictExt (.pfxSet .add)` and `.dictGetNear 4`.
    - Short/raw invalid opcodes fail as `.invOpcode`.
 12. [B12] Assembler behavior:
-   - `assembleCp0` has no `.dictExt` encoding; `.dictExt .pfxDel` is `.invOpcode`.
+    - `.dictExt .pfxDel` is assembled by CP0.
+    - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 13. [B13] Gas accounting:
    - Exact and exact-minus-one budget branches are meaningful.
    - Hit-path may add `cellCreateGasPrice * created`.
@@ -236,16 +237,14 @@ private def expectDecodeErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
-private def expectAssembleErr
+private def expectAssembleOk16
     (label : String)
-    (instr : Instr)
-    (expected : Excno) : IO Unit := do
+    (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
   | .error e =>
-      if e != expected then
-        throw (IO.userError s!"{label}: expected {expected}, got {e}")
-  | .ok _ =>
-      throw (IO.userError s!"{label}: expected assemble error {expected}, got success")
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      expectDecodeOk label code instr
 
 private def genPFXDICTDEL (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 29
@@ -467,11 +466,11 @@ def suite : InstrSuite where
         expectDecodeErr "decode/trunc15" (Cell.mkOrdinary (natToBits (0xf473 >>> 1) 15) #[]) .invOpcode
     },
     -- [B12]
-    {
+  {
       name := "unit/assemble"
       run := do
-        expectAssembleErr "assemble/unsupported" pfxDictDelInstr .invOpcode
-    },
+        expectAssembleOk16 "assemble/roundtrip" pfxDictDelInstr
+  },
   ]
   oracle := #[
     -- [B2]

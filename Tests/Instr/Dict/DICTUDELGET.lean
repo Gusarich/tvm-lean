@@ -53,7 +53,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Invalid dictionary node shape can fail before hit/miss result with `.cellUnd` or `.dictErr`.
 
 9. [B9] Assembler:
-   - `.dictExt` variants are unsupported by assembler and must return `.invOpcode`.
+   - CP0 assembler encodes this opcode family (this instruction assembles to `0xf466`).
 
 10. [B10] Decoder:
    - `DICTUDELGET` decodes from `0xf466`.
@@ -254,6 +254,15 @@ private def expectDecodeErr
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def expectAssembleOk16
+    (label : String)
+    (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok cell =>
+      expectDecodeOk label cell instr
 
 private def expectAssembleErr
     (label : String)
@@ -495,9 +504,9 @@ def suite : InstrSuite where
       run := do
         expectDecodeErr "decode/truncated-15" (Cell.mkOrdinary (natToBits (0xf466 >>> 1) 15) #[]) .invOpcode
     },
-    { name := "unit/assemble/unsupported"
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleErr "assemble/unsupported" dictUdelGetInstr .invOpcode
+        expectAssembleOk16 "assemble/encodes" dictUdelGetInstr
     }
   ]
   oracle := #[

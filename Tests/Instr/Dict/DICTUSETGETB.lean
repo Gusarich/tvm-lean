@@ -49,13 +49,13 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Both exact-gas success and exact-gas-minus-one failure states are observable.
 
 9. [B9] Assembler encoding.
-   - `DICTUSETGETB` is not assembled by CP0 in this test set (same as other dict*B opcodes).
-   - Therefore all constructor forms produce `.invOpcode`.
+   - `DICTUSETGETB` is assembled by CP0.
+   - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 10. [B10] Decoder boundaries and adjacent opcodes.
-   - `0xF447` decodes to `.dictExt (.mutGetB true true .set)`.
-   - `0xF446` decodes to the adjacent signed variant.
-   - `0xF444` and `0xF448` must fail as `.invOpcode`.
+    - `0xF447` decodes to `.dictExt (.mutGetB true true .set)`.
+    - `0xF446` decodes to the adjacent signed variant.
+    - `0xF444` and `0xF448` must fail as `.invOpcode`.
    - 8-bit truncated `0xF4` must also fail.
 
 TOTAL BRANCHES: 10
@@ -236,6 +236,22 @@ private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit :
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure invOpcode")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembler success, got {e}")
+  | .ok code =>
+      match decodeCp0WithBits (Slice.ofCell code) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: decode mismatch: got {reprStr decoded}, expected {reprStr instr}")
+          if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16-bit encoding, got {bits}")
+          if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected no trailing bits/refs, got {rest.bitsRemaining} bits and {rest.refsRemaining} refs")
+
 private def expectOkStack
     (label : String)
     (res : Except Excno (Array Value))
@@ -413,7 +429,7 @@ def suite : InstrSuite where
     },
     { name := "unit/assembler/reject"
       run := do
-        expectAssembleInvOpcode "asm/reject" instrUnsigned
+        expectAssembleOk16 "asm/encodes" instrUnsigned
     },
     { name := "unit/runtime/validation"
       run := do
@@ -478,7 +494,7 @@ def suite : InstrSuite where
     },
     { name := "unit/assembly-and-decoding-redundancy"
       run := do
-        expectAssembleInvOpcode "asm/fallback" instrUnsigned
+        expectAssembleOk16 "asm/roundtrip" instrUnsigned
         expectDecodeInvOpcode "decode/f444" rawF444
         expectDecodeInvOpcode "decode/f4" rawF4
     }

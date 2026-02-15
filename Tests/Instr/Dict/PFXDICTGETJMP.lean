@@ -296,10 +296,7 @@ def suite : InstrSuite where
                 throw (IO.userError s!"unit/dispatch/match: unexpected stack {reprStr st}") },
     { name := "unit/encode-decode/f4aa" -- [B9]
       run := do
-        match assembleCp0 [instr] with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/asm/f4aa: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "unit/asm/f4aa: expected invOpcode")
+        expectDecodeStepExact "unit/asm/f4aa" instr 0xF4AA
         match decodeCp0WithBits (mkSliceFromBits (natToBits 0xF4AA 16)) with
         | .ok (actual, _, _) =>
             if actual != instr then

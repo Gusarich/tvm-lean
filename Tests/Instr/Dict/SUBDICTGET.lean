@@ -63,7 +63,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
     - Malformed dictionaries are expected to surface error behavior consistently with dictionary machinery.
 
 12. [B12] Assembler encoding.
-    - `assembleCp0` for any `.dictExt` currently returns `.invOpcode`; SUBDICTGET opcodes are decode-only in this model.
+    - SUBDICTGET opcodes are encodable by CP0.
+    - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 13. [B13] Decoder behavior.
     - Valid opcodes are `0xf4b1..0xf4b3` (no RP) and `0xf4b5..0xf4b7` (RP).
@@ -193,6 +194,16 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error .invOpcode => pure ()
   | .error e =>
       throw (IO.userError s!"{label}: expected invOpcode, got {e}")
+
+private def expectAssembleExact (label : String) (i : Instr) (w16 : Nat) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      let _ ← expectDecodeStep (s!"{label}/decode") (Slice.ofCell c) i 16
+      pure ()
 
 private def runSubdict
     (instr : Instr)
@@ -505,14 +516,14 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       { name := "unit/structural-errors" -- [B11]
         run := do
           expectErr "malformed-root" (runSubdict subdictInt (stackIntSubdict 5 (.cell malformedDictCell) 4 4)) .cellUnd },
-      { name := "unit/assembler-unreachable" -- [B12]
+      { name := "unit/assembler-roundtrip" -- [B12]
         run := do
-          expectAssembleInvOpcode "encode/slice" subdictSlice
-          expectAssembleInvOpcode "encode/slice-rp" subdictSliceRP
-          expectAssembleInvOpcode "encode/int-signed" subdictInt
-          expectAssembleInvOpcode "encode/int-signed-rp" subdictIntRP
-          expectAssembleInvOpcode "encode/uint" subdictUInt
-          expectAssembleInvOpcode "encode/uint-rp" subdictUIntRP },
+          expectAssembleExact "encode/slice" subdictSlice 0xf4b1
+          expectAssembleExact "encode/int-signed" subdictInt 0xf4b2
+          expectAssembleExact "encode/uint" subdictUInt 0xf4b3
+          expectAssembleExact "encode/slice-rp" subdictSliceRP 0xf4b5
+          expectAssembleExact "encode/int-signed-rp" subdictIntRP 0xf4b6
+          expectAssembleExact "encode/uint-rp" subdictUIntRP 0xf4b7 },
       { name := "unit/decoder-paths" -- [B13]
         run := do
           let _ ← expectDecodeStep "decode/f4b1" (opcodeSlice16 0xf4b1) (.dictExt (.subdictGet false false false)) 16

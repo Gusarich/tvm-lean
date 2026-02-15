@@ -33,7 +33,8 @@ BRANCH ANALYSIS (derived from Lean + C++ reference):
    - prefix extraction is based on first bit only.
 
 5. [B5] Assembler encoding:
-   `.dictExt (.lddicts true)` and `.dictExt (.lddicts false)` are rejected by the CP0 assembler (`.invOpcode`).
+   `.dictExt (.lddicts true)` and `.dictExt (.lddicts false)` are encodable by CP0.
+   Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 6. [B6] Decoder behavior:
    - `0xf403` decodes to `.dictExt (.lddicts true)`.
@@ -218,6 +219,18 @@ private def expectAssembleErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectAssembleExact
+    (label : String)
+    (instr : Instr)
+    (w16 : Nat) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      expectDecodeOk label c instr
+
 private def mkProgramSetGas (n : Int) : Array Instr :=
   #[.pushInt (.num n), .tonEnvOp .setGasLimit, pldDictsInstr]
 
@@ -335,12 +348,12 @@ def suite : InstrSuite where
     { name := "unit/decode/truncated-15" -- [B6]
       run := do
         expectDecodeErr "decode-truncated-15" malformed15 .invOpcode },
-    { name := "unit/asm/reject-plddicts" -- [B5]
+    { name := "unit/asm/roundtrip-plddicts" -- [B5]
       run := do
-        expectAssembleErr "asm-reject-plddicts" pldDictsInstr .invOpcode },
-    { name := "unit/asm/reject-lddicts" -- [B5]
+        expectAssembleExact "asm/plddicts" pldDictsInstr 0xF403 },
+    { name := "unit/asm/roundtrip-lddicts" -- [B5]
       run := do
-        expectAssembleErr "asm-reject-lddicts" (.dictExt (.lddicts false)) .invOpcode }
+        expectAssembleExact "asm/lddicts" (.dictExt (.lddicts false)) 0xF402 }
   ]
   oracle := #[
     mkCase "oracle/underflow-empty" #[] , -- [B2]

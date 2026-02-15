@@ -56,8 +56,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed root/value internal dictionaries propagate `.dictErr`.
 
 10. [B10] Assembler behavior.
-    - `.dictExt (.setGetOptRef true true)` has no assembler encoding.
-    - `assembleCp0` must produce `.invOpcode`.
+     - `.dictExt (.setGetOptRef true true)` is assembled by CP0.
+     - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 11. [B11] Decoder behavior.
     - `0xF46F` decodes to `.dictExt (.setGetOptRef true true)`.
@@ -70,10 +70,10 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
 
 TOTAL BRANCHES: 12
 
-Assembler/gas notes:
-- Assembler rejection is represented as `[B10]`; no dedicated parameter encoding checks happen here.
-- Gas branch coverage uses exact and exact-minus-one at the instruction level.
--/
+ Assembler/gas notes:
+ - Assembler behavior is represented as `[B10]` via an assembly+decode roundtrip unit test.
+ - Gas branch coverage uses exact and exact-minus-one at the instruction level.
+ -/
 
 private def suiteId : InstrId :=
   { name := "DICTUSETGETOPTREF" }
@@ -110,15 +110,21 @@ private def gasCode (gas : Int) (opcode : Cell) : Cell :=
   let p := mkGasPrefix gas
   Cell.mkOrdinary (p.bits ++ opcode.bits) (p.refs ++ opcode.refs)
 
-private def assembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def assembleOk16 (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
-  | .ok c =>
-      throw (IO.userError s!"{label}: expected invOpcode, got {reprStr c}")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {reprStr e}")
+      throw (IO.userError s!"{label}: expected assembly success, got {reprStr e}")
+  | .ok c =>
+      match decodeCp0WithBits (Slice.ofCell c) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {reprStr e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: decode mismatch: got {reprStr decoded}, expected {reprStr instr}")
+          if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16-bit encoding, got {bits}")
+          if rest.bitsRemaining != 0 || rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected no trailing bits/refs, got {rest.bitsRemaining} bits and {rest.refsRemaining} refs")
 
 private def mkKeyBits (label : String) (idx : Int) (n : Nat) (unsigned : Bool) : BitString :=
   match dictKeyBits? idx n unsigned with
@@ -394,9 +400,9 @@ def suite : InstrSuite where
         | .error _ => pure ()
         | .ok _ => throw (IO.userError "decode/truncated8 expected failure")
     },
-    { name := "unit/assemble/invopcode"
+    { name := "unit/assemble/roundtrip"
       run := do
-        assembleInvOpcode "assemble" dictUSetGetOptRefInstr
+        assembleOk16 "assemble" dictUSetGetOptRefInstr
     },
     { name := "unit/runtime/underflow"
       run := do

@@ -45,7 +45,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed root structures can fail in traversal and raise `.dictErr`/`.cellUnd` before extraction.
 
 7. [B7] Assembler branch:
-   - `TvmLean/Model/Instr/Asm/Cp0.lean` does not encode `.dictExt`; assembly returns `.invOpcode`.
+   - CP0 assembler encodes this opcode family (this instruction assembles to `0xf467`).
 
 8. [B8] Decoder branch:
    - `0xf467` decodes to `.dictExt (.mutGet true true true .del)` (opcode family `0xf462..0xf467`).
@@ -209,6 +209,13 @@ private def expectDecodeErr (label : String) (code : Cell) (expected : Excno) : 
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected decode error {expected}, got {e}")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok cell =>
+      expectDecodeOk label cell instr
 
 private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno) : IO Unit := do
   match assembleCp0 [instr] with
@@ -397,9 +404,9 @@ def suite : InstrSuite where
       run := do
         expectDecodeErr "decode/truncated-15" (Cell.mkOrdinary (natToBits (0xf467 >>> 1) 15) #[]) .invOpcode
     },
-    { name := "unit/assemble/unsupported"
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleErr "assemble/unsupported" dictUDelGetRefInstr .invOpcode
+        expectAssembleOk16 "assemble/encodes" dictUDelGetRefInstr
     }
   ]
   oracle := #[

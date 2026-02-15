@@ -51,8 +51,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed dictionary structures propagate `cellUnd` or `dictErr` depending on `parse/lookup` shape.
 
 10. [B10] Assembler encoding:
-   - `.dictExt` opcodes are intentionally not encodable in assembler (`.invOpcode` for
-     `.dictExt (.subdictGet false false true)`).
+    - `.dictExt (.subdictGet false false true)` is encodable by CP0 (`0xf4b5`).
+    - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 11. [B11] Decoder behavior:
    - `0xf4b5` decodes to `.dictExt (.subdictGet false false true)`.
@@ -246,6 +246,18 @@ private def expectAssembleErr
       else
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectAssembleExact
+    (label : String)
+    (instr : Instr)
+    (w16 : Nat) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      expectDecodeOk label c instr
+
 private def runDispatchFallback (instr : Instr) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt instr (VM.push (intV dispatchSentinel)) #[
     .slice (mkSliceFromBits keyA4),
@@ -373,7 +385,7 @@ def suite : InstrSuite where
         expectDecodeErr "unit/decode/slice-lower-gap" rawOpcodeSlice .invOpcode },
     { name := "unit/assemble/invOpcode"
       run := do
-        expectAssembleErr "unit/assemble/invOpcode" subdictRpGetInstr .invOpcode }
+        expectAssembleExact "unit/assemble/roundtrip" subdictRpGetInstr 0xf4b5 }
   ]
   oracle := #[
     mkCase "ok/null/k0" (stack4 keyBits0 .null 0 0), -- [B7]

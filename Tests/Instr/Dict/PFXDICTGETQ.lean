@@ -394,21 +394,29 @@ def suite : InstrSuite where
     { name := "unit/assembler-decoder" -- [B13][B14]
       run := do
         match assembleCp0 [instrGetQ] with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/asm/f4a8: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "unit/asm/f4a8: expected invOpcode")
+        | .error e => throw (IO.userError s!"unit/asm/f4a8: expected assemble ok, got {e}")
+        | .ok c =>
+            if c.bits != natToBits 0xF4A8 16 then
+              throw (IO.userError s!"unit/asm/f4a8: expected bits {reprStr (natToBits 0xF4A8 16)}, got {reprStr c.bits}")
+            let _ ← expectDecodeStep "unit/asm/roundtrip/f4a8" (Slice.ofCell c) instrGetQ 16
         match assembleCp0 [instrGet] with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/asm/f4a9: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "unit/asm/f4a9: expected invOpcode")
+        | .error e => throw (IO.userError s!"unit/asm/f4a9: expected assemble ok, got {e}")
+        | .ok c =>
+            if c.bits != natToBits 0xF4A9 16 then
+              throw (IO.userError s!"unit/asm/f4a9: expected bits {reprStr (natToBits 0xF4A9 16)}, got {reprStr c.bits}")
+            let _ ← expectDecodeStep "unit/asm/roundtrip/f4a9" (Slice.ofCell c) instrGet 16
         match assembleCp0 [instrJmp] with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/asm/f4aa: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "unit/asm/f4aa: expected invOpcode")
+        | .error e => throw (IO.userError s!"unit/asm/f4aa: expected assemble ok, got {e}")
+        | .ok c =>
+            if c.bits != natToBits 0xF4AA 16 then
+              throw (IO.userError s!"unit/asm/f4aa: expected bits {reprStr (natToBits 0xF4AA 16)}, got {reprStr c.bits}")
+            let _ ← expectDecodeStep "unit/asm/roundtrip/f4aa" (Slice.ofCell c) instrJmp 16
         match assembleCp0 [instrExec] with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/asm/f4ab: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "unit/asm/f4ab: expected invOpcode")
+        | .error e => throw (IO.userError s!"unit/asm/f4ab: expected assemble ok, got {e}")
+        | .ok c =>
+            if c.bits != natToBits 0xF4AB 16 then
+              throw (IO.userError s!"unit/asm/f4ab: expected bits {reprStr (natToBits 0xF4AB 16)}, got {reprStr c.bits}")
+            let _ ← expectDecodeStep "unit/asm/roundtrip/f4ab" (Slice.ofCell c) instrExec 16
         let _ ← expectDecodeStep "unit/decode/f4a8" (Slice.ofCell (rawOpcode 0xF4A8)) instrGetQ 16
         let _ ← expectDecodeStep "unit/decode/f4a9" (Slice.ofCell (rawOpcode 0xF4A9)) instrGet 16
         let _ ← expectDecodeStep "unit/decode/f4aa" (Slice.ofCell (rawOpcode 0xF4AA)) instrJmp 16

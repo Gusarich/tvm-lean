@@ -49,7 +49,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed dictionary layout errors are propagated as `.dictErr` before returning a value.
 
 10. [B10] Assembler behavior.
-    - `.dictExt` instructions are not assembled by `assembleCp0`, so raw raw instruction forms must yield `.invOpcode`.
+    - CP0 assembler encodes `.dictExt (.getOptRef ...)` to the `0xF469..0xF46B` opcode family.
 
 11. [B11] Decoder behavior and opcode boundaries.
     - Raw `0xF469..0xF46B` decode to the three `getOptRef` forms.
@@ -87,15 +87,21 @@ private def mkGasPrefix (gas : Int) : Cell :=
 private def gasCode (gas : Int) (opcode : Cell) : Cell := by
   exact Cell.mkOrdinary ((mkGasPrefix gas).bits ++ opcode.bits) ((mkGasPrefix gas).refs ++ opcode.refs)
 
-private def assembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def assembleOk16 (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
-  | .ok c =>
-      throw (IO.userError s!"{label}: expected invOpcode, got {reprStr c}")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {reprStr e}")
+      throw (IO.userError s!"{label}: expected assemble success, got {reprStr e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {reprStr e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: expected {reprStr instr}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
 
 private def mkDictSetRefRoot! (label : String) (n : Nat) (unsigned : Bool) (entries : Array (Int × Cell)) : Cell :=
   Id.run do
@@ -263,9 +269,9 @@ private def genDICTUGETOPTREF (rng0 : StdGen) : OracleCase × StdGen :=
 def suite : InstrSuite where
   id := dictUGETOPTREFId
   unit := #[
-    { name := "unit/assembler/reject-raw-getoptref"
+    { name := "unit/assembler/encode-raw-getoptref"
       run := do
-        assembleInvOpcode "dictgetoptref/uint" dictUGETOPTREF
+        assembleOk16 "dictgetoptref/uint" dictUGETOPTREF
     },
     { name := "unit/decode/raw-family"
       run := do

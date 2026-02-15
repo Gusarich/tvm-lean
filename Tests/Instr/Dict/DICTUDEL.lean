@@ -38,7 +38,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
 7. [B7] Malformed structure:
    - Invalid dictionary shapes produce traversal errors (`.dictErr` / `.cellUnd`).
 8. [B8] Assembler:
-   - `.dictExt` is intentionally unsupported by assembler (`.invOpcode`).
+   - CP0 assembler encodes `.dictExt (.del ...)` variants (`0xf459..0xf45b`).
 9. [B9] Decoder:
    - `0xf459` decodes to `.dictExt (.del false false)`.
    - `0xf45a` decodes to `.dictExt (.del true false)`.
@@ -245,6 +245,15 @@ private def expectDecodeErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectAssembleOk16
+    (label : String)
+    (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      expectDecodeOk label cell instr
+
 private def expectAssembleErr
     (label : String)
     (instr : Instr)
@@ -434,7 +443,7 @@ def suite : InstrSuite where
     },
     { name := "unit/assemble"
       run := do
-        expectAssembleErr "assemble/unsupported" dictDelInstr .invOpcode
+        expectAssembleOk16 "assemble/ok" dictDelInstr
     }
   ]
   oracle := #[

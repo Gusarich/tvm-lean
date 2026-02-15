@@ -42,8 +42,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
 7. [B7] Dictionary payload and structure errors.
    - `dictLookupSetBuilderWithCells` may return `.dictErr` for malformed roots.
 
-8. [B8] Assembler encoding: intentionally unsupported.
-   - `.dictExt` instructions are not encoded by CP0 assembler (`.invOpcode`).
+8. [B8] Assembler encoding.
+   - CP0 assembler encodes `.dictExt (.mutGetB ... .add)` to the `0xf455..0xf457` opcode family.
 
 9. [B9] Decoder boundaries.
    - `0xf455`, `0xf456`, `0xf457` decode to `.dictExt (.mutGetB false false .add)`
@@ -236,6 +236,22 @@ private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit :
         throw (IO.userError s!"{label}: expected invOpcode, got {e}")
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure invOpcode")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: expected {reprStr instr}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
 
 private def runDictAddGetBDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
@@ -440,11 +456,11 @@ def suite : InstrSuite where
         | .ok _ =>
             throw (IO.userError "decode/f4-8bit should fail")
     },
-    { name := "unit/asm/invOpcode"
+    { name := "unit/asm/encodes"
       run := do
-        expectAssembleInvOpcode "asm/slice" instrSlice
-        expectAssembleInvOpcode "asm/signed" instrSigned
-        expectAssembleInvOpcode "asm/unsigned" instrSignedUnsigned
+        expectAssembleOk16 "asm/slice" instrSlice
+        expectAssembleOk16 "asm/signed" instrSigned
+        expectAssembleOk16 "asm/unsigned" instrSignedUnsigned
     },
     { name := "unit/runtime/validation"
       run := do

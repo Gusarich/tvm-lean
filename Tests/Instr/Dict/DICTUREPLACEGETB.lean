@@ -44,8 +44,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - oversized replacement builder payload causes `.cellOv` in `dictReplaceBuilderWithCells`.
 
 7. [B7] Assembler support:
-   - `.dictExt (.mutGetB _ _ .replace)` is not CP0-assemable in this repo (`.invOpcode`).
-   - There is no valid encoding path for direct assembly.
+   - CP0 assembler encodes `.dictExt (.mutGetB _ _ .replace)` to the `0xF44D..0xF44F` opcode family.
 
 8. [B8] Decoder boundaries / aliasing:
    - `0xf44f` decodes to `.mutGetB true true .replace` (unsigned).
@@ -187,6 +186,22 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure invOpcode")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != i then
+            throw (IO.userError s!"{label}: expected {reprStr i}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
+
 private def expectDecodeInv (label : String) (code : Cell) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell code) with
   | .error .invOpcode => pure ()
@@ -326,9 +341,9 @@ def suite : InstrSuite where
         let stack := mkIntStack 1 (.cell dictUnsigned4) valueA 4
         let expected := stack ++ #[.int (.num 777)]
         expectOkStack "dispatch/fallback" (runDICTUREPLACEGETBFallback stack) expected },
-    { name := "unit/asm/reject" -- [B7]
+    { name := "unit/asm/encodes" -- [B7]
       run := do
-        expectAssembleInvOpcode "assemble/unsigned" instrUnsigned },
+        expectAssembleOk16 "assemble/unsigned" instrUnsigned },
     { name := "unit/decode/valid" -- [B8]
       run := do
         let _ ← expectDecodeStep "decode/f44d" (Slice.ofCell rawF44D) instrSliceSigned 16

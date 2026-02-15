@@ -46,7 +46,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Bad shapes or malformed dictionaries cause `.dictErr`.
 
 8. [B8] Assembler behavior.
-   - `assembleCp0 [ .dictExt (...) ]` is rejected with `.invOpcode`.
+   - `assembleCp0 [ .dictExt (...) ]` succeeds and roundtrips through `decodeCp0WithBits`.
 
 9. [B9] Decoder behavior and opcode boundaries.
    - `0xF41A..0xF41F` are `dictExt` set/get families; `0xF41F` is this instruction.
@@ -330,6 +330,13 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok raw =>
+      expectDecode label raw i
+
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV dispatchSentinel)) stack
 
@@ -462,9 +469,9 @@ def suite : InstrSuite where
         expectDecodeErr "unit/decoder/gap/f419" rawF419
         expectDecodeErr "unit/decoder/gap/f420" rawF420
         expectDecodeErr "unit/decoder/gap/f4" rawF4 },
-    { name := "unit/assemble/invOpcode"
+    { name := "unit/assemble/roundtrip"
       run := do
-        expectAssembleInvOpcode "unit/assemble/invOpcode" instr },
+        expectAssembleOk16 "unit/assemble/roundtrip" instr },
     { name := "unit/runtime/underflow-empty"
       run := do
         expectErr "unit/underflow-empty" (runDICTUSETGETREF #[]) .stkUnd },

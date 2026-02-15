@@ -57,7 +57,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed prefix traversal errors are propagated (subject to [B7]).
 
 10. [B10] Assembler behavior.
-   - `assembleCp0` for this `.dictExt` form is `.invOpcode`.
+    - `assembleCp0` encodes this instruction to `0xf4b6` (16-bit) and it roundtrips through decode.
 
 11. [B11] Decoder behavior.
    - `0xf4b6` -> `.dictExt (.subdictGet true false true)`.
@@ -345,9 +345,13 @@ def suite : InstrSuite where
     { name := "unit/assembler" -- [B10]
       run := do
         match assembleCp0 [instr] with
-        | .error .invOpcode => pure ()
-        | .ok _ => throw (IO.userError "assemble unexpectedly succeeded")
-        | .error e => throw (IO.userError s!"assemble failed with {e}") },
+        | .error e =>
+            throw (IO.userError s!"assemble: expected ok, got {e}")
+        | .ok c =>
+            if c.bits != natToBits 0xf4b6 16 then
+              throw (IO.userError s!"assemble: expected bits {reprStr (natToBits 0xf4b6 16)}, got {reprStr c.bits}")
+            let _ ← expectDecodeStep "assemble/decode" (Slice.ofCell c) instr 16
+            pure () },
     { name := "unit/decoder" -- [B11]
       run := do
         let _ ← expectDecodeStep "decode/f4b6" (opcodeSlice16 0xf4b6) (.dictExt (.subdictGet true false true)) 16

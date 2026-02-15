@@ -43,7 +43,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Malformed roots can produce `dictErr`/`cellUnd` depending on shape.
 
 7. [B7] Assembler encoding.
-   - `.dictExt` currently does not encode in `Asm/Cp0` and must throw `.invOpcode`.
+   - CP0 assembler encodes this opcode family (`0xF42A..0xF42F`).
 
 8. [B8] Decoder behavior.
    - `DICTUREPLACEGET*` maps to `0xF42A..0xF42f`.
@@ -362,6 +362,13 @@ private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      expectDecodeStep label cell instr
+
 private def runDICTUREPLACEGETFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.tonEnvOp .setGasLimit) (VM.push (intV dispatchSentinel)) stack
 
@@ -455,12 +462,12 @@ def suite : InstrSuite where
             throw (IO.userError s!"dispatch/fallback failed: expected {reprStr #[intV dispatchSentinel]}, got {reprStr st}")
         | .error e =>
             throw (IO.userError s!"dispatch/fallback failed with {e}") },
-    { name := "unit/asm/assemble-reject/slice" -- [B7]
+    { name := "unit/asm/assemble-encodes/slice" -- [B7]
       run := do
-        expectAssembleErr "assemble/slice" instrSlice .invOpcode },
-    { name := "unit/asm/assemble-reject/all" -- [B7]
+        expectAssembleOk16 "assemble/slice" instrSlice },
+    { name := "unit/asm/assemble-encodes/all" -- [B7]
       run := do
-        expectAssembleErr "assemble/raw/byref-unsigned" instrIntUnsignedRef .invOpcode },
+        expectAssembleOk16 "assemble/raw/byref-unsigned" instrIntUnsignedRef },
     { name := "unit/decode/family" -- [B8]
       run := do
         expectDecodeStep "decode/f42a" rawF42A instrSlice

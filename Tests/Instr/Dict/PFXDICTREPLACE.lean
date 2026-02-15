@@ -339,7 +339,14 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/asm/valid/471"
       run := do
-        expectAssembleErr "unit/asm/valid/471" .invOpcode instrReplace }
+        match assembleCp0 [instrReplace] with
+        | .error e =>
+            throw (IO.userError s!"unit/asm/valid/471: expected assemble ok, got {e}")
+        | .ok c =>
+            if c.bits != natToBits 0xF471 16 then
+              throw (IO.userError s!"unit/asm/valid/471: expected bits {reprStr (natToBits 0xF471 16)}, got {reprStr c.bits}")
+            let _ ← expectDecodeStep "unit/asm/valid/471/decode" (Slice.ofCell c) instrReplace 16
+            pure () }
 
     , { name := "unit/asm/invalid/dict-set"
         run := do

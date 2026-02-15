@@ -34,7 +34,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
 9. [B9] Malformed dictionary behavior:
    - malformed trie emits `.dictErr`.
 10. [B10] Assembler behavior:
-   - all `.subdictGet` opcodes in this range encode with `.invOpcode`.
+    - `.subdictGet` opcodes in this range are encodable by CP0.
+    - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 11. [B11] Decoder behavior:
    - `0xF4B1`, `0xF4B2`, `0xF4B3` are valid; `0xF4B0`, `0xF4B4`, `0xF4` are invalid.
 12. [B12] Gas accounting:
@@ -154,6 +155,16 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error .invOpcode => pure ()
   | .error e =>
       throw (IO.userError s!"{label}: expected invOpcode, got {e}")
+
+private def expectAssembleExact (label : String) (i : Instr) (w16 : Nat) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      let _ ← expectDecodeStep (s!"{label}/decode") (Slice.ofCell c) i 16
+      pure ()
 
 private def runSubdictIGETDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
@@ -394,9 +405,9 @@ def suite : InstrSuite where
           "malformed-root"
           (runSubdictIGETDirect subdictInt (stackInt (.cell malformedDictCell) 5 8 8))
           .cellUnd
-        expectAssembleInvOpcode "assemble/slice" subdictSlice
-        expectAssembleInvOpcode "assemble/int" subdictInt
-        expectAssembleInvOpcode "assemble/uint" subdictUInt
+        expectAssembleExact "assemble/slice" subdictSlice 0xF4B1
+        expectAssembleExact "assemble/int" subdictInt 0xF4B2
+        expectAssembleExact "assemble/uint" subdictUInt 0xF4B3
         let _ ← expectDecodeStep "decode/f4b1" (Slice.ofCell rawF4B1) (.dictExt (.subdictGet false false false)) 16
         let _ ← expectDecodeStep "decode/f4b2" (Slice.ofCell rawF4B2) (.dictExt (.subdictGet true false false)) 16
         let _ ← expectDecodeStep "decode/f4b3" (Slice.ofCell rawF4B3) (.dictExt (.subdictGet true true false)) 16

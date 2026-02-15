@@ -359,9 +359,11 @@ def suite : InstrSuite where
     { name := "unit/encode-decode" -- [B10][B11]
       run := do
         match assembleCp0 [instr] with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/encode: expected invOpcode, got {e}")
-        | .ok _ => throw (IO.userError "unit/encode: expected invOpcode")
+        | .error e =>
+            throw (IO.userError s!"unit/encode: expected assembly success, got {e}")
+        | .ok code =>
+            let _ ← expectDecodeStep "unit/encode/decode-roundtrip" (Slice.ofCell code) instr 16
+            pure ()
         let _ ← expectDecodeStep "unit/decode/f4a9" (Slice.ofCell (raw16 0xF4A9)) instr 16
         let _ ← expectDecodeStep "unit/decode/f4a8" (Slice.ofCell (raw16 0xF4A8)) (.dictExt (.pfxGet .getQ)) 16
         let _ ← expectDecodeStep "unit/decode/f4aa" (Slice.ofCell (raw16 0xF4AA)) (.dictExt (.pfxGet .getJmp)) 16

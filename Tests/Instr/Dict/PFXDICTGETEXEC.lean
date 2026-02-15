@@ -348,9 +348,13 @@ def suite : InstrSuite where
     { name := "unit/asm" -- [B10][B11]
       run := do
         match encodeCp0 instr with
-        | .error .invOpcode => pure ()
-        | .error e => throw (IO.userError s!"unit/asm: expected invOpcode, got {e}")
-        | .ok c => throw (IO.userError s!"unit/asm: expected invOpcode, got {c}")
+        | .error e =>
+            throw (IO.userError s!"unit/asm: expected encode success, got {e}")
+        | .ok bits =>
+            if bits != natToBits 0xF4AB 16 then
+              throw (IO.userError s!"unit/asm: expected 0xF4AB bits, got {reprStr bits}")
+            let _ ← expectDecodeStep "unit/asm/decode-roundtrip" (mkSliceFromBits bits) instr 16
+            pure ()
         let _ ← expectDecodeStep "unit/decode/f4ab" (mkSliceFromBits (natToBits 0xF4AB 16)) instr 16
         let _ ←
           expectDecodeStep

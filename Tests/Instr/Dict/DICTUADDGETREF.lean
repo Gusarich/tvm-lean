@@ -50,7 +50,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Truncated 8-bit opcode must be `.invOpcode`.
 
 8. [B8] Assembler behavior.
-   - `.dictExt` instructions are not encodable in CP0 assembler for this family; `.invOpcode` expected.
+   - CP0 assembler encodes this opcode family (this instruction assembles to `0xf43f`).
 
 9. [B9] Gas accounting.
    - Exact base gas / exact-minus-one branches are exercised with explicit budgeted programs.
@@ -163,6 +163,22 @@ private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := d
       pure ()
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: expected {reprStr instr}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
 
 private def caseDictUAddGetRef
     (name : String)
@@ -369,16 +385,9 @@ def suite : InstrSuite where
             throw (IO.userError s!"unit/decoder/decode/truncated8: expected invOpcode, got {reprStr instr}/{bits}")
     }
     ,
-    { name := "unit/asm/encode/not-supported"
+    { name := "unit/asm/encode/ok"
       run := do
-        match assembleCp0 [mkInstr] with
-        | .ok _ =>
-            throw (IO.userError "unit/asm/encode/not-supported: expected invOpcode, got success")
-        | .error e =>
-            if e = .invOpcode then
-              pure ()
-            else
-              throw (IO.userError s!"unit/asm/encode/not-supported: expected invOpcode, got {e}")
+        expectAssembleOk16 "unit/asm/encode/ok" mkInstr
     }
   ]
   oracle := #[

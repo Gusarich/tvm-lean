@@ -40,11 +40,14 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed dictionary roots may trigger `.dictErr`/`.cellUnd`.
    - `popMaybeCell` accepts only `.null` and `.cell`; any other type is `.typeChk`.
 8. [Assembler encoding] Supported opcodes and rejected modes/ranges.
-   - Valid encodings are only set-mode:
+   - Valid encodings include set-mode and add-mode:
      - `0xf441` -> `.dictSetB false false .set`
      - `0xf442` -> `.dictSetB true false .set`
      - `0xf443` -> `.dictSetB true true .set`
-   - `.dictSetB` with `mode ≠ .set` must be `.invOpcode`.
+     - `0xf451` -> `.dictSetB false false .add`
+     - `0xf452` -> `.dictSetB true false .add`
+     - `0xf453` -> `.dictSetB true true .add`
+   - `.dictSetB ... .replace` must be `.invOpcode` (use the dedicated `.dictReplaceB` family).
    - `.dictSetB` with `intKey = false` and `unsigned = true` must be `.invOpcode`.
 9. [Decoder behavior] Opcode decoding.
    - `0xf441..0xf443` decode to the three valid forms above.
@@ -234,6 +237,13 @@ private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit :
       if e != .invOpcode then
         throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok cell =>
+      expectDecodeOk label cell instr
+
 private def runDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictSetB instr stack
 
@@ -397,7 +407,7 @@ def suite : InstrSuite where
     { name := "unit/asm/invalid-mode"
       run := do
         expectAssembleInvOpcode "asm/replace" invalidModeReplace
-        expectAssembleInvOpcode "asm/add" invalidModeAdd
+        expectAssembleOk16 "asm/add" invalidModeAdd
         expectAssembleInvOpcode "asm/unsigned-slice" invalidUnsignedSlice
     },
     { name := "unit/runtime/validation"

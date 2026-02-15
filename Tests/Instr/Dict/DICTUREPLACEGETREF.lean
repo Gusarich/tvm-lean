@@ -51,7 +51,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - `0xf42a..0xf42f` decode into `.dictExt (.mutGet intKey=bit2 unsigned=bit1 byRef=bit0 .replace)`.
    - `0xf429` and `0xf430` are invalid.
    - 8-bit opcode input is rejected (`.invOpcode`).
-   - `assembleCp0` currently cannot emit these `.dictExt` variants (`.invOpcode`).
+   - `assembleCp0` encodes these `.dictExt` variants (16-bit opcodes).
 
 9. [B9] Gas accounting.
    - Base cost is `computeExactGasBudget instr`.
@@ -255,6 +255,22 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error e =>
       throw (IO.userError s!"{label}: expected invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != i then
+            throw (IO.userError s!"{label}: expected {reprStr i}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
+
 private def runDICTUREPLACEGETREFDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.dictGet false false false) (VM.push (.int (.num 909))) stack
 
@@ -391,9 +407,9 @@ def suite : InstrSuite where
         match decodeCp0WithBits (Slice.ofCell rawTruncated8) with
         | .error _ => pure ()
         | .ok _ => throw (IO.userError "decode/truncated unexpectedly succeeded") },
-    { name := "unit/asm/unsupported" -- [B9]
+    { name := "unit/asm/encodes" -- [B9]
       run := do
-        expectAssembleInvOpcode "asm/unsupported" instr }
+        expectAssembleOk16 "asm/encodes" instr }
   ]
   oracle := #[
     mkCase "oracle/err/underflow-empty" #[] , -- [B2]

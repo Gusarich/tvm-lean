@@ -49,7 +49,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Adjacent opcodes (`0xf401`, `0xf404`) and truncated encodings are `.invOpcode`.
 
 9. [B9] Assembler behavior.
-   - `.dictExt (.lddicts false)` and `.dictExt (.lddicts true)` are not encodable and must return `.invOpcode`.
+   - `.dictExt (.lddicts false)` and `.dictExt (.lddicts true)` are encodable by CP0.
+   - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 10. [B10] Gas accounting.
     - No variable penalty is introduced in this path (no dict writes/traversal charging here).
@@ -194,15 +195,14 @@ private def expectDecodeErr
       if e != .invOpcode then
         throw (IO.userError s!"{label}: expected invOpcode, got {e}")
 
-private def expectAssembleErr
+private def expectAssembleOk16
     (label : String)
     (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
-  | .ok _ =>
-      throw (IO.userError s!"{label}: expected assembly failure, got success")
   | .error e =>
-      if e != .invOpcode then
-        throw (IO.userError s!"{label}: expected invOpcode, got {e}")
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      expectDecodeOk label code instr
 
 private def mkCase
     (name : String)
@@ -385,10 +385,10 @@ def suite : InstrSuite where
         expectDecodeOk "decode-upper-boundary" lddictCode (.lddict false false)
         expectDecodeErr "decode-truncated-8" malformed8
         expectDecodeErr "decode-truncated-15" malformed15 },
-    { name := "unit/assemble/rejects" -- [B9]
+    { name := "unit/assemble/roundtrip" -- [B9]
       run := do
-        expectAssembleErr "assemble-reject-lddicts" (.dictExt (.lddicts false))
-        expectAssembleErr "assemble-reject-plddicts" (.dictExt (.lddicts true)) },
+        expectAssembleOk16 "assemble-lddicts" (.dictExt (.lddicts false))
+        expectAssembleOk16 "assemble-plddicts" (.dictExt (.lddicts true)) },
     { name := "unit/gas/exact" -- [B10]
       run := do
         expectOkStack "gas/exact-succeed"

@@ -40,13 +40,13 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - prefix miss returns `.null`.
    - matched prefixes may rebuild labels with `.cell` root and set `created`.
 10. [B10] Decoder boundaries.
-   - valid decode: 0xf4b3.
-   - invalid decode: 0xf4b2, 0xf4b4, 0xf4b8, 0xf4b0, truncated streams.
+    - valid decode: 0xf4b3.
+    - invalid decode: 0xf4b2, 0xf4b4, 0xf4b8, 0xf4b0, truncated streams.
 11. [B11] Assembler behavior.
-   - this repository returns `.invOpcode` for any `.dictExt` form.
+    - SUBDICTUGET is encodable by CP0 (`0xf4b3`) and roundtrips through `decodeCp0WithBits`.
 12. [B12] Gas.
-   - base cost exact/exact-1
-   - surcharge branch for rebuild created>0.
+    - base cost exact/exact-1
+    - surcharge branch for rebuild created>0.
 
 TOTAL BRANCHES: 12
 -/
@@ -156,6 +156,16 @@ private def expectAssembleInvOpcode (label : String) : IO Unit := do
   | .error e =>
       if e != .invOpcode then
         throw (IO.userError s!"{label}: expected invOpcode, got {e}")
+
+private def expectAssembleExact (label : String) (i : Instr) (w16 : Nat) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      let _ ← expectDecodeStep (s!"{label}/decode") (Slice.ofCell c) i 16
+      pure ()
 
 private def runGasBase : Int := computeExactGasBudget subdictUGET
 private def runGasBaseMinusOne : Int := computeExactGasBudgetMinusOne subdictUGET
@@ -396,7 +406,7 @@ def suite : InstrSuite where
           #[.cell malformedDictCell]
         expectErr "malformed-k2" (runSubdictUGETDirect (mkStackI 0 (.cell malformedDictCell2) 4 2)) .cellUnd },
     { name := "unit/assembler"
-      run := expectAssembleInvOpcode "assemble-subdictug" },
+      run := expectAssembleExact "assemble-subdictug" subdictUGET 0xF4B3 },
     { name := "unit/decoder"
       run := do
         let _ ← expectDecodeStep "decode/f4b3" (opcodeSlice16 0xF4B3) (.dictExt (.subdictGet true true false)) 16

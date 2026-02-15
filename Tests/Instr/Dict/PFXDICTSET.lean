@@ -66,8 +66,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - `0xF46C` and 8-bit truncation are invalid (`.invOpcode`).
 
 12. [B12] Assembler behavior.
-   - `assembleCp0` has no direct encoder for `.dictExt` opcodes.
-   - `.dictExt (.pfxSet .set/.replace/.add)` each fail with `.invOpcode`.
+   - `.dictExt (.pfxSet .set/.replace/.add)` are encodable by CP0 (`0xF470..0xF472`).
+   - Assembly roundtrips through `decodeCp0WithBits` with 16-bit encoding.
 
 13. [B13] Gas accounting: base cost.
    - `computeExactGasBudget` must pass at exact limit and fail at exact-1.
@@ -288,6 +288,18 @@ private def expectAssembleErr
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
   | .ok _ =>
       throw (IO.userError s!"{label}: expected {expected}, got success")
+
+private def expectAssembleExact
+    (label : String)
+    (instr : Instr)
+    (w16 : Nat) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      expectDecodeOk label c instr
 
 private def expectOkCellFlag
     (label : String)
@@ -609,9 +621,9 @@ def suite : InstrSuite where
     { name := "unit/assemble/reject"
       -- [B12]
       run := do
-        expectAssembleErr "assemble-set" instrSet .invOpcode
-        expectAssembleErr "assemble-replace" instrReplace .invOpcode
-        expectAssembleErr "assemble-add" instrAdd .invOpcode }
+        expectAssembleExact "assemble-set" instrSet 0xF470
+        expectAssembleExact "assemble-replace" instrReplace 0xF471
+        expectAssembleExact "assemble-add" instrAdd 0xF472 }
   ]
   oracle := #[
     mkCase "oracle/underflow/empty" #[],

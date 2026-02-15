@@ -45,8 +45,7 @@ BRANCH ANALYSIS (derived from Lean + C++ reference):
    - On failure, already-loaded nodes are registered before rethrow.
 
 6. [B6] Assembler encoding behavior:
-   - `.dictSetB true true .add` is not supported by `assembleCp0`.
-   - This includes non-integer-key add variants like `.dictSetB false false .add`, `.dictSetB true false .add`, `.dictSetB false true .add`.
+   - CP0 assembler encodes `.dictSetB .. .. .add` to the `0xf451..0xf453` opcode family.
 
 7. [B7] Decoder boundary behavior:
    - `0xf453` decodes to `.dictSetB true true .add`.
@@ -206,6 +205,13 @@ private def expectDecode16 (name : String) (code : Cell) (expected : Instr) : IO
         pure ()
   | .error e =>
       throw (IO.userError s!"{name}: expected valid decode, got {e}")
+
+private def expectAssembleOk16 (name : String) (code : Instr) : IO Unit := do
+  match assembleCp0 [code] with
+  | .ok cell =>
+      expectDecode16 name cell code
+  | .error e =>
+      throw (IO.userError s!"{name}: expected assemble success, got {e}")
 
 private def opRawSlice16 (w : Nat) : Slice :=
   Slice.ofCell (Cell.mkOrdinary (natToBits w 16) #[])
@@ -377,9 +383,9 @@ def suite : InstrSuite where
         expectErr "runtime/dict-err" (runDictUADDBDirect (mkCaseStack 4 3 (.cell malformedDict))) .cellUnd },
     { name := "unit/asm-and-decode"
       run := do
-        expectAssembleInvOpcode "assemble/uaddb" .invOpcode (.dictSetB true true .add)
-        expectAssembleInvOpcode "assemble/iadb" .invOpcode (.dictSetB true false .add)
-        expectAssembleInvOpcode "assemble/adb" .invOpcode (.dictSetB false false .add)
+        expectAssembleOk16 "assemble/uaddb" (.dictSetB true true .add)
+        expectAssembleOk16 "assemble/iadb" (.dictSetB true false .add)
+        expectAssembleOk16 "assemble/adb" (.dictSetB false false .add)
         expectDecode16 "decode/uadb" dictUADDBCode (.dictSetB true true .add)
         expectDecode16 "decode/iadb" dictIADDBCode (.dictSetB true false .add)
         expectDecode16 "decode/adb" dictADDBCode (.dictSetB false false .add)

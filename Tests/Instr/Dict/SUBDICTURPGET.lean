@@ -39,7 +39,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - for this exact opcode (`intKey = true, unsigned = true, rp = true`) `.error .cellUnd` is propagated as `.cellUnd`.
    - malformed dictionary/trie structure propagates `.dictErr` via `dictExtractPrefixSubdictWithCells`.
 8. [B8] Assembler behavior:
-   - `assembleCp0` rejects all `.dictExt` instructions (`.invOpcode`), including this opcode.
+    - `assembleCp0` encodes this instruction to `0xf4b7` and it roundtrips through decode.
 9. [B9] Decoder boundaries:
    - `0xF4B5..0xF4B7` map to `.dictExt (.subdictGet false/true/true/false, true/true/false, true/true/true)` respectively.
    - `0xF4B4` and `0xF4B8` are not valid decode targets and must return `.invOpcode`.
@@ -159,6 +159,16 @@ private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def expectAssembleExact (label : String) (instr : Instr) (w16 : Nat) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble ok, got {e}")
+  | .ok c =>
+      if c.bits != natToBits w16 16 then
+        throw (IO.userError s!"{label}: expected bits {reprStr (natToBits w16 16)}, got {reprStr c.bits}")
+      let _ ← expectDecodeStep (s!"{label}/decode") (Slice.ofCell c) instr 16
+      pure ()
 
 private def mkCase
     (name : String)
@@ -348,9 +358,9 @@ def suite : InstrSuite where
     { name := "unit/runtime/error/malformed-root" -- [B7]
       run := do
         expectErr "malformed-root" (runSubdictGetDirect (mkStack 1 (.cell malformedDict) 4 2)) .cellUnd },
-    { name := "unit/assemble/reject" -- [B8]
+    { name := "unit/assemble/roundtrip" -- [B8]
       run := do
-        expectAssembleErr "assemble-inv" instr .invOpcode },
+        expectAssembleExact "assemble" instr 0xf4b7 },
     { name := "unit/decode/f4b5-chain" -- [B9]
       run := do
         expectDecodeOk "decode/f4b5" rawF4B5 (.dictExt (.subdictGet false false true))

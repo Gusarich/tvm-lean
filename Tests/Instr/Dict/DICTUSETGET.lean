@@ -57,7 +57,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - `0xF4` is truncated/too-short and decodes as `.invOpcode`.
 
 10. [B10] Assembler behavior.
-   - `.dictExt` opcode family is rejected by assembler (`.invOpcode`).
+   - CP0 assembler encodes this opcode family (16-bit opcodes).
 
 11. [B11] Gas accounting.
    - There is a fixed opcode base component (`computeExactGasBudget`).
@@ -316,6 +316,22 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error .invOpcode => pure ()
   | .error e => throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != i then
+            throw (IO.userError s!"{label}: expected {reprStr i}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
+
 private def runFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV 909)) stack
 
@@ -444,9 +460,9 @@ def suite : InstrSuite where
         expectDecodeErr "unit/decoder/f439" rawF439
         expectDecodeErr "unit/decoder/f440" rawF440
         expectDecodeErr "unit/decoder/truncated" rawF4 },
-    { name := "unit/asm/invOpcode"
+    { name := "unit/asm/encodes"
       run := do
-        expectAssembleInvOpcode "unit/asm/invOpcode" instr },
+        expectAssembleOk16 "unit/asm/encodes" instr },
     { name := "unit/runtime/underflow-empty"
       run := do
         expectErr "unit/underflow-empty" (runDICTUSETGET #[]) .stkUnd },
