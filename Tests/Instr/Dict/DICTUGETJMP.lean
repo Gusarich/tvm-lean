@@ -179,7 +179,7 @@ private def expectJumpTransfer
     (st : VmState) : IO Unit := do
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
+      if code.toCellRemaining != target.toCellRemaining then
         throw (IO.userError s!"{label}: expected cc={reprStr target}, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation")
   if st.regs.c0 != expectedC0 then
@@ -196,7 +196,7 @@ private def expectCallTransfer
   let expectedC0 := callReturnFromCc oldCc oldC0
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
+      if code.toCellRemaining != target.toCellRemaining then
         throw (IO.userError s!"{label}: expected cc={reprStr target}, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation")
   if st.regs.c0 != expectedC0 then
@@ -330,12 +330,12 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let init : Array Value := #[(.cell dictUnsigned4Hit), intV 3, intV 4]
+        let init : Array Value := #[intV 3, (.cell dictUnsigned4Hit), intV 4]
         let st := runDispatchFallback .add init
-        expectOkStack "unit/dispatch/fallback" st #[intV dispatchSentinel] },
+        expectOkStack "unit/dispatch/fallback" st (init ++ #[intV dispatchSentinel]) },
     { name := "unit/dispatch/match" -- [B1]
       run := do
-        let init : Array Value := #[(.cell dictUnsigned4Hit), intV 3, intV 4]
+        let init : Array Value := #[intV 3, (.cell dictUnsigned4Hit), intV 4]
         let st := runDispatchFallback instrUnsignedJmp init
         expectOkStack "unit/dispatch/match" st #[] },
     { name := "unit/encode-decode/family" -- [B12]
@@ -358,10 +358,10 @@ def suite : InstrSuite where
         let st ←
           expectRawOk
             "unit/raw/jump"
-            (runRaw instrUnsignedJmp (#[(.cell dictUnsigned4Hit), intV 3, intV 4]) regsWithSentinelC0 defaultCc)
+            (runRaw instrUnsignedJmp (#[intV 3, (.cell dictUnsigned4Hit), intV 4]) regsWithSentinelC0 defaultCc)
         expectJumpTransfer
           "unit/raw/jump"
-          jumpTargetSlice
+          unsignedHitValue
           sentinelC0
           st },
     { name := "unit/raw/call-transfer" -- [B9]
@@ -371,7 +371,7 @@ def suite : InstrSuite where
             "unit/raw/call"
             (runRaw
               instrUnsignedCall
-              (#[(.cell dictUnsigned4Call), intV 3, intV 4])
+              (#[intV 3, (.cell dictUnsigned4Call), intV 4])
               regsWithSentinelC0
               sentinelCc)
         expectCallTransfer
@@ -385,7 +385,7 @@ def suite : InstrSuite where
         let _ ←
           expectRawErr
             "unit/raw/malformed-root"
-            (runRaw instrUnsignedJmp (#[(.cell malformedRoot), intV 3, intV 4])
+            (runRaw instrUnsignedJmp (#[intV 3, (.cell malformedRoot), intV 4])
             Regs.initial
             defaultCc)
             .dictErr

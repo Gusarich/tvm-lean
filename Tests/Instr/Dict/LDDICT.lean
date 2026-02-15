@@ -94,22 +94,28 @@ private def valueCellC : Cell := Cell.mkOrdinary (natToBits 0xC5 8) #[]
 
 private def emptySlice : Slice := mkSliceFromBits (natToBits 0 0)
 
+private def advanceBit (s : Slice) : Slice :=
+  { s with bitPos := s.bitPos + 1 }
+
+private def advanceBitRef (s : Slice) : Slice :=
+  { s with bitPos := s.bitPos + 1, refPos := s.refPos + 1 }
+
 private def presentSimpleInput : Slice := mkSliceWithBitsRefs (natToBits 1 1) #[valueCellA]
-private def presentSimpleRemainder : Slice := emptySlice
+private def presentSimpleRemainder : Slice := advanceBitRef presentSimpleInput
 private def presentSimplePushOut : Array Value :=
   #[.cell valueCellA, .slice presentSimpleRemainder]
 
 private def presentSimpleBInput : Slice := mkSliceWithBitsRefs (natToBits 1 1) #[valueCellB]
 private def presentSimpleBPushOut : Array Value :=
-  #[.cell valueCellB, .slice presentSimpleRemainder]
+  #[.cell valueCellB, .slice (advanceBitRef presentSimpleBInput)]
 
 private def presentExtraRefsInput : Slice := mkSliceWithBitsRefs (natToBits 1 1) #[valueCellA, valueCellB]
-private def presentExtraRefsRemainder : Slice := mkSliceWithBitsRefs (natToBits 0 0) #[valueCellB]
+private def presentExtraRefsRemainder : Slice := advanceBitRef presentExtraRefsInput
 private def presentExtraRefsPushOut : Array Value :=
   #[.cell valueCellA, .slice presentExtraRefsRemainder]
 
 private def presentLongInput : Slice := mkSliceWithBitsRefs (natToBits 0b1011 4) #[valueCellA, valueCellC]
-private def presentLongRemainder : Slice := mkSliceWithBitsRefs (natToBits 0b011 3) #[valueCellC]
+private def presentLongRemainder : Slice := advanceBitRef presentLongInput
 private def presentLongPushOut : Array Value :=
   #[.cell valueCellA, .slice presentLongRemainder]
 
@@ -117,19 +123,19 @@ private def presentMissingRef : Slice := mkSliceFromBits (natToBits 1 1)
 
 private def absentSimpleInput : Slice := mkSliceFromBits (natToBits 0 1)
 private def absentSimplePushOut : Array Value :=
-  #[.null, .slice absentSimpleInput]
+  #[.null, .slice (advanceBit absentSimpleInput)]
 
 private def absentTailInput : Slice := mkSliceWithBitsRefs (natToBits 0b01101 5) #[valueCellA]
 private def absentTailPushOut : Array Value :=
-  #[.null, .slice absentTailInput]
+  #[.null, .slice (advanceBit absentTailInput)]
 
 private def absentWithRefsInput : Slice := mkSliceWithBitsRefs (natToBits 0b0 1) #[valueCellA, valueCellB]
 private def absentWithRefsPushOut : Array Value :=
-  #[.null, .slice absentWithRefsInput]
+  #[.null, .slice (advanceBit absentWithRefsInput)]
 
 private def absentLongInput : Slice := mkSliceWithBitsRefs (natToBits 0b001010 6) #[valueCellA, valueCellB]
 private def absentLongPushOut : Array Value :=
-  #[.null, .slice absentLongInput]
+  #[.null, .slice (advanceBit absentLongInput)]
 
 private def lddictGas : Int :=
   computeExactGasBudget lddictInstr
@@ -346,7 +352,7 @@ def suite : InstrSuite where
         expectDecodeOk "decode/f407" rawF407 (.lddict true true) },
     { name := "unit/decode/adjacent-opcodes" -- [B7]
       run := do
-        expectDecodeOk "decode/f403" rawF403 (.dictExt (.lddicts false))  },
+        expectDecodeOk "decode/f403" rawF403 (.dictExt (.lddicts true))  },
     { name := "unit/decode/truncated" -- [B7]
       run := do
         expectDecodeErr "decode/truncated-8" rawF4 .invOpcode

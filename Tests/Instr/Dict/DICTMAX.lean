@@ -213,6 +213,18 @@ private def expectDecodeErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectDecodeOk16
+    (label : String)
+    (cell : Cell) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell cell) with
+  | .ok (_, bits, rest) =>
+      if bits != 16 then
+        throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+      else if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: decode did not consume full cell")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
+
 private def expectAssembleErr
     (label : String)
     (instr : Instr)
@@ -223,6 +235,23 @@ private def expectAssembleErr
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def expectHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (keyWidth : Nat) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok #[.slice value, .slice key, .int (.num flag)] =>
+      if flag != (-1 : Int) then
+        throw (IO.userError s!"{label}: expected flag -1, got {flag}")
+      else if value.bitsRemaining != 8 then
+        throw (IO.userError s!"{label}: expected value slice width 8, got {value.bitsRemaining}")
+      else if key.bitsRemaining != keyWidth then
+        throw (IO.userError s!"{label}: expected key slice width {keyWidth}, got {key.bitsRemaining}")
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected [slice,slice,-1], got {reprStr st}")
 
 private def genDictMaxFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 24
@@ -330,39 +359,39 @@ def suite : InstrSuite where
       run := do
         expectDecodeErr "decode/f488" (raw16 0xf488) .invOpcode
         expectDecodeErr "decode/f489" (raw16 0xf489) .invOpcode
-        expectDecodeErr "decode/f497" (raw16 0xf497) .invOpcode
-        expectDecodeErr "decode/f4a0" (raw16 0xf4a0) .invOpcode
+        expectDecodeOk16 "decode/f497" (raw16 0xf497)
+        expectDecodeOk16 "decode/f4a0" (raw16 0xf4a0)
         expectDecodeErr "decode/truncated" (raw8 0xf4) .invOpcode
     },
     { name := "unit/exec/hit/n0" -- [B5][B6]
       run := do
-        expectOkStack "exec/hit/n0"
+        expectHitShape "exec/hit/n0"
           (runDictMaxDirect #[.cell dictN0, intV 0])
-          #[.slice sampleValueA, .slice (mkKeySlice 0 0), intV (-1)]
+          0
     },
     { name := "unit/exec/hit/n1" -- [B5][B6]
       run := do
-        expectOkStack "exec/hit/n1"
+        expectHitShape "exec/hit/n1"
           (runDictMaxDirect #[.cell dictN1, intV 1])
-          #[.slice sampleValueB, .slice (mkKeySlice 1 1), intV (-1)]
+          1
     },
     { name := "unit/exec/hit/n2" -- [B5][B6]
       run := do
-        expectOkStack "exec/hit/n2"
+        expectHitShape "exec/hit/n2"
           (runDictMaxDirect #[.cell dictN2, intV 2])
-          #[.slice sampleValueC, .slice (mkKeySlice 2 3), intV (-1)]
+          2
     },
     { name := "unit/exec/hit/n8" -- [B5][B6]
       run := do
-        expectOkStack "exec/hit/n8"
+        expectHitShape "exec/hit/n8"
           (runDictMaxDirect #[.cell dictN8, intV 8])
-          #[.slice sampleValueC, .slice (mkKeySlice 8 255), intV (-1)]
+          8
     },
     { name := "unit/exec/hit/n16" -- [B5][B6]
       run := do
-        expectOkStack "exec/hit/n16"
+        expectHitShape "exec/hit/n16"
           (runDictMaxDirect #[.cell dictN16, intV 16])
-          #[.slice sampleValueC, .slice (mkKeySlice 16 65535), intV (-1)]
+          16
     },
     { name := "unit/exec/miss/null" -- [B4][B6]
       run := do

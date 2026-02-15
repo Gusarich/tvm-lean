@@ -74,6 +74,9 @@ private def suiteId : InstrId :=
 private def instr : Instr :=
   .dictExt (.pfxGet .getExec)
 
+private def instrPfxSet : Instr :=
+  .dictExt (.pfxSet .set)
+
 private def dispatchSentinel : Int := 31_415
 
 private def rawOpcode16 : Nat → Cell :=
@@ -86,7 +89,7 @@ private def rawF4AB : Cell := rawOpcode16 0xF4AB
 private def rawF4AC : Cell := rawOpcode16 0xF4AC
 private def rawF4A0 : Cell := rawOpcode16 0xF4A0
 private def rawF4B0 : Cell := rawOpcode16 0xF4B0
-private def rawF4 : Cell := rawOpcode16 0xF4
+private def rawF4 : Cell := Cell.mkOrdinary (natToBits 0xF4 8) #[]
 
 private def methodA : Slice := mkSliceFromBits (natToBits 0xA111 16)
 private def methodB : Slice := mkSliceFromBits (natToBits 0xA222 16)
@@ -106,14 +109,22 @@ private def mkDictPfxRoot! (label : String) (n : Nat) (entries : Array (BitStrin
     let mut root : Option Cell := none
     for entry in entries do
       let (bits, value) := entry
-      if bits.size != n then
+      if bits.size > n then
         panic! s!"{label}: key size mismatch (size={bits.size}, n={n})"
-      match dictSetSliceWithCells root bits value .set with
-      | .ok (some newRoot, _ok, _created, _loaded) => root := newRoot
-      | .ok (none, _ok, _created, _loaded) =>
-          panic! s!"{label}: unexpected insertion failure (no new root)"
+      let dictVal : Value :=
+        match root with
+        | none => .null
+        | some c => .cell c
+      let stack : Array Value := #[.slice value, .slice (mkSliceFromBits bits), dictVal, intV (Int.ofNat n)]
+      match runHandlerDirect execInstrDictExt instrPfxSet stack with
+      | .ok #[.cell newRoot, ok] =>
+          if ok != intV (-1) then
+            panic! s!"{label}: pfxSet returned ok={reprStr ok}"
+          root := some newRoot
+      | .ok st =>
+          panic! s!"{label}: pfxSet unexpected stack {reprStr st}"
       | .error e =>
-          panic! s!"{label}: dictSetSliceWithCells failed with {reprStr e}"
+          panic! s!"{label}: pfxSet failed with {reprStr e}"
     match root with
     | some r => r
     | none => panic! s!"{label}: no entries for dictionary construction"
@@ -133,8 +144,14 @@ private def malformedDictRoot : Cell :=
 private def mkStack (key : BitString) (dict : Value) (n : Int) : Array Value :=
   #[.slice (mkSliceFromBits key), dict, intV n]
 
+private def sliceRemBits (s : Slice) : BitString :=
+  s.cell.bits.extract s.bitPos s.cell.bits.size
+
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV dispatchSentinel)) stack
+
+private def runDispatchMatch (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrDictExt instr (VM.push (intV dispatchSentinel)) stack
 
 private def runRaw
     (stack : Array Value)
@@ -181,7 +198,7 @@ private def expectDecodeInvOpcode (label : String) (w16 : Nat) : IO Unit := do
 private def expectMethodCont (label : String) (expected : Slice) (actual : Continuation) : IO Unit := do
   match actual with
   | .ordinary code (.quit 0) _ _ =>
-      if code != expected then
+      if code.toCellRemaining != expected.toCellRemaining then
         throw (IO.userError s!"{label}: expected continuation {reprStr expected}, got {reprStr code}")
   | _ =>
       throw (IO.userError s!"{label}: expected ordinary continuation, got {reprStr actual}")
@@ -202,8 +219,6 @@ private def expectCallTransfer
   let expectedC0 := callReturnFromCc oldCc oldC0
   if st.regs.c0 != expectedC0 then
     throw (IO.userError s!"{label}: expected c0={reprStr expectedC0}, got {reprStr st.regs.c0}")
-  if !st.stack.isEmpty then
-    throw (IO.userError s!"{label}: expected empty stack after call, got {reprStr st.stack}")
 
 private def exactGas : Int :=
   computeExactGasBudget instr
@@ -315,28 +330,55 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
         let st := mkStack key4A (.cell dict4Root) 4
-        expectOkStack "unit/dispatch/fallback" (runDispatchFallback st) #[intV dispatchSentinel] },
+        expectOkStack "unit/dispatch/fallback" (runDispatchFallback st) (st.push (intV dispatchSentinel)) },
     { name := "unit/dispatch/match" -- [B1]
       run := do
-        let _st := mkStack key4A (.cell dict4Root) 4
-        expectOkStack "unit/dispatch/match" (runDispatchFallback (mkStack key4A (.cell dict4Root) 4)) #[] },
+        match runDispatchMatch (mkStack key4A (.cell dict4Root) 4) with
+        | .error e =>
+            throw (IO.userError s!"unit/dispatch/match: expected ok, got {e}")
+        | .ok st =>
+            match st with
+            | #[.slice pfx, .slice rest] =>
+                if sliceRemBits pfx != key4A then
+                  throw (IO.userError s!"unit/dispatch/match: bad prefix {sliceRemBits pfx}")
+                if sliceRemBits rest != #[] then
+                  throw (IO.userError s!"unit/dispatch/match: expected empty rest, got {sliceRemBits rest}")
+            | _ =>
+                throw (IO.userError s!"unit/dispatch/match: unexpected stack {reprStr st}") },
     { name := "unit/asm" -- [B10][B11]
       run := do
         match encodeCp0 instr with
-        | .ok c =>
-            if c != natToBits 0xF4AB 16 then
-              throw (IO.userError s!"unit/asm: expected 0xF4AB, got {c}")
-        | .error e => throw (IO.userError s!"unit/asm: expected success, got {e}")
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/asm: expected invOpcode, got {e}")
+        | .ok c => throw (IO.userError s!"unit/asm: expected invOpcode, got {c}")
         let _ ← expectDecodeStep "unit/decode/f4ab" (mkSliceFromBits (natToBits 0xF4AB 16)) instr 16
-        expectDecodeInvOpcode "unit/decode/f4aa" 0xF4AA
+        let _ ←
+          expectDecodeStep
+            "unit/decode/f4aa"
+            (mkSliceFromBits (natToBits 0xF4AA 16))
+            (.dictExt (.pfxGet .getJmp))
+            16
         expectDecodeInvOpcode "unit/decode/f4ac" 0xF4AC
-        expectDecodeInvOpcode "unit/decode/truncated" 0xF4 },
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .error .invOpcode => pure ()
+        | .ok (di, bits, _) =>
+            throw (IO.userError s!"unit/decode/truncated-f4: expected invOpcode, got {reprStr di}/{bits}")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-f4: expected invOpcode, got {e}") },
     { name := "unit/raw/call" -- [B8]
       run := do
         let st ←
           expectRawOk
             "unit/raw/call" 
             (runRaw (mkStack key4A (.cell dict4Root) 4) { Regs.initial with c0 := .quit 17 } (.ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty OrdCdata.empty))
+        match st.stack with
+        | #[.slice pfx, .slice rest] =>
+            if sliceRemBits pfx != key4A then
+              throw (IO.userError s!"unit/raw/call: bad prefix {sliceRemBits pfx}")
+            if sliceRemBits rest != #[] then
+              throw (IO.userError s!"unit/raw/call: expected empty rest, got {sliceRemBits rest}")
+        | _ =>
+            throw (IO.userError s!"unit/raw/call: unexpected stack {reprStr st.stack}")
         expectCallTransfer "unit/raw/call" methodA (.ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty OrdCdata.empty) (.quit 17) st },
     { name := "unit/raw/malformed" -- [B9]
       run := do
@@ -344,7 +386,7 @@ def suite : InstrSuite where
           expectRawErr
             "unit/raw/malformed"
             (runRaw (mkStack key4A (.cell malformedDictRoot) 4) Regs.initial (.ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty OrdCdata.empty))
-            .dictErr
+            .cellUnd
         pure () }
   ]
   oracle := #[

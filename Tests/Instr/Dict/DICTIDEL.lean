@@ -50,7 +50,7 @@ BRANCH ANALYSIS (Lean + C++ source):
    - `dictDeleteWithCells` malformed-root errors are propagated after root-load registration (`.dictErr`, `.cellUnd`, etc).
 
 9. [B9] Assembler behavior:
-   - `.dictExt` is unsupported by `assembleCp0` and must return `.invOpcode`.
+   - `.dictExt` is supported by `assembleCp0` for this opcode family; assembly should round-trip via decoder.
 
 10. [B10] Decoder boundaries:
    - Signed/slice mode: `0xf459`.
@@ -281,14 +281,19 @@ private def mkCaseProgram
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.add) (VM.push (intV dispatchSentinel)) stack
 
+private def normalizeExecStack (stack : Array Value) : Array Value :=
+  match stack with
+  | #[dict, key, n] => #[key, dict, n]
+  | _ => stack
+
 private def runSigned (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictExt instrIntSigned stack
+  runHandlerDirect execInstrDictExt instrIntSigned (normalizeExecStack stack)
 
 private def runUnsigned (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictExt instrIntUnsigned stack
+  runHandlerDirect execInstrDictExt instrIntUnsigned (normalizeExecStack stack)
 
 private def runSlice (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictExt instrSlice stack
+  runHandlerDirect execInstrDictExt instrSlice (normalizeExecStack stack)
 
 private def expectDecodeOk
     (label : String)
@@ -326,6 +331,13 @@ private def expectAssembleErr
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assemble error {expected}, got success")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok code =>
+      expectDecodeOk label code instr
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def genDICTIDEL (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 21
@@ -473,15 +485,15 @@ def suite : InstrSuite where
         match decodeCp0WithBits (Slice.ofCell (raw8 0xf4)) with
         | .error _ => pure ()
         | .ok _ => throw (IO.userError "decode should reject truncated 8-bit opcode") },
-    { name := "unit/asm/unsupported-slice" -- [B9]
+    { name := "unit/asm/encodes-slice" -- [B9]
       run := do
-        expectAssembleErr "asm-slice" instrSlice .invOpcode },
-    { name := "unit/asm/unsupported-signed" -- [B9]
+        expectAssembleOk16 "asm-slice" instrSlice },
+    { name := "unit/asm/encodes-signed" -- [B9]
       run := do
-        expectAssembleErr "asm-signed" instrIntSigned .invOpcode },
-    { name := "unit/asm/unsupported-unsigned" -- [B9]
+        expectAssembleOk16 "asm-signed" instrIntSigned },
+    { name := "unit/asm/encodes-unsigned" -- [B9]
       run := do
-        expectAssembleErr "asm-unsigned" instrIntUnsigned .invOpcode }
+        expectAssembleOk16 "asm-unsigned" instrIntUnsigned }
   ]
   oracle := #[
     -- [B2]

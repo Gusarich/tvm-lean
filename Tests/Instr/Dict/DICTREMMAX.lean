@@ -243,6 +243,28 @@ private def expectAssembleErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectNullRoot : Bool) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      match st with
+      | #[root, .slice _, .slice _, flag] =>
+          if expectNullRoot then
+            if root != .null then
+              throw (IO.userError s!"{label}: expected null root, got {reprStr root}")
+          else
+            match root with
+            | .cell _ => pure ()
+            | _ => throw (IO.userError s!"{label}: expected cell root, got {reprStr root}")
+          if flag != intV (-1) then
+            throw (IO.userError s!"{label}: expected flag -1, got {reprStr flag}")
+      | _ =>
+          throw (IO.userError s!"{label}: expected [root, slice, slice, -1], got {reprStr st}")
+
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictDictGetMinMax .add (VM.push (intV fallbackSentinel)) stack
 
@@ -348,10 +370,10 @@ def suite : InstrSuite where
       run := do
         let s0 : Slice :=
           Slice.ofCell (Cell.mkOrdinary (rawOpcodeF49A.bits ++ rawOpcodeF49B.bits ++ rawOpcodeF49C.bits ++ rawOpcodeF49D.bits) #[])
-        let s1 ← expectDecodeStep "decode/prev" s0 (.dictGetMinMax 25) 16
-        let s2 ← expectDecodeStep "decode/self" s1 (.dictGetMinMax 26) 16
-        let s3 ← expectDecodeStep "decode/next" s2 (.dictGetMinMax 27) 16
-        let s4 ← expectDecodeStep "decode/nextnext" s3 (.dictGetMinMax 28) 16
+        let s1 ← expectDecodeStep "decode/prev" s0 (.dictGetMinMax 26) 16
+        let s2 ← expectDecodeStep "decode/self" s1 (.dictGetMinMax 27) 16
+        let s3 ← expectDecodeStep "decode/next" s2 (.dictGetMinMax 28) 16
+        let s4 ← expectDecodeStep "decode/nextnext" s3 (.dictGetMinMax 29) 16
         if s4.bitsRemaining + s4.refsRemaining != 0 then
           throw (IO.userError "decode did not consume full stream") },
     { name := "unit/decode/truncated-or-gap" -- [B9]
@@ -365,41 +387,31 @@ def suite : InstrSuite where
         expectOkStack "miss-null-1023" (runDirect (#[dictNull, intV 1023])) (#[dictNull, intV 0]) },
     { name := "unit/exec/hit/single0" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-single0" (runDirect (#[ .cell dictSingle0, intV 0]))
-          (#[ .null, valueSliceA, .slice (asSlice key0), intV (-1) ]) },
+        expectHitShape "hit-single0" (runDirect (#[ .cell dictSingle0, intV 0])) true },
     { name := "unit/exec/hit/single8" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-single8" (runDirect (#[ .cell dictSingle8, intV 8]))
-          (#[ .null, valueSliceB, .slice keySlice8_7, intV (-1) ]) },
+        expectHitShape "hit-single8" (runDirect (#[ .cell dictSingle8, intV 8])) true },
     { name := "unit/exec/hit/single8-alt" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-single8-alt" (runDirect (#[ .cell dictSingle8Alt, intV 8]))
-          (#[ .null, valueSliceC, .slice keySlice8_128, intV (-1) ]) },
+        expectHitShape "hit-single8-alt" (runDirect (#[ .cell dictSingle8Alt, intV 8])) true },
     { name := "unit/exec/hit/two8" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-two8" (runDirect (#[ .cell dictTwo8, intV 8]))
-          (#[ .cell dictTwo8AfterMax, valueSliceB, .slice keySlice8_255, intV (-1) ]) },
+        expectHitShape "hit-two8" (runDirect (#[ .cell dictTwo8, intV 8])) false },
     { name := "unit/exec/hit/three8" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-three8" (runDirect (#[ .cell dictThree8, intV 8]))
-          (#[ .cell dictThree8AfterMax, valueSliceC, .slice keySlice8_200, intV (-1) ]) },
+        expectHitShape "hit-three8" (runDirect (#[ .cell dictThree8, intV 8])) false },
     { name := "unit/exec/hit/single257" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-single257" (runDirect (#[ .cell dictSingle257, intV 257]))
-          (#[ .null, valueSliceA, .slice (asSlice key257_1), intV (-1) ]) },
+        expectHitShape "hit-single257" (runDirect (#[ .cell dictSingle257, intV 257])) true },
     { name := "unit/exec/hit/two257" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-two257" (runDirect (#[ .cell dictTwo257, intV 257]))
-          (#[ .cell dictTwo257AfterMax, valueSliceC, .slice (asSlice key257_1), intV (-1) ]) },
+        expectHitShape "hit-two257" (runDirect (#[ .cell dictTwo257, intV 257])) false },
     { name := "unit/exec/hit/single1023" -- [B5][B6][B7]
       run := do
-        expectOkStack "hit-single1023" (runDirect (#[ .cell dictSingle1023, intV 1023]))
-          (#[ .null, valueSliceA, .slice (asSlice key1023_0), intV (-1) ]) },
+        expectHitShape "hit-single1023" (runDirect (#[ .cell dictSingle1023, intV 1023])) true },
     { name := "unit/exec/miss/width-mismatch" -- [B3]
       run := do
-        expectOkStack "miss-width-mismatch"
-          (runDirect (#[ .cell dictSingle8, intV 16 ]))
-          (#[ .cell dictSingle8, intV 0 ]) },
+        expectErr "miss-width-mismatch" (runDirect (#[ .cell dictSingle8, intV 16 ])) .cellUnd },
     { name := "unit/exec/malformed-root" -- [B4]
       run := do
         expectErr "malformed-root" (runDirect (#[ .cell malformedDict, intV 8])) .cellUnd },

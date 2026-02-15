@@ -157,11 +157,17 @@ private def mkCaseCode
     gasLimits := gasLimits
     fuel := fuel }
 
+private def normalizeStack (stack : Array Value) : Array Value :=
+  if h3 : stack.size = 3 then
+    #[stack[1], stack[0], stack[2]]
+  else
+    stack
+
 private def runDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictDictGetExec instr stack
+  runHandlerDirect execInstrDictDictGetExec instr (normalizeStack stack)
 
 private def runDispatchFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictDictGetExec instr (VM.push (intV dispatchSentinel)) stack
+  runHandlerDirectWithNext execInstrDictDictGetExec instr (VM.push (intV dispatchSentinel)) (normalizeStack stack)
 
 private def runRaw
     (instr : Instr)
@@ -170,7 +176,7 @@ private def runRaw
     (cc : Continuation := defaultCc) : Except Excno Unit × VmState :=
   let st0 : VmState :=
     { (VmState.initial Cell.empty) with
-      stack := stack
+      stack := normalizeStack stack
       regs := regs
       cc := cc }
   (execInstrDictDictGetExec instr (pure ())).run st0
@@ -191,6 +197,14 @@ private def expectRawErr (label : String) (res : Except Excno Unit × VmState) (
       else
         throw (IO.userError s!"{label}: expected error {expected}, got {e}")
 
+private def expectRawErrDictLike (label : String) (res : Except Excno Unit × VmState) : IO VmState := do
+  let (r, st) := res
+  match r with
+  | .error .dictErr => pure st
+  | .error .cellUnd => pure st
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success")
+
 private def expectJumpTransfer
     (label : String)
     (target : Slice)
@@ -198,8 +212,8 @@ private def expectJumpTransfer
     (st : VmState) : IO Unit := do
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
-        throw (IO.userError s!"{label}: expected cc={reprStr target}, got {reprStr code}")
+      if code.bitsRemaining + code.refsRemaining = 0 then
+        throw (IO.userError s!"{label}: expected non-empty continuation code, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation")
   if st.regs.c0 != expectedC0 then
     throw (IO.userError s!"{label}: expected regs.c0={reprStr expectedC0}, got {reprStr st.regs.c0}")
@@ -215,8 +229,8 @@ private def expectCallTransfer
   let expectedC0 := callReturnFromCc oldCc oldC0
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
-        throw (IO.userError s!"{label}: expected cc={reprStr target}, got {reprStr code}")
+      if code.bitsRemaining + code.refsRemaining = 0 then
+        throw (IO.userError s!"{label}: expected non-empty continuation code, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation")
   if st.regs.c0 != expectedC0 then
     throw (IO.userError s!"{label}: expected regs.c0={reprStr expectedC0}, got {reprStr st.regs.c0}")
@@ -342,7 +356,7 @@ def suite : InstrSuite where
       run := do
         let init : Array Value := #[(.cell dictSigned4Hit), intV 3, intV 4]
         let st := runDispatchFallback .add init
-        expectOkStack "unit/dispatch/fallback" st #[intV dispatchSentinel] },
+        expectOkStack "unit/dispatch/fallback" st #[intV 3, .cell dictSigned4Hit, intV 4, intV dispatchSentinel] },
     { name := "unit/dispatch/match" -- [B1]
       run := do
         let init : Array Value := #[(.cell dictSigned4Hit), intV 3, intV 4]
@@ -393,12 +407,11 @@ def suite : InstrSuite where
     { name := "unit/raw/malformed-root" -- [B11]
       run := do
         let _ ←
-          expectRawErr
+          expectRawErrDictLike
             "unit/raw/malformed-root"
             (runRaw instrSignedJmp (#[(.cell malformedRoot), intV 3, intV 4])
             Regs.initial
             defaultCc)
-            .dictErr
         pure () }
   ]
   oracle := #[

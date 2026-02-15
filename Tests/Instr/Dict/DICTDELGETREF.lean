@@ -52,8 +52,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
      deletion lookup.
 
 10. [B10] Assembler encoding:
-    - `Asm/Cp0` does not provide `dictExt` encoding; assembling
-      `.dictExt (.mutGet false false true .del)` must return `.invOpcode`.
+    - `Asm/Cp0` provides `dictExt` encoding for this family; assembly should round-trip via decoder.
 
 11. [B11] Decoder boundaries:
     - `0xf462..0xf463` decodes to non-int-key DELGET variants.
@@ -274,6 +273,13 @@ private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectAssembleOk (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok code =>
+      expectDecodeOk label code instr
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+
 private def dispatchSentinel : Int := 909
 
 private def runDispatchFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
@@ -371,10 +377,14 @@ def suite : InstrSuite where
         expectDecodeStepOrErr "unit/decode/gap" 0xf468 .invOpcode },
     { name := "unit/decode/truncated-8"
       run := do
-        expectDecodeStepOrErr "unit/decode/truncated-8" 0xf4 .invOpcode },
-    { name := "unit/assemble/invOpcode"
+        match decodeCp0WithBits (Slice.ofCell rawTrunc8) with
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/decode/truncated-8: expected invOpcode, got {e}")
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"unit/decode/truncated-8: expected invOpcode, got {instr}/{bits}") },
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleErr "unit/assemble/invOpcode" dictDelGetRefInstr .invOpcode }
+        expectAssembleOk "unit/assemble" dictDelGetRefInstr }
   ]
   oracle := #[
     mkCase "ok/miss/null/key-0000" (stack3 (.slice (key4 0)) .null 4), -- [B6]

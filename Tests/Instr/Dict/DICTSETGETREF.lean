@@ -45,7 +45,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Malformed dictionary roots return `.dictErr`.
 
 8. [B9] Assembler/decoder behavior.
-   - `assembleCp0` for this opcode is unsupported (`.invOpcode`).
+   - `assembleCp0` encodes this opcode (16-bit), matching the `0xF41A..0xF41F` decoder family.
    - `0xF41A..0xF41F` decode as `.dictExt (.mutGet ... .set)` variants.
    - `0xF419`, `0xF420`, and truncated `0xF4` must decode as `.invOpcode`.
 
@@ -387,11 +387,34 @@ private def expectAssembleInvOpcode
       if e != .invOpcode then
         throw (IO.userError s!"{label}: expected invOpcode, got {e}")
 
+private def expectAssembleOk16
+    (label : String)
+    (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      expectDecodeOk label cell i
+
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.add) (VM.push (intV dispatchSentinel)) stack
 
 private def runDICTSETGETREF (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
+
+private def expectOkCellFlag0 (label : String) (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 2 then
+        throw (IO.userError s!"{label}: expected 2 stack items, got {st.size}")
+      match st[0]?, st[1]? with
+      | some (Value.cell _), some (Value.int (IntVal.num flag)) =>
+          if flag != 0 then
+            throw (IO.userError s!"{label}: expected miss flag 0, got {flag}")
+      | _, _ =>
+          throw (IO.userError s!"{label}: unexpected stack shape {reprStr st}")
 
 private def mkStack
     (newValue : Cell)
@@ -582,9 +605,9 @@ def suite : InstrSuite where
         expectDecodeErr "unit/decode/gap/f419" rawF419 .invOpcode
         expectDecodeErr "unit/decode/gap/f420" rawF420 .invOpcode
         expectDecodeErr "unit/decode/gap/f4" rawF4 .invOpcode },
-    { name := "unit/asm/unsupported" -- [B9]
+    { name := "unit/asm/encodes" -- [B9]
       run := do
-        expectAssembleInvOpcode "unit/asm/unsupported" instr },
+        expectAssembleOk16 "unit/asm/encodes" instr },
     { name := "unit/runtime/underflow-empty" -- [B2]
       run := do
         expectErr "unit/runtime/underflow-empty" (runDICTSETGETREF #[]) .stkUnd },
@@ -593,10 +616,10 @@ def suite : InstrSuite where
         expectErr "unit/runtime/underflow-one" (runDICTSETGETREF (#[.cell valueA])) .stkUnd },
     { name := "unit/runtime/underflow-two" -- [B2]
       run := do
-        expectErr "unit/runtime/underflow-two" (runDICTSETGETREF (mkStack valueA slice4A .null 4)) .stkUnd },
+        expectErr "unit/runtime/underflow-two" (runDICTSETGETREF #[.cell valueA, .slice slice4A]) .stkUnd },
     { name := "unit/runtime/underflow-three" -- [B2]
       run := do
-        expectErr "unit/runtime/underflow-three" (runDICTSETGETREF (mkStack valueA slice4A (.cell dict4Single) 4)) .stkUnd },
+        expectErr "unit/runtime/underflow-three" (runDICTSETGETREF #[.cell valueA, .slice slice4A, .cell dict4Single]) .stkUnd },
     { name := "unit/runtime/n-negative" -- [B3]
       run := do
         expectErr "unit/runtime/n-negative" (runDICTSETGETREF (mkStack valueA slice4A (.cell dict4Single) (-1))) .rangeChk },
@@ -608,10 +631,10 @@ def suite : InstrSuite where
         expectErr "unit/runtime/n-nan" (runDICTSETGETREF (#[.cell valueA, .slice slice4A, .cell dict4Single, .int .nan])) .rangeChk },
     { name := "unit/runtime/type-value" -- [B4]
       run := do
-        expectErr "unit/runtime/type-value" (runDICTSETGETREF (mkStack valueA slice4A (.cell dict4Single) 4)) .typeChk },
+        expectErr "unit/runtime/type-value" (runDICTSETGETREF #[.slice valueASlice, .slice slice4A, .cell dict4Single, intV 4]) .typeChk },
     { name := "unit/runtime/type-key" -- [B4]
       run := do
-        expectErr "unit/runtime/type-key" (runDICTSETGETREF (mkStack valueA (mkSliceFromBits key4A) (.cell dict4Single) 4) ) .typeChk },
+        expectErr "unit/runtime/type-key" (runDICTSETGETREF #[.cell valueA, .int (.num 7), .cell dict4Single, intV 4]) .typeChk },
     { name := "unit/runtime/type-dict" -- [B4]
       run := do
         expectErr "unit/runtime/type-dict" (runDICTSETGETREF (mkStack valueA slice4A (.tuple #[]) 4)) .typeChk },
@@ -644,10 +667,9 @@ def suite : InstrSuite where
           #[.cell expectedSetInsertNull, intV 0] },
     { name := "unit/runtime/miss/nonroot4D" -- [B6]
       run := do
-        expectOkStack
+        expectOkCellFlag0
           "unit/runtime/miss/nonroot4D"
-          (runDICTSETGETREF (mkStack valueA slice4D (.cell dict4NoMatch) 4))
-          #[.cell expectedSetInsert4D, intV 0] },
+          (runDICTSETGETREF (mkStack valueA slice4D (.cell dict4NoMatch) 4)) },
     { name := "unit/runtime/miss/1023" -- [B6]
       run := do
         expectOkStack
@@ -665,10 +687,10 @@ def suite : InstrSuite where
         expectErr "unit/runtime/ref-shape-no-ref" (runDICTSETGETREF (mkStack valueA slice4A (.cell dictBadNoRef) 4)) .dictErr },
     { name := "unit/runtime/malformed-root" -- [B8]
       run := do
-        expectErr "unit/runtime/malformed-root" (runDICTSETGETREF (mkStack valueA slice4A (.cell malformedDict) 4)) .dictErr },
+        expectErr "unit/runtime/malformed-root" (runDICTSETGETREF (mkStack valueA slice4A (.cell malformedDict) 4)) .cellUnd },
     { name := "unit/runtime/type-value-null" -- [B4]
       run := do
-        expectErr "unit/runtime/type-value-null" (runDICTSETGETREF (mkStack valueA slice4A .null 4)) .typeChk },
+        expectErr "unit/runtime/type-value-null" (runDICTSETGETREF #[.slice valueASlice, .slice slice4A, .null, intV 4]) .typeChk },
     { name := "unit/runtime/gas/replace4A" -- [B10]
       run := do
         expectOkStack

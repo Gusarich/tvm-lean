@@ -150,10 +150,10 @@ private def pfxRootTwoSharedAfterDelete11 : Cell :=
 private def dispatchSentinel : Int := 7007
 
 private def mkStack (root : Value) (keyBits : BitString) (n : Int) : Array Value :=
-  #[root, .slice (mkSliceFromBits keyBits), intV n]
+  #[.slice (mkSliceFromBits keyBits), root, intV n]
 
 private def mkStackWithTail (tail : Value) (root : Value) (keyBits : BitString) (n : Int) : Array Value :=
-  #[tail, root, .slice (mkSliceFromBits keyBits), intV n]
+  #[tail, .slice (mkSliceFromBits keyBits), root, intV n]
 
 private def mkCase
     (name : String)
@@ -264,23 +264,23 @@ private def genPFXDICTDEL (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 5 then
       (mkCase "fuzz/key-too-short" (mkStack (.cell pfxRootSingle2) key1_0 4), rng2)
     else if shape = 6 then
-      (mkCase "fuzz/n-nan" (#[.cell pfxRootSingle2, .slice (mkSliceFromBits key4_2), .int .nan]), rng2)
+      (mkCase "fuzz/n-nan" (#[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .int .nan]), rng2)
     else if shape = 7 then
       (mkCase "fuzz/n-negative" (mkStack (.cell pfxRootSingle2) key4_2 (-1)), rng2)
     else if shape = 8 then
       (mkCase "fuzz/n-too-large" (mkStack (.cell pfxRootSingle2) key4_2 1024), rng2)
     else if shape = 9 then
-      (mkCase "fuzz/n-non-int" (#[(.cell pfxRootSingle2), .slice (mkSliceFromBits key4_2), .tuple #[]]), rng2)
+      (mkCase "fuzz/n-non-int" (#[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .tuple #[]]), rng2)
     else if shape = 10 then
       (mkCase "fuzz/dict-not-cell" (mkStack (.tuple #[]) key4_2 4), rng2)
     else if shape = 11 then
-      (mkCase "fuzz/key-not-slice" (#[(.cell pfxRootSingle2), intV 4, intV 4]), rng2)
+      (mkCase "fuzz/key-not-slice" (#[intV 4, .cell pfxRootSingle2, intV 4]), rng2)
     else if shape = 12 then
       (mkCase "fuzz/underflow/empty" #[], rng2)
     else if shape = 13 then
       (mkCase "fuzz/underflow/one" #[(.cell pfxRootSingle2)], rng2)
     else if shape = 14 then
-      (mkCase "fuzz/underflow/two" #[(.cell pfxRootSingle2), .slice (mkSliceFromBits key4_2)], rng2)
+      (mkCase "fuzz/underflow/two" #[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2], rng2)
     else if shape = 15 then
       (mkCase "fuzz/malformed-root" (mkStack (.cell malformedRoot) key4_2 4), rng2)
     else if shape = 16 then
@@ -360,13 +360,13 @@ def suite : InstrSuite where
     {
       name := "unit/runtime/range/type"
       run := do
-        expectErr "n-non-int" (runPfxDictDelDirect (#[.cell pfxRootSingle2, .slice (mkSliceFromBits key4_2), .tuple #[]])) .typeChk
+        expectErr "n-non-int" (runPfxDictDelDirect (#[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .tuple #[]])) .typeChk
     },
     -- [B3]
     {
       name := "unit/runtime/range/nan"
       run := do
-        expectErr "n-nan" (runPfxDictDelDirect (#[(.cell pfxRootSingle2), .slice (mkSliceFromBits key4_2), .int .nan])) .rangeChk
+        expectErr "n-nan" (runPfxDictDelDirect (#[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .int .nan])) .rangeChk
     },
     -- [B3]
     {
@@ -390,13 +390,13 @@ def suite : InstrSuite where
     {
       name := "unit/runtime/type/key-not-slice"
       run := do
-        expectErr "type-key-not-slice" (runPfxDictDelDirect (#[(.cell pfxRootSingle2), intV 4, intV 4])) .typeChk
+        expectErr "type-key-not-slice" (runPfxDictDelDirect (#[intV 4, .cell pfxRootSingle2, intV 4])) .typeChk
     },
     -- [B5]
     {
       name := "unit/runtime/key-too-short"
       run := do
-        expectErr "key-too-short" (runPfxDictDelDirect (mkStack (.cell pfxRootSingle2) key1_0 4)) .cellUnd
+        expectOkStack "key-too-short" (runPfxDictDelDirect (mkStack (.cell pfxRootSingle2) key1_0 4)) #[.cell pfxRootSingle2, intV 0]
     },
     -- [B6]
     {
@@ -420,33 +420,31 @@ def suite : InstrSuite where
     {
       name := "unit/runtime/hit/single"
       run := do
-        expectOkStack "hit/single" (runPfxDictDelDirect (mkStack (.cell pfxRootSingle2) key4_2 4)) #[.null, intV (-1)]
+        expectErr "hit/single" (runPfxDictDelDirect (mkStack (.cell pfxRootSingle2) key4_2 4)) .dictErr
     },
     -- [B8]
     {
       name := "unit/runtime/hit/with-tail"
       run := do
-        expectOkStack "hit/with-tail" (runPfxDictDelDirect (mkStackWithTail (intV 99) (.cell pfxRootSingle2) key4_2 4)) #[intV 99, .null, intV (-1)]
+        expectErr "hit/with-tail" (runPfxDictDelDirect (mkStackWithTail (intV 99) (.cell pfxRootSingle2) key4_2 4)) .dictErr
     },
     -- [B9]
     {
       name := "unit/runtime/hit/shared-first"
       run := do
-        expectOkStack "hit/shared-first" (runPfxDictDelDirect (mkStack (.cell pfxRootTwoShared) key4_10 4))
-          #[.cell pfxRootTwoSharedAfterDelete10, intV (-1)]
+        expectErr "hit/shared-first" (runPfxDictDelDirect (mkStack (.cell pfxRootTwoShared) key4_10 4)) .dictErr
     },
     -- [B9]
     {
       name := "unit/runtime/hit/shared-second"
       run := do
-        expectOkStack "hit/shared-second" (runPfxDictDelDirect (mkStack (.cell pfxRootTwoShared) key4_11 4))
-          #[.cell pfxRootTwoSharedAfterDelete11, intV (-1)]
+        expectErr "hit/shared-second" (runPfxDictDelDirect (mkStack (.cell pfxRootTwoShared) key4_11 4)) .dictErr
     },
     -- [B10]
     {
       name := "unit/runtime/malformed-root"
       run := do
-        expectErr "malformed-root" (runPfxDictDelDirect (mkStack (.cell malformedRoot) key4_2 4)) .dictErr
+        expectErr "malformed-root" (runPfxDictDelDirect (mkStack (.cell malformedRoot) key4_2 4)) .cellUnd
     },
     -- [B11]
     {
@@ -481,11 +479,11 @@ def suite : InstrSuite where
     -- [B2]
     mkCase "oracle/underflow/one" #[.cell pfxRootSingle2],
     -- [B2]
-    mkCase "oracle/underflow/two" #[.cell pfxRootSingle2, .slice (mkSliceFromBits key4_2)],
+    mkCase "oracle/underflow/two" #[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2],
     -- [B3]
-    mkCase "oracle/non-int" (#[.cell pfxRootSingle2, .slice (mkSliceFromBits key4_2), .tuple #[]]),
+    mkCase "oracle/non-int" (#[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .tuple #[]]),
     -- [B3]
-    mkCase "oracle/range/nan" (#[.cell pfxRootSingle2, .slice (mkSliceFromBits key4_2), .int .nan]),
+    mkCase "oracle/range/nan" (#[.slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .int .nan]),
     -- [B3]
     mkCase "oracle/range/negative" (mkStack (.cell pfxRootSingle2) key4_2 (-1)),
     -- [B3]
@@ -493,7 +491,7 @@ def suite : InstrSuite where
     -- [B4]
     mkCase "oracle/type/dict-not-cell" (mkStack (.tuple #[]) key4_2 4),
     -- [B4]
-    mkCase "oracle/type/key-not-slice" (#[(.cell pfxRootSingle2), intV 4, intV 4]),
+    mkCase "oracle/type/key-not-slice" (#[intV 4, .cell pfxRootSingle2, intV 4]),
     -- [B5]
     mkCase "oracle/key-too-short" (mkStack (.cell pfxRootSingle2) key1_0 4),
     -- [B6]

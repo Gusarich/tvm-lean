@@ -630,7 +630,7 @@ def suite : InstrSuite where
         expectOkStack "add/ref-miss" (runDictSet dictAddSliceRef (mkRefStack sampleCellD (natToBits 10 8) .null 8)) #[(.cell expected), intV (-1)] },
     { name := "unit/replace-malformed-root"
       run := do
-        expectErr "replace-malformed" (runDictSet dictReplaceSlice (mkSliceStack sampleSliceA (natToBits 5 8) (.cell malformedDictCell) 8)) .dictErr },
+        expectErr "replace-malformed" (runDictSet dictReplaceSlice (mkSliceStack sampleSliceA (natToBits 5 8) (.cell malformedDictCell) 8)) .cellUnd },
     { name := "unit/asm/encode/set"
       run := do
         expectAssembleEq "asm/set/0" raw412 dictSetSlice

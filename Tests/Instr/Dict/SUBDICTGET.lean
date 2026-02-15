@@ -197,24 +197,24 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
 private def runSubdict
     (instr : Instr)
     (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictDictGet instr stack
+  runHandlerDirect execInstrDictExt instr stack
 
 private def runSubdictDispatchFallback
     (instr : Instr)
     (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictDictGet instr (VM.push (intV 12_345)) stack
+  runHandlerDirectWithNext execInstrDictExt instr (VM.push (intV 12_345)) stack
 
 private def stackSliceSubdict
     (keyBits : BitString)
     (dictValue : Value)
     (prefixLen n : Int) : Array Value :=
-  #[.slice (mkSliceFromBits keyBits), dictValue, intV prefixLen, intV n]
+  #[.slice (mkSliceFromBits keyBits), intV prefixLen, dictValue, intV n]
 
 private def stackIntSubdict
     (key : Int)
     (dictValue : Value)
     (prefixLen n : Int) : Array Value :=
-  #[intV key, dictValue, intV prefixLen, intV n]
+  #[intV key, intV prefixLen, dictValue, intV n]
 
 private def mkCase
     (name : String)
@@ -305,12 +305,12 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       mkCase
         (s!"{base}/int-nan")
         subdictInt
-        (#[.int .nan, .cell dictInt4Root, intV 4, intV 4])
+        (#[.int .nan, intV 4, .cell dictInt4Root, intV 4])
     else if shape = 12 then
       mkCase
         (s!"{base}/k-non-int")
         subdictSlice
-        (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, .null, intV 4])
+        (#[.slice (mkSliceFromBits (natToBits 0 4)), .null, .cell dictSlice4Root, intV 4])
     else if shape = 13 then
       mkCase
         (s!"{base}/k-negative")
@@ -325,7 +325,7 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       mkCase
         (s!"{base}/n-non-int")
         subdictSlice
-        (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 2, .null])
+        (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 2, .cell dictSlice4Root, .null])
     else if shape = 16 then
       mkCase
         (s!"{base}/n-negative")
@@ -350,7 +350,7 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       mkCase
         (s!"{base}/key-slice-in-int-mode")
         subdictInt
-        (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictInt4Root, intV 4, intV 4])
+        (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 4, .cell dictInt4Root, intV 4])
     else if shape = 21 then
       mkCase
         (s!"{base}/key-rp")
@@ -455,37 +455,37 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
           expectErr "three-items" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 4]) ) .stkUnd },
       { name := "unit/n-validation" -- [B3]
         run := do
-          expectErr "n-not-int" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 1, .null])) .typeChk
+          expectErr "n-not-int" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 1, .cell dictSlice4Root, .null])) .typeChk
           expectErr "n-negative" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) 4 (-1))) .rangeChk
           expectErr "n-too-large" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) 4 1024)) .rangeChk
-          expectErr "n-nan" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 4, .int .nan])) .rangeChk },
+          expectErr "n-nan" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 4, .cell dictSlice4Root, .int .nan])) .rangeChk },
       { name := "unit/k-validation" -- [B5]
         run := do
-          expectErr "k-not-int" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, .null, intV 4])) .typeChk
+          expectErr "k-not-int" (runSubdict subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .null, .cell dictSlice4Root, intV 4])) .typeChk
           expectErr "k-negative" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) (-1) 4)) .rangeChk
           expectErr "k-too-large" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) 5 4)) .rangeChk },
       { name := "unit/type-checks" -- [B4][B6]
         run := do
           expectErr "dict-not-null-or-cell" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) (.tuple #[]) 2 4)) .typeChk
           expectErr "dict-builder" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) (.builder Builder.empty) 2 4)) .typeChk
-          expectErr "slice-key-in-int" (runSubdict subdictInt (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictInt4Root, intV 4, intV 4])) .typeChk
-          expectErr "int-key-in-slice" (runSubdict subdictSlice (#[intV 5, .cell dictSlice4Root, intV 4, intV 4])) .typeChk },
+          expectErr "slice-key-in-int" (runSubdict subdictInt (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 4, .cell dictInt4Root, intV 4])) .typeChk
+          expectErr "int-key-in-slice" (runSubdict subdictSlice (#[intV 5, intV 4, .cell dictSlice4Root, intV 4])) .typeChk },
       { name := "unit/key-conversion-errors" -- [B7][B8]
         run := do
           expectErr "slice-key-too-short" (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 2) (.cell dictSlice4Root) 4 4)) .cellUnd
           expectErr "int-key-out-of-range-pos" (runSubdict subdictInt (stackIntSubdict 8 (.cell dictInt4Root) 4 4)) .cellUnd
           expectErr "int-key-out-of-range-neg" (runSubdict subdictInt (stackIntSubdict (-9) (.cell dictInt4Root) 4 4)) .cellUnd
           expectErr "uint-key-out-of-range-neg" (runSubdict subdictUInt (stackIntSubdict (-1) (.cell dictUInt4Root) 4 4)) .cellUnd
-          expectErr "int-nan" (runSubdict subdictInt (#[.int .nan, .cell dictInt4Root, intV 4, intV 4])) .intOv },
+          expectErr "int-nan" (runSubdict subdictInt (#[.int .nan, intV 4, .cell dictInt4Root, intV 4])) .intOv },
       { name := "unit/success/path-k0" -- [B9]
         run := do
           expectOkStack "slice-k0-hit" (runSubdict subdictSlice (stackSliceSubdict (natToBits 1 4) (.cell dictSlice4Root) 0 4)) (#[.cell dictSlice4Root])
-          expectOkStack "int-k0-hit" (runSubdict subdictInt (stackIntSubdict 5 (.cell dictInt4Root) 0 4)) (#[.cell dictInt4Root])
-          expectOkStack "uint-k0-hit" (runSubdict subdictUInt (stackIntSubdict 15 (.cell dictUInt4Root) 0 4)) (#[.cell dictUInt4Root])
+          expectOkStack "int-k0-hit" (runSubdict subdictInt (stackIntSubdict 0 (.cell dictInt4Root) 0 4)) (#[.cell dictInt4Root])
+          expectOkStack "uint-k0-hit" (runSubdict subdictUInt (stackIntSubdict 0 (.cell dictUInt4Root) 0 4)) (#[.cell dictUInt4Root])
           expectOkStack
             "slice-k0-preserve"
             (runSubdict subdictSlice
-              #[intV 77, .slice (mkSliceFromBits (natToBits 2 3)), .cell dictSlice4Root, intV 0, intV 4])
+              #[intV 77, .slice (mkSliceFromBits (natToBits 2 3)), intV 0, .cell dictSlice4Root, intV 4])
             (#[intV 77, .cell dictSlice4Root])
       },
       { name := "unit/semantics-miss" -- [B9][B10]
@@ -493,7 +493,7 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
           expectOkStack
             "slice-prefix-miss"
             (runSubdict subdictSlice (stackSliceSubdict (natToBits 0b001 3) (.cell dictSlice4Root) 3 4))
-            (#[])
+            (#[.null])
           expectOkStack
             "slice-no-root"
             (runSubdict subdictSlice (stackSliceSubdict (natToBits 0 4) .null 2 4))
@@ -504,7 +504,7 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
             (#[.null]) },
       { name := "unit/structural-errors" -- [B11]
         run := do
-          expectErr "malformed-root" (runSubdict subdictInt (stackIntSubdict 5 (.cell malformedDictCell) 4 4)) .dictErr },
+          expectErr "malformed-root" (runSubdict subdictInt (stackIntSubdict 5 (.cell malformedDictCell) 4 4)) .cellUnd },
       { name := "unit/assembler-unreachable" -- [B12]
         run := do
           expectAssembleInvOpcode "encode/slice" subdictSlice
@@ -535,20 +535,20 @@ private def genSubdictGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       mkCase "or/underflow-three" subdictSlice #[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 4],
       mkCase "or/underflow-four" subdictSlice #[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 4, .int (.num 5)],
       -- [B3]
-      mkCase "or/n-type" subdictSlice #[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 4, .tuple #[]],
+      mkCase "or/n-type" subdictSlice #[.slice (mkSliceFromBits (natToBits 0 4)), intV 4, .cell dictSlice4Root, .tuple #[]],
       mkCase "or/n-negative" subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) 4 (-1)),
       mkCase "or/n-too-large" subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) 4 1024),
-      mkCase "or/n-nan" subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, intV 4, .int .nan]),
+      mkCase "or/n-nan" subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 4, .cell dictSlice4Root, .int .nan]),
       -- [B4]
       mkCase "or/dict-builder" subdictSlice (stackSliceSubdict (natToBits 0 4) (.builder Builder.empty) 2 4),
       mkCase "or/dict-tuple" subdictSlice (stackSliceSubdict (natToBits 0 4) (.tuple #[]) 2 4),
       -- [B5]
-      mkCase "or/k-type" subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictSlice4Root, .null, intV 4]),
+      mkCase "or/k-type" subdictSlice (#[.slice (mkSliceFromBits (natToBits 0 4)), .null, .cell dictSlice4Root, intV 4]),
       mkCase "or/k-negative" subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) (-1) 4),
       mkCase "or/k-too-large" subdictSlice (stackSliceSubdict (natToBits 0 4) (.cell dictSlice4Root) 5 4),
       -- [B6][B7][B8]
-      mkCase "or/key-type-slice-for-int" subdictInt (#[.slice (mkSliceFromBits (natToBits 0 4)), .cell dictInt4Root, intV 4, intV 4]),
-      mkCase "or/int-key-nan" subdictInt (#[.int .nan, .cell dictInt4Root, intV 4, intV 4]),
+      mkCase "or/key-type-slice-for-int" subdictInt (#[.slice (mkSliceFromBits (natToBits 0 4)), intV 4, .cell dictInt4Root, intV 4]),
+      mkCase "or/int-key-nan" subdictInt (#[.int .nan, intV 4, .cell dictInt4Root, intV 4]),
       mkCase "or/int-key-signed-oob-pos" subdictInt (stackIntSubdict 8 (.cell dictInt4Root) 4 4),
       mkCase "or/int-key-signed-oob-neg" subdictInt (stackIntSubdict (-9) (.cell dictInt4Root) 4 4),
       mkCase "or/int-key-unsigned-neg" subdictUInt (stackIntSubdict (-1) (.cell dictUInt4Root) 4 4),

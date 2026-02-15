@@ -75,6 +75,9 @@ private def dispatchSentinel : Int :=
 private def raw16 (w : Nat) : Cell :=
   Cell.mkOrdinary (natToBits w 16) #[]
 
+private def raw8 (w : Nat) : Cell :=
+  Cell.mkOrdinary (natToBits w 8) #[]
+
 private def rawF41A : Cell := raw16 0xF41A
 private def rawF41B : Cell := raw16 0xF41B
 private def rawF41C : Cell := raw16 0xF41C
@@ -83,7 +86,7 @@ private def rawF41E : Cell := raw16 0xF41E
 private def rawF41F : Cell := raw16 0xF41F
 private def rawF419 : Cell := raw16 0xF419
 private def rawF420 : Cell := raw16 0xF420
-private def rawF4 : Cell := raw16 0xF4
+private def rawF4 : Cell := raw8 0xF4
 
 private def valueCellA : Cell := Cell.mkOrdinary (natToBits 0xA1 8) #[]
 private def valueCellB : Cell := Cell.mkOrdinary (natToBits 0xB2 8) #[]
@@ -540,7 +543,7 @@ def suite : InstrSuite where
         expectErr "unit/ref-no-ref" (runDICTUSETGETREF (mkStack valueCellA 5 (.cell dictBadNoRef) 4)) .dictErr },
     { name := "unit/runtime/malformed-root"
       run := do
-        expectErr "unit/malformed-root" (runDICTUSETGETREF (mkStack valueCellA 5 (.cell malformedDictRoot) 4)) .dictErr }
+        expectErr "unit/malformed-root" (runDICTUSETGETREF (mkStack valueCellA 5 (.cell malformedDictRoot) 4)) .cellUnd }
   ]
   oracle := #[
     -- [B2]

@@ -405,12 +405,12 @@ def suite : InstrSuite where
       run := do
         expectOkStack "two8"
           (runDirect #[.cell dictTwoRef8, intV 8])
-          #[.cell dictTwoRef8AfterMin, .cell valueB, .slice keySlice200_8, intV (-1)] },
+          #[.cell dictTwoRef8AfterMin, .cell valueA, .slice keySlice5_8, intV (-1)] },
     { name := "unit/exec/hit/three8" -- [B5][B6]
       run := do
         expectOkStack "three8"
           (runDirect #[.cell dictThreeRef8, intV 8])
-          #[.cell dictThreeRef8AfterMin, .cell valueB, .slice keySlice13_8, intV (-1)] },
+          #[.cell dictThreeRef8AfterMin, .cell valueA, .slice keySlice5_8, intV (-1)] },
     { name := "unit/exec/hit/single1023" -- [B5]
       run := do
         expectOkStack "single1023"
@@ -418,9 +418,7 @@ def suite : InstrSuite where
           #[.null, .cell valueA, .slice keySlice0_1023, intV (-1)] },
     { name := "unit/exec/miss/width-mismatch" -- [B4]
       run := do
-        expectOkStack "width-mismatch"
-          (runDirect #[.cell dictSingleRef8, intV 16])
-          #[.cell dictSingleRef8, intV 0] },
+        expectErr "width-mismatch" (runDirect #[.cell dictSingleRef8, intV 16]) .cellUnd },
     { name := "unit/exec/err/underflow" -- [B2]
       run := do
         expectErr "underflow-empty" (runDirect #[]) .stkUnd

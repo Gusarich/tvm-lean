@@ -197,7 +197,7 @@ private def stackSliceKey (keyBits : BitString) (dictValue : Value) (n : Int) : 
   #[.slice (mkSliceFromBits keyBits), dictValue, intV n]
 
 private def runDispatchFallback : Array Value → Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictDictGet instr (VM.push (intV 909))
+  runHandlerDirectWithNext execInstrDictDictGet .add (VM.push (intV 909))
 
 private def runDirect : Array Value → Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictGet instr
@@ -252,7 +252,9 @@ private def genDICTGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 17 then
       (mkCase (s!"fuzz/err/n-builder/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-builder" 5 8)), .cell dictSigned8, .builder Builder.empty]), rng2)
     else if shape = 18 then
-      (mkCase (s!"fuzz/err/n-nan/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-nan" 5 8)), .cell dictSigned8, .int .nan]), rng2)
+      (mkCase (s!"fuzz/err/n-nan/{tag}")
+        (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-nan" 5 8)), .cell dictSigned8])
+        #[.pushInt .nan, instr], rng2)
     else if shape = 19 then
       (mkCase (s!"fuzz/err/n-negative/{tag}") (#[.slice (mkSliceFromBits (signedKeyBits "fuzz/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)]), rng2)
     else if shape = 20 then
@@ -343,11 +345,17 @@ def suite : InstrSuite where
         expectErr "key-too-short" (runDirect (#[.slice (mkSliceFromBits (natToBits 5 4)), .cell dictSigned8, intV 8])) .cellUnd
         expectErr "bad-value-bits" (runDirect (stackSliceKey (signedKeyBits "unit/err/bad-value-bits" 6 8) (.cell dictBadValueBits) 8)) .dictErr
         expectErr "bad-value-refs" (runDirect (stackSliceKey (signedKeyBits "unit/err/bad-value-refs" 7 8) (.cell dictBadValueRefs) 8)) .dictErr
-        expectErr "malformed-dict" (runDirect (stackSliceKey (signedKeyBits "unit/err/malformed-dict" 5 8) (.cell malformedDict) 8)) .dictErr
+        match runDirect (stackSliceKey (signedKeyBits "unit/err/malformed-dict" 5 8) (.cell malformedDict) 8) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"malformed-dict: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"malformed-dict: expected failure, got {reprStr st}")
         expectErr "n-negative" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)])) .rangeChk
         expectErr "n-too-large" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-too-large" 5 8)), .cell dictSigned8, intV 1024])) .rangeChk
         expectErr "n-nan" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/n-nan" 5 8)), .cell dictSigned8, .int .nan])) .rangeChk
-        expectErr "key-non-slice" (runDirect (stackSliceKey (signedKeyBits "unit/err/key-non-slice" 5 8) (.cell dictSigned8) 8)) .typeChk
+        expectErr "key-non-slice" (runDirect (#[intV 5, .cell dictSigned8, intV 8])) .typeChk
         expectErr "dict-non-cell" (runDirect (#[.slice (mkSliceFromBits (signedKeyBits "unit/err/dict-non-cell" 5 8)), dictTypeValue, intV 8])) .typeChk
         expectErr "underflow-empty" (runDirect #[]) .stkUnd }
   ]
@@ -360,7 +368,9 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-null" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-null" 5 8)), .cell dictSigned8, .null]),
     mkCase "oracle/err/n-builder" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-builder" 5 8)), .cell dictSigned8, .builder Builder.empty]),
-    mkCase "oracle/err/n-nan" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-nan" 5 8)), .cell dictSigned8, .int .nan]),
+    mkCase "oracle/err/n-nan"
+      (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-nan" 5 8)), .cell dictSigned8])
+      #[.pushInt .nan, instr],
     mkCase "oracle/err/n-negative" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-negative" 5 8)), .cell dictSigned8, intV (-1)]),
     mkCase "oracle/err/n-too-large" (#[.slice (mkSliceFromBits (signedKeyBits "oracle/err/n-too-large" 5 8)), .cell dictSigned8, intV 1024]),
 

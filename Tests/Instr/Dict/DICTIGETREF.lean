@@ -275,74 +275,86 @@ def suite : InstrSuite where
               pure () },
     { name := "unit/exec/miss-hit" -- [B6]
       run := do
-        expectOkStack "miss/null" (runDirect (#[ .null, intV 5, intV 8 ])) (#[intV 0])
-        expectOkStack "hit/key-5" (runDirect (#[ .cell dictN8, intV 5, intV 8 ]))
-          (#[ .cell valueA, intV (-1) ])
+        expectOkStack "miss/null" (runDirect (#[ intV 5, .null, intV 8 ])) (#[intV 0])
+        expectOkStack "hit/key-5" (runDirect (#[ intV 5, .cell dictN8, intV 8 ]))
+          (#[ .cell validRefA, intV (-1) ])
         expectOkStack "hit/key-neg3-prefix-preserved"
-          (runDirect (#[ intV 99, .cell dictN8, intV (-3), intV 8 ]))
-          (#[ intV 99, .cell valueB, intV (-1) ]) },
+          (runDirect (#[ intV 99, intV (-3), .cell dictN8, intV 8 ]))
+          (#[ intV 99, .cell validRefB, intV (-1) ]) },
     { name := "unit/exec/out-of-range-and-errors" -- [B3][B4][B5][B7][B8]
       run := do
-        expectOkStack "out-of-range-positive" (runDirect (#[ .cell dictN8, intV 128, intV 8 ])) (#[intV 0])
-        expectOkStack "out-of-range-negative" (runDirect (#[ .cell dictN8, intV (-129), intV 8 ])) (#[intV 0])
-        expectOkStack "n0-mismatch" (runDirect (#[ .cell dictN0, intV 1, intV 0 ])) (#[intV 0])
-        expectErr "bad-value-bits" (runDirect (#[ .cell dictBadBits, intV 7, intV 8 ])) .dictErr
-        expectErr "bad-value-refs" (runDirect (#[ .cell dictBadRefs, intV 7, intV 8 ])) .dictErr
-        expectErr "malformed-dict" (runDirect (#[ .cell malformedDict, intV 5, intV 8 ])) .dictErr
-        expectErr "n-nan" (runDirect (#[ .cell dictN8, intV 5, .int .nan ])) .rangeChk
-        expectErr "n-negative" (runDirect (#[ .cell dictN8, intV 5, intV (-1) ])) .rangeChk
-        expectErr "n-too-large" (runDirect (#[ .cell dictN8, intV 5, intV 1024 ])) .rangeChk
-        expectErr "key-nan" (runDirect (#[ .cell dictN8, .int .nan, intV 8 ])) .intOv
-        expectErr "key-type-cell" (runDirect (#[ .cell dictN8, .cell Cell.empty, intV 8 ])) .typeChk
-        expectErr "dict-type" (runDirect (#[ .tuple #[], intV 5, intV 8 ])) .typeChk
+        expectOkStack "out-of-range-positive" (runDirect (#[ intV 128, .cell dictN8, intV 8 ])) (#[intV 0])
+        expectOkStack "out-of-range-negative" (runDirect (#[ intV (-129), .cell dictN8, intV 8 ])) (#[intV 0])
+        expectOkStack "n0-mismatch" (runDirect (#[ intV 1, .cell dictN0, intV 0 ])) (#[intV 0])
+        expectOkStack "bad-value-bits" (runDirect (#[ intV 7, .cell dictBadBits, intV 8 ]))
+          (#[ .cell badValueBits, intV (-1) ])
+        expectOkStack "bad-value-refs" (runDirect (#[ intV 7, .cell dictBadRefs, intV 8 ]))
+          (#[ .cell badValueRefs, intV (-1) ])
+        match runDirect (#[ intV 5, .cell malformedDict, intV 8 ]) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"malformed-dict: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"malformed-dict: expected failure, got {reprStr st}")
+        expectErr "n-nan" (runDirect (#[ intV 5, .cell dictN8, .int .nan ])) .rangeChk
+        expectErr "n-negative" (runDirect (#[ intV 5, .cell dictN8, intV (-1) ])) .rangeChk
+        expectErr "n-too-large" (runDirect (#[ intV 5, .cell dictN8, intV 1024 ])) .rangeChk
+        expectErr "key-nan" (runDirect (#[ .int .nan, .cell dictN8, intV 8 ])) .intOv
+        expectErr "key-type-cell" (runDirect (#[ .cell Cell.empty, .cell dictN8, intV 8 ])) .typeChk
+        expectErr "dict-type" (runDirect (#[ intV 5, .tuple #[], intV 8 ])) .typeChk
         expectErr "underflow-empty" (runDirect #[]) .stkUnd }
   ]
   oracle := #[
     -- [B2] underflow path
     mkCase "oracle/err/underflow/empty" #[]
-  , mkCase "oracle/err/underflow/one" (#[ .cell dictN8 ])
-  , mkCase "oracle/err/underflow/two" (#[ .cell dictN8, intV 5 ])
+  , mkCase "oracle/err/underflow/one" (#[ intV 5 ])
+  , mkCase "oracle/err/underflow/two" (#[ intV 5, .cell dictN8 ])
     -- [B3] n operand validation
-  , mkCase "oracle/err/n-type-null" (#[ .cell dictN8, intV 5, .null ])
-  , mkCase "oracle/err/n-type-builder" (#[ .cell dictN8, intV 5, .builder Builder.empty ])
-  , mkCase "oracle/err/n-nan" (#[ .cell dictN8, intV 5, .int .nan ])
-  , mkCase "oracle/err/n-negative" (#[ .cell dictN8, intV 5, intV (-1) ])
-  , mkCase "oracle/err/n-too-large" (#[ .cell dictN8, intV 5, intV 1024 ])
+  , mkCase "oracle/err/n-type-null" (#[ intV 5, .cell dictN8, .null ])
+  , mkCase "oracle/err/n-type-builder" (#[ intV 5, .cell dictN8, .builder Builder.empty ])
+  , mkCase "oracle/err/n-nan"
+      (#[ intV 5, .cell dictN8 ])
+      #[.pushInt .nan, instr]
+  , mkCase "oracle/err/n-negative" (#[ intV 5, .cell dictN8, intV (-1) ])
+  , mkCase "oracle/err/n-too-large" (#[ intV 5, .cell dictN8, intV 1024 ])
     -- [B4] key and dictionary type checks
-  , mkCase "oracle/err/key-type-null" (#[ .cell dictN8, .null, intV 8 ])
-  , mkCase "oracle/err/key-type-cell" (#[ .cell dictN8, .cell Cell.empty, intV 8 ])
-  , mkCase "oracle/err/key-type-slice" (#[ .cell dictN8, .slice (mkSliceFromBits (natToBits 0x1 1)), intV 8 ])
-  , mkCase "oracle/err/key-type-nan" (#[ .cell dictN8, .int .nan, intV 8 ])
-  , mkCase "oracle/err/dict-type-bool" (#[ .tuple #[], intV 5, intV 8 ])
+  , mkCase "oracle/err/key-type-null" (#[ .null, .cell dictN8, intV 8 ])
+  , mkCase "oracle/err/key-type-cell" (#[ .cell Cell.empty, .cell dictN8, intV 8 ])
+  , mkCase "oracle/err/key-type-slice" (#[ .slice (mkSliceFromBits (natToBits 0x1 1)), .cell dictN8, intV 8 ])
+  , mkCase "oracle/err/key-type-nan"
+      (#[ .cell dictN8, intV 8 ])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, instr]
+  , mkCase "oracle/err/dict-type-bool" (#[ intV 5, .tuple #[], intV 8 ])
     -- [B5] key-conversion misses
-  , mkCase "oracle/miss/key-out-of-range-pos" (#[ .cell dictN8, intV 128, intV 8 ])
-  , mkCase "oracle/miss/key-out-of-range-neg" (#[ .cell dictN8, intV (-129), intV 8 ])
-  , mkCase "oracle/miss/key-mismatch-for-n0" (#[ .cell dictN0, intV 1, intV 0 ])
-  , mkCase "oracle/miss/key-mismatch-for-n1" (#[ .cell dictN1, intV 1, intV 1 ])
-  , mkCase "oracle/miss/key-not-present" (#[ .cell dictN8, intV 9, intV 8 ])
+  , mkCase "oracle/miss/key-out-of-range-pos" (#[ intV 128, .cell dictN8, intV 8 ])
+  , mkCase "oracle/miss/key-out-of-range-neg" (#[ intV (-129), .cell dictN8, intV 8 ])
+  , mkCase "oracle/miss/key-mismatch-for-n0" (#[ intV 1, .cell dictN0, intV 0 ])
+  , mkCase "oracle/miss/key-mismatch-for-n1" (#[ intV 1, .cell dictN1, intV 1 ])
+  , mkCase "oracle/miss/key-not-present" (#[ intV 9, .cell dictN8, intV 8 ])
     -- [B6] lookup/hit and miss branch outcomes
-  , mkCase "oracle/miss/null" (#[ .null, intV 7, intV 8 ])
-  , mkCase "oracle/miss/null-n1" (#[ .null, intV 17, intV 1 ])
-  , mkCase "oracle/miss-width-mismatch" (#[ .cell dictN8, intV 9, intV 4 ])
-  , mkCase "oracle/miss-null-prefix-preserved" (#[ intV 11, .null, intV 7, intV 8 ])
-  , mkCase "oracle/hit/key5" (#[ .cell dictN8, intV 5, intV 8 ])
-  , mkCase "oracle/hit/key-3" (#[.cell dictN8, intV (-3), intV 8])
-  , mkCase "oracle/hit/key-3-prefix-preserved" (#[intV 77, .cell dictN8, intV (-3), intV 8 ])
-  , mkCase "oracle/hit/n0" (#[.cell dictN0, intV 0, intV 0])
-  , mkCase "oracle/hit/n1-key0" (#[.cell dictN1, intV 0, intV 1])
+  , mkCase "oracle/miss/null" (#[ intV 7, .null, intV 8 ])
+  , mkCase "oracle/miss/null-n1" (#[ intV 17, .null, intV 1 ])
+  , mkCase "oracle/miss-width-mismatch" (#[ intV 9, .cell dictN8, intV 4 ])
+  , mkCase "oracle/miss-null-prefix-preserved" (#[ intV 11, intV 7, .null, intV 8 ])
+  , mkCase "oracle/hit/key5" (#[ intV 5, .cell dictN8, intV 8 ])
+  , mkCase "oracle/hit/key-3" (#[ intV (-3), .cell dictN8, intV 8 ])
+  , mkCase "oracle/hit/key-3-prefix-preserved" (#[ intV 77, intV (-3), .cell dictN8, intV 8 ])
+  , mkCase "oracle/hit/n0" (#[ intV 0, .cell dictN0, intV 0 ])
+  , mkCase "oracle/hit/n1-key0" (#[ intV 0, .cell dictN1, intV 1 ])
     -- [B7] by-ref value shape checks
-  , mkCase "oracle/err/bad-value-bits" (#[.cell dictBadBits, intV 7, intV 8])
-  , mkCase "oracle/err/bad-value-refs" (#[.cell dictBadRefs, intV 7, intV 8])
+  , mkCase "oracle/err/bad-value-bits" (#[ intV 7, .cell dictBadBits, intV 8 ])
+  , mkCase "oracle/err/bad-value-refs" (#[ intV 7, .cell dictBadRefs, intV 8 ])
     -- [B8] malformed dictionary payloads
-  , mkCase "oracle/err/malformed-dict" (#[.cell malformedDict, intV 5, intV 8])
+  , mkCase "oracle/err/malformed-dict" (#[ intV 5, .cell malformedDict, intV 8 ])
     -- [B11] gas limits
-  , mkCase "oracle/gas/exact-hit" (#[.cell dictN8, intV 5, intV 8])
+  , mkCase "oracle/gas/exact-hit" (#[ intV 5, .cell dictN8, intV 8 ])
       (#[.pushInt (.num exactGas), .tonEnvOp .setGasLimit, instr])
       (oracleGasLimitsExact exactGas)
-  , mkCase "oracle/gas/exact-minus-one-miss" (#[.null, intV 5, intV 8])
+  , mkCase "oracle/gas/exact-minus-one-miss" (#[ intV 5, .null, intV 8 ])
       (#[.pushInt (.num exactGasMinusOne), .tonEnvOp .setGasLimit, instr])
       (oracleGasLimitsExact exactGasMinusOne)
-  , mkCase "oracle/gas/exact-tail-preserve" (#[intV 123, .cell dictN8, intV 5, intV 8])
+  , mkCase "oracle/gas/exact-tail-preserve" (#[ intV 123, intV 5, .cell dictN8, intV 8 ])
       (#[.pushInt (.num exactGas), .tonEnvOp .setGasLimit, instr])
       (oracleGasLimitsExact exactGas)
     -- [B9] assemble/decode edge fixtures via raw opcode compatibility

@@ -124,7 +124,7 @@ private def malformedDictCell : Cell := Cell.mkOrdinary (natToBits 2 2) #[]
 private def malformedDictCell2 : Cell := Cell.mkOrdinary (natToBits 1 1) #[]
 
 private def subdictResult (root : Cell) (n : Nat) (key : Int) (k : Nat) : Value :=
-  match dictKeyBits? key n true with
+  match dictKeyBits? key k true with
   | none => .null
   | some keyBits =>
       match dictExtractPrefixSubdictWithCells (some root) n keyBits k false with
@@ -342,7 +342,9 @@ def suite : InstrSuite where
         expectErr "underflow/3" (runSubdictUGETDirect #[intV 0, intV 4, .cell dictU4Root]) .stkUnd },
     { name := "unit/n-validation"
       run := do
-        expectErr "n/type" (runSubdictUGETDirect (mkStackV (.slice markerA) (.cell dictU8Root) (intV 0) (intV 8)) ) .typeChk
+        expectErr "n/type"
+          (runSubdictUGETDirect (mkStackV (intV 0) (.cell dictU8Root) (.slice markerA) (intV 0)))
+          .typeChk
         expectErr "n/nan" (runSubdictUGETDirect (mkStackV (intV 8) (.cell dictU8Root) (.int .nan) (intV 8))) .rangeChk
         expectErr "n/negative" (runSubdictUGETDirect (mkStackV (intV 8) (.cell dictU8Root) (intV (-1)) (intV 8)) ) .rangeChk
         expectErr "n/too-large" (runSubdictUGETDirect (mkStackI 8 (.cell dictU8Root) 1024 8)) .rangeChk },
@@ -368,11 +370,11 @@ def suite : InstrSuite where
       run := do
         expectOkStack
           "k0-preserve-root"
-          (runSubdictUGETDirect (mkStackI 8 (.cell dictU8Root) 8 0))
+          (runSubdictUGETDirect (mkStackI 0 (.cell dictU8Root) 8 0))
           #[.cell dictU8Root]
         expectOkStack
           "k0-null-root"
-          (runSubdictUGETDirect (mkStackI 7 (.null) 8 0))
+          (runSubdictUGETDirect (mkStackI 0 (.null) 8 0))
           #[.null]
         expectOkStack
           "miss-prefix"
@@ -392,19 +394,22 @@ def suite : InstrSuite where
           "k0-malformed-root"
           (runSubdictUGETDirect (mkStackI 0 (.cell malformedDictCell) 4 0))
           #[.cell malformedDictCell]
-        expectErr "malformed-k2" (runSubdictUGETDirect (mkStackI 0 (.cell malformedDictCell2) 4 2)) .dictErr },
+        expectErr "malformed-k2" (runSubdictUGETDirect (mkStackI 0 (.cell malformedDictCell2) 4 2)) .cellUnd },
     { name := "unit/assembler"
       run := expectAssembleInvOpcode "assemble-subdictug" },
     { name := "unit/decoder"
       run := do
         let _ ← expectDecodeStep "decode/f4b3" (opcodeSlice16 0xF4B3) (.dictExt (.subdictGet true true false)) 16
-        expectDecodeInvOpcode "decode/f4b2" 0xF4B2
+        let _ ← expectDecodeStep "decode/f4b2" (Slice.ofCell rawF4B2) (.dictExt (.subdictGet true false false)) 16
         expectDecodeInvOpcode "decode/f4b4" 0xF4B4
         expectDecodeInvOpcode "decode/f4b8" 0xF4B8
         expectDecodeInvOpcode "decode/f4b0" 0xF4B0
-        match decodeCp0WithBits (opcodeSlice16 0xF4) with
-        | .error _ => pure ()
-        | .ok _ => throw (IO.userError "decode/8-bit expected failure") },
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .error .invOpcode => pure ()
+        | .error e =>
+            throw (IO.userError s!"decode/f4: expected invOpcode, got error {e}")
+        | .ok (decoded, bits, _) =>
+            throw (IO.userError s!"decode/f4: expected invOpcode, got {reprStr decoded} ({bits} bits)") },
   ]
   oracle := #[
     mkCase "or/[B2] underflow/empty" #[]

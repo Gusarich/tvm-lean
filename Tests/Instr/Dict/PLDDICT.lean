@@ -78,7 +78,7 @@ private def opcodeF403 : Cell := raw16 0xF403
 private def opcodeF402 : Cell := raw16 0xF402
 private def opcodeF408 : Cell := raw16 0xF408
 private def malformed8 : Cell := raw8 0xF4
-private def malformed15 : Cell := raw15 (0xF40 >>> 1)
+private def malformed15 : Cell := Cell.mkOrdinary (malformed8.bits ++ Array.replicate 7 false) #[]
 
 private def presentSimple : Slice := mkSliceWithBitsRefs (natToBits 1 1) #[refLeafA]
 private def presentAlt : Slice := mkSliceWithBitsRefs (natToBits 1 1) #[refLeafB]
@@ -273,12 +273,12 @@ def suite : InstrSuite where
       run := do
         expectOkStack "no-bits-quiet-preload-false"
           (runPLDDICT false true #[.slice emptySlice])
-          #[.slice emptySlice] },
+          #[.slice emptySlice, intV 0] },
     { name := "unit/runtime/no-bits-quiet-preload-true" -- [B3][B8]
       run := do
         expectOkStack "no-bits-quiet-preload-true"
           (runPLDDICT true true #[.slice emptySlice])
-          #[] },
+          #[intV 0] },
     { name := "unit/runtime/present-missing-ref" -- [B6]
       run := do
         expectErr "present-missing-ref" (runPLDDICT false false #[.slice presentMissingRef]) .cellUnd },
@@ -330,8 +330,8 @@ def suite : InstrSuite where
         expectDecodeOk "decode/f407" opcodeF407 (.lddict true true) },
     { name := "unit/decode/adjacent-and-gap" -- [B9]
       run := do
-        expectDecodeOk "decode/f403" opcodeF403 (.dictExt (.lddicts false))
-        expectDecodeOk "decode/f402" opcodeF402 (.dictExt (.lddicts true))
+        expectDecodeOk "decode/f403" opcodeF403 (.dictExt (.lddicts true))
+        expectDecodeOk "decode/f402" opcodeF402 (.dictExt (.lddicts false))
         expectDecodeErr "decode/f408" opcodeF408 .invOpcode
         expectDecodeErr "decode/truncated8" malformed8 .invOpcode
         expectDecodeErr "decode/truncated15" malformed15 .invOpcode },

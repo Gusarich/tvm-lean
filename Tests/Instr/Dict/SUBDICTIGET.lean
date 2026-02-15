@@ -168,10 +168,10 @@ private def subdictResultFromBits (root : Option Cell) (n : Nat) (bits : BitStri
   | .error e => panic! s!"SUBDICTIGET extraction failed: {reprStr e}"
 
 private def stackInt (dict : Value) (key : Int) (k : Int) (n : Int) : Array Value :=
-  #[intV key, dict, intV k, intV n]
+  #[intV key, intV k, dict, intV n]
 
 private def stackSlice (dict : Value) (bits : BitString) (k : Int) (n : Int) : Array Value :=
-  #[.slice (mkSliceFromBits bits), dict, intV k, intV n]
+  #[.slice (mkSliceFromBits bits), intV k, dict, intV n]
 
 private def mkCase
     (name : String)
@@ -317,30 +317,30 @@ def suite : InstrSuite where
         expectErr "underflow/2" (runSubdictIGETDirect subdictSlice #[intV 8, .cell dictSliceRoot]) .stkUnd },
     { name := "unit/underflow-3"
       run := do
-        expectErr "underflow/3" (runSubdictIGETDirect subdictSlice (stackSlice (.cell dictSliceRoot) (natToBits 1 8) 2 8)) .stkUnd },
+        expectErr "underflow/3" (runSubdictIGETDirect subdictSlice #[.slice (mkSliceFromBits (natToBits 1 8)), intV 2, .cell dictSliceRoot]) .stkUnd },
     { name := "unit/n-validation"
       run := do
-        expectErr "n-type" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, intV 8, .null])) .typeChk
-        expectErr "n-nan" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, intV 8, .int .nan])) .rangeChk
-        expectErr "n-negative" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, intV 8, intV (-1)])) .rangeChk
-        expectErr "n-too-large" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, intV 8, intV 1024])) .rangeChk },
+        expectErr "n-type" (runSubdictIGETDirect subdictInt (#[intV 5, intV 8, .cell dictIntRoot, .null])) .typeChk
+        expectErr "n-nan" (runSubdictIGETDirect subdictInt (#[intV 5, intV 8, .cell dictIntRoot, .int .nan])) .rangeChk
+        expectErr "n-negative" (runSubdictIGETDirect subdictInt (#[intV 5, intV 8, .cell dictIntRoot, intV (-1)])) .rangeChk
+        expectErr "n-too-large" (runSubdictIGETDirect subdictInt (#[intV 5, intV 8, .cell dictIntRoot, intV 1024])) .rangeChk },
     { name := "unit/root-type-and-k"
       run := do
-        expectErr "root-type" (runSubdictIGETDirect subdictInt (#[.builder Builder.empty, intV 5, intV 2, intV 8])) .typeChk
-        expectErr "k-type" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, .tuple #[], intV 8])) .typeChk
-        expectErr "k-negative" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, intV (-1), intV 8])) .rangeChk
-        expectErr "k-overflow-signed" (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 5, intV 258, intV 300])) .rangeChk },
+        expectErr "root-type" (runSubdictIGETDirect subdictInt (#[intV 5, intV 2, .builder Builder.empty, intV 8])) .typeChk
+        expectErr "k-type" (runSubdictIGETDirect subdictInt (#[intV 5, .tuple #[], .cell dictIntRoot, intV 8])) .typeChk
+        expectErr "k-negative" (runSubdictIGETDirect subdictInt (#[intV 5, intV (-1), .cell dictIntRoot, intV 8])) .rangeChk
+        expectErr "k-overflow-signed" (runSubdictIGETDirect subdictInt (#[intV 5, intV 258, .cell dictIntRoot, intV 300])) .rangeChk },
     { name := "unit/key-errors"
       run := do
         expectErr
           "key-type-int-in-slice"
-          (runSubdictIGETDirect subdictSlice (#[.cell dictSliceRoot, .slice (mkSliceFromBits (natToBits 1 8)), intV 2, intV 8]) ) .typeChk
+          (runSubdictIGETDirect subdictSlice (#[intV 7, intV 2, .cell dictSliceRoot, intV 8])) .typeChk
         expectErr
           "key-type-slice-in-int"
-          (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, intV 7, intV 2, intV 8])) .typeChk
+          (runSubdictIGETDirect subdictInt (#[.slice (mkSliceFromBits (natToBits 1 8)), intV 2, .cell dictIntRoot, intV 8])) .typeChk
         expectErr
           "key-nan"
-          (runSubdictIGETDirect subdictInt (#[.cell dictIntRoot, .int .nan, intV 2, intV 8])) .intOv },
+          (runSubdictIGETDirect subdictInt (#[.int .nan, intV 2, .cell dictIntRoot, intV 8])) .intOv },
     { name := "unit/key-conversion-fails"
       run := do
         expectErr "signed-overflow" (runSubdictIGETDirect subdictInt (stackInt (.cell dictIntRoot) 128 8 8)) .cellUnd
@@ -366,7 +366,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack
           "k0-root"
-          (runSubdictIGETDirect subdictInt (stackInt (.cell dictIntRoot) 5 0 8))
+          (runSubdictIGETDirect subdictInt (stackInt (.cell dictIntRoot) 0 0 8))
           #[.cell dictIntRoot]
         expectOkStack
           "signed-miss"
@@ -382,18 +382,18 @@ def suite : InstrSuite where
           #[.null]
         expectOkStack
           "null-root"
-          (runSubdictIGETDirect subdictInt (stackInt .null 5 2 8))
+          (runSubdictIGETDirect subdictInt (stackInt .null 1 2 8))
           #[.null]
         expectOkStack
           "tail-preserved"
-          (runSubdictIGETDirect subdictInt (#[intV 77, intV 5, .cell dictIntRoot, intV 8, intV 8]))
+          (runSubdictIGETDirect subdictInt (#[intV 77, intV 5, intV 8, .cell dictIntRoot, intV 8]))
           #[intV 77, subdictResultFromBits (some dictIntRoot) 8 (natToBits 5 8) 8] },
     { name := "unit/malformed-and-codec"
       run := do
         expectErr
           "malformed-root"
           (runSubdictIGETDirect subdictInt (stackInt (.cell malformedDictCell) 5 8 8))
-          .dictErr
+          .cellUnd
         expectAssembleInvOpcode "assemble/slice" subdictSlice
         expectAssembleInvOpcode "assemble/int" subdictInt
         expectAssembleInvOpcode "assemble/uint" subdictUInt
@@ -402,7 +402,12 @@ def suite : InstrSuite where
         let _ ← expectDecodeStep "decode/f4b3" (Slice.ofCell rawF4B3) (.dictExt (.subdictGet true true false)) 16
         expectDecodeInvOpcode "decode/f4b0" 0xF4B0
         expectDecodeInvOpcode "decode/f4b4" 0xF4B4
-        expectDecodeInvOpcode "decode/f4" 0xF4
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .error .invOpcode => pure ()
+        | .error e =>
+            throw (IO.userError s!"decode/f4: expected invOpcode, got error {e}")
+        | .ok (decoded, bits, _) =>
+            throw (IO.userError s!"decode/f4: expected invOpcode, got {reprStr decoded}/{bits}")
       } ]
   oracle := #[
     mkCase "oracle/fallback" #[] (program := #[]), -- [B1]

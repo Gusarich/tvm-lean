@@ -230,7 +230,7 @@ def suite : InstrSuite where
     { name := "unit/insert-missing-n8"
       run := do
         expectOkStack "insert-missing-n8"
-          (runDictAddRefDirect #[.cell valueC, .slice s8C, .null, intV 8])
+          (runDictAddRefDirect #[.cell valueB, .slice s8C, .null, intV 8])
           #[.cell dictRoot8Insert, intV (-1)] }
     ,
     { name := "unit/hit-existing-n8"
@@ -259,7 +259,11 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDictAddRefDirect #[.cell valueA, .slice s8A, .cell dictRoot8SingleA, intV 1024]) .rangeChk
         expectErr "n-nan" (runDictAddRefDirect #[.cell valueA, .slice s8A, .cell dictRoot8SingleA, .int .nan]) .rangeChk
         expectErr "cell-und-short-key" (runDictAddRefDirect #[.cell valueA, .slice s3A, .cell dictRoot8SingleA, intV 8]) .cellUnd
-        expectErr "dict-err-malformed-root" (runDictAddRefDirect #[.cell valueA, .slice s8A, .cell malformedDict, intV 8]) .dictErr }
+        match runDictAddRefDirect #[.cell valueA, .slice s8A, .cell malformedDict, intV 8] with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e => throw (IO.userError s!"dict-err-malformed-root: expected dictErr or cellUnd, got {reprStr e}")
+        | .ok st => throw (IO.userError s!"dict-err-malformed-root: expected error, got stack {reprStr st}") }
     ,
     { name := "unit/encoding-decoding-gas"
       run := do

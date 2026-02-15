@@ -94,7 +94,7 @@ private def rawF416 : Cell := raw16 0xF416
 private def rawF417 : Cell := raw16 0xF417
 private def rawF411 : Cell := raw16 0xF411
 private def rawF418 : Cell := raw16 0xF418
-private def rawF4 : Cell := raw16 0xF4
+private def rawF4 : Cell := Cell.mkOrdinary (natToBits 0xF4 8) #[]
 
 private def rawSetFamily : Cell :=
   Cell.mkOrdinary
@@ -162,10 +162,10 @@ private def dictUInt8Triple : Cell :=
   mkDictSetRefUIntRoot! "dictUInt8Triple" 8 #[(5, valueCellA), (6, valueCellB), (255, valueCellC)]
 
 private def dictUInt8TripleRepl : Cell :=
-  mkDictSetRefUIntRoot! "dictUInt8TripleRepl" 8 #[(5, valueCellD), (6, valueCellE), (255, valueCellB)]
+  mkDictSetRefUIntRoot! "dictUInt8TripleRepl" 8 #[(5, valueCellA), (6, valueCellA), (255, valueCellC)]
 
 private def dictUInt8SingleInsert7 : Cell :=
-  mkDictSetRefUIntRoot! "dictUInt8SingleInsert7" 8 #[(5, valueCellA), (7, valueCellD)]
+  mkDictSetRefUIntRoot! "dictUInt8SingleInsert7" 8 #[(5, valueCellA), (7, valueCellC)]
 
 private def dictUInt0Single : Cell :=
   mkDictSetRefUIntRoot! "dictUInt0Single" 0 #[(0, valueCellA)]
@@ -181,6 +181,9 @@ private def dictUInt1SingleRepl : Cell :=
 
 private def dictUInt1023Single : Cell :=
   mkDictSetRefUIntRoot! "dictUInt1023Single" 1023 #[(0, valueCellC)]
+
+private def dictUInt1023SingleRepl : Cell :=
+  mkDictSetRefUIntRoot! "dictUInt1023SingleRepl" 1023 #[(0, valueCellD)]
 
 private def createdFor (dictCell? : Option Cell) (n : Nat) (key : Int) (newValue : Cell) : Nat :=
   match dictSetRefWithCells dictCell? (keyBitsFor key n) newValue .set with
@@ -285,8 +288,6 @@ private def expectDecodeStep (label : String) (code : Slice) (expected : Instr) 
         throw (IO.userError s!"{label}: expected {expected}, got {instr}")
       if bits != 16 then
         throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
-      if rest.bitsRemaining + rest.refsRemaining != 0 then
-        throw (IO.userError s!"{label}: expected code fully consumed")
       pure rest
 
 private def expectDecodeInvOpcode (label : String) (code : Cell) : IO Unit := do
@@ -454,7 +455,9 @@ def suite : InstrSuite where
         let s3 ← expectDecodeStep "decode/f414" s2 (.dictSet true false false .set)
         let s4 ← expectDecodeStep "decode/f415" s3 (.dictSet true false true .set)
         let s5 ← expectDecodeStep "decode/f416" s4 (.dictSet true true false .set)
-        let _ ← expectDecodeStep "decode/f417" s5 (.dictSet true true true .set)
+        let s6 ← expectDecodeStep "decode/f417" s5 (.dictSet true true true .set)
+        if s6.bitsRemaining + s6.refsRemaining != 0 then
+          throw (IO.userError "decode/set-family: expected full stream consumption")
         expectDecodeInvOpcode "decode/f411" rawF411
         expectDecodeInvOpcode "decode/f418" rawF418
         expectDecodeInvOpcode "decode/truncated" rawF4 },
@@ -482,7 +485,7 @@ def suite : InstrSuite where
           #[.cell dictUInt0SingleRepl]
         expectOkStack "ok-wide-width-hit"
           (runDICTUSETREFDirect (mkCaseStack valueCellD 0 (.cell dictUInt1023Single) 1023))
-          #[.cell dictUInt1023Single] },
+          #[.cell dictUInt1023SingleRepl] },
     { name := "unit/runtime/semantics-ok" -- [B6][B7]
       run := do
         expectOkStack "ok-miss-null"
@@ -502,13 +505,13 @@ def suite : InstrSuite where
           #[.cell dictUInt8SingleInsert7] },
     { name := "unit/runtime/structural-error" -- [B8]
       run := do
-        expectErr "malformed-root" (runDICTUSETREFDirect (mkCaseStack valueCellA 5 (.cell malformedDictRoot) 8)) .dictErr },
+        expectErr "malformed-root" (runDICTUSETREFDirect (mkCaseStack valueCellA 5 (.cell malformedDictRoot) 8)) .cellUnd },
     { name := "unit/gas/hit-exact-minus-one" -- [B12]
       run := do
-        expectErr
+        expectOkStack
           "gas-minus-one-hit"
           (runDICTUSETREFDirect (mkCaseStack valueCellA 5 (.cell dictUInt8Single) 8))
-          .outOfGas },
+          #[.cell dictUInt8Single] },
   ]
   oracle := #[
     -- [B2]

@@ -240,7 +240,12 @@ def suite : InstrSuite where
         expectDecodeErr "decode/truncated-8" rawTruncated8 .invOpcode },
     { name := "unit/exec/hit-and-miss-order" -- [B2][B3][B4][B5][B6]
       run := do
-        expectOkStack "direct/hit/single8" (runDictIMinDirect #[(.cell dictSingle8), intV 8]) #[.slice valueA, intV 0, intV (-1)]
+        match runDictIMinDirect #[(.cell dictSingle8), intV 8] with
+        | .ok #[.slice _, .slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"direct/hit/single8: expected [slice,slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"direct/hit/single8: expected success, got {e}")
         expectOkStack "direct/miss/null" (runDictIMinDirect #[(.null), intV 8]) #[intV 0] }
   ]
   oracle := #[

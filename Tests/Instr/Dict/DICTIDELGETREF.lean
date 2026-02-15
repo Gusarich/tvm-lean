@@ -54,7 +54,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - exact-budget and exact-budget-minus-one behavior can be asserted with oracle gas limits.
 
 7. [B7] Assembler behavior:
-   - `.dictExt` instructions are not encodable by `assembleCp0`, returns `.invOpcode`.
+   - `.dictExt` instructions are encodable by `assembleCp0`; decode roundtrip is required.
 
 8. [B8] Decoder behavior:
    - `.dictExt (.mutGet true false true .del)` is decode target `0xf465`.
@@ -167,7 +167,10 @@ private def mkCaseCode
     fuel := fuel }
 
 private def runDictIdelGetRefDirect (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictExt dictIdelGetRefInstr stack
+  runHandlerDirect execInstrDictExt dictIdelGetRefInstr
+    (match stack with
+     | #[dict, key, n] => #[key, dict, n]
+     | _ => stack)
 
 private def runDictIdelGetRefFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV dispatchSentinel)) stack
@@ -208,6 +211,13 @@ private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def expectAssembleOk (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got error {e}")
+  | .ok code =>
+      expectDecodeOk label code instr
 
 private def genDictIdelGetRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 19
@@ -292,7 +302,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "runtime/hit/two-entry-root"
           (runDictIdelGetRefDirect (mkIntCaseStack (.cell intSignedRoot4) (-1) 4))
-          #[.null, .cell sampleCellA, intV (-1)] },
+          #[.cell intSignedRoot4Single2, .cell sampleCellA, intV (-1)] },
     { name := "unit/runtime/miss/null-root"
       run := do
         expectOkStack "runtime/miss/null-root"
@@ -373,9 +383,9 @@ def suite : InstrSuite where
     { name := "unit/decode/truncated-15"
       run := do
         expectDecodeErr "decode/truncated-15" (Cell.mkOrdinary (natToBits (0xf465 >>> 1) 15) #[]) .invOpcode },
-    { name := "unit/assemble/unsupported"
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleErr "assemble/unsupported" dictIdelGetRefInstr .invOpcode }
+        expectAssembleOk "assemble/encodes" dictIdelGetRefInstr }
   ]
   oracle := #[
     -- [B4] Found in single-entry root.

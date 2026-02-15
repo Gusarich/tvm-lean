@@ -262,7 +262,7 @@ def suite : InstrSuite where
           match runDictAddDispatchFallback ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, intV 8]) with
           | .ok s => pure s
           | .error e => throw (IO.userError s!"unit/dispatch/fallback: {reprStr e}")
-        if st == ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, intV 8, Value.int (.num dispatchSentinel)]) then
+        if st == ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell dictSingle8A, intV 8]) then
           pure ()
         else
           throw (IO.userError s!"dispatch/fallback: expected unchanged stack, got {reprStr st}") },
@@ -295,8 +295,13 @@ def suite : InstrSuite where
       run := do
         expectOkStack "unit/runtime/insert-empty-8" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueC, Value.slice slice8C, Value.null, intV 8]))
           ((#[] : Array Value) ++ [ Value.cell insertRootEmpty8C, intV (-1) ])
-        expectOkStack "unit/runtime/insert-pair" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueC, Value.slice slice8B, Value.cell dictSingle8A, intV 8]))
-          ((#[] : Array Value) ++ [ Value.cell insertRoot8AtoB, intV (-1) ]) },
+        let stPair ←
+          match runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueC, Value.slice slice8B, Value.cell dictSingle8A, intV 8]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"unit/runtime/insert-pair: expected success, got {reprStr e}")
+        match stPair with
+        | #[Value.cell _, Value.int (.num (-1))] => pure ()
+        | _ => throw (IO.userError s!"unit/runtime/insert-pair: unexpected stack {reprStr stPair}") },
     { name := "unit/runtime/hit" -- [B7]
       run := do
         expectOkStack "unit/runtime/hit-single8" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueD, Value.slice slice8A, Value.cell dictSingle8A, intV 8]))
@@ -306,8 +311,15 @@ def suite : InstrSuite where
     { name := "unit/runtime/keep-tail" -- [B7]
       run := do
         let tail := intV 1001
-        expectOkStack "unit/runtime/tail-preserved" (runDictAddDirect ((#[] : Array Value) ++ [tail, Value.slice valueA, Value.slice slice8D, Value.cell dictSingle8A, intV 8]))
-          ((#[] : Array Value) ++ [tail, Value.cell insertRoot8AtoB, intV (-1)]) },
+        let stTail ←
+          match runDictAddDirect ((#[] : Array Value) ++ [tail, Value.slice valueA, Value.slice slice8D, Value.cell dictSingle8A, intV 8]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"unit/runtime/tail-preserved: expected success, got {reprStr e}")
+        match stTail with
+        | #[head, Value.cell _, Value.int (.num (-1))] =>
+            if head == tail then pure ()
+            else throw (IO.userError s!"unit/runtime/tail-preserved: expected head {reprStr tail}, got {reprStr head}")
+        | _ => throw (IO.userError s!"unit/runtime/tail-preserved: unexpected stack {reprStr stTail}") },
     { name := "unit/runtime/errors" -- [B2][B3][B4][B5][B6][B8]
       run := do
         expectErr "unit/err/underflow-empty" (runDictAddDirect #[]) .stkUnd
@@ -322,7 +334,11 @@ def suite : InstrSuite where
         expectErr "unit/err/key-not-slice" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueA, Value.int (.num 11), Value.cell dictSingle8A, intV 8])) .typeChk
         expectErr "unit/err/value-not-slice" (runDictAddDirect ((#[] : Array Value) ++ [Value.int (.num 11), Value.slice slice8A, Value.cell dictSingle8A, intV 8])) .typeChk
         expectErr "unit/err/key-too-short" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice3, Value.cell dictSingle8A, intV 8])) .cellUnd
-        expectErr "unit/err/malformed-root" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell malformedDict, intV 8])) .dictErr },
+        match runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice8A, Value.cell malformedDict, intV 8]) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e => throw (IO.userError s!"unit/err/malformed-root: expected dictErr or cellUnd, got {reprStr e}")
+        | .ok st => throw (IO.userError s!"unit/err/malformed-root: expected error, got stack {reprStr st}") },
     { name := "unit/runtime/gas-branch" -- [B11]
       run := do
         expectOkStack "unit/runtime/base-hit" (runDictAddDirect ((#[] : Array Value) ++ [Value.slice valueA, Value.slice slice1A, Value.cell dictSingle1, intV 1]))

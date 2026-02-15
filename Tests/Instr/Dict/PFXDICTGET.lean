@@ -90,42 +90,50 @@ private def keyMismatch : BitString := natToBits 0b111 3
 private def keyShort : BitString := natToBits 0b10 2
 private def keyEmpty : Slice := mkSliceFromBits (natToBits 0 0)
 
-private def mkDictFromBitPairs (label : String) (pairs : Array (BitString × Slice)) : Cell :=
-  let rootOpt : Option Cell :=
-    pairs.foldl
-      (fun st pair =>
-        match st with
-        | some root =>
-            match dictSetSliceWithCells (some root) pair.1 pair.2 .set with
-            | .ok (some next, _, _, _) => some next
-            | .ok (none, _, _, _) => none
-            | .error _ => none
-        | none =>
-            match dictSetSliceWithCells none pair.1 pair.2 .set with
-            | .ok (some next, _, _, _) => some next
-            | .ok (none, _, _, _) => none
-            | .error _ => none)
-      none
-  match rootOpt with
-  | some root => root
-  | none => panic! s!"{label}: failed to build prefix dictionary"
+private def sliceRemBits (s : Slice) : BitString :=
+  s.cell.bits.extract s.bitPos s.cell.bits.size
+
+private def mkPfxLeafRoot (label : String) (keyBits : BitString) (value : Slice) : Cell :=
+  let valueCell : Cell := value.toCellRemaining
+  -- NOTE: Prefix dictionaries are *not* ordinary dict values. They are encoded as:
+  --   label(keyBits, len, n) ++ [leafCtor=false] ++ valueCell
+  -- and parsed by `DictExt.pfxLookupPrefixWithCells`.
+  let enc : BitString := dictLabelEncode keyBits keyBits.size 1023
+  Cell.mkOrdinary (enc ++ #[false] ++ valueCell.bits) valueCell.refs
 
 private def dictGetRoot : Value :=
-  .cell (mkDictFromBitPairs "dictGetRoot" #[(keyMatchBits, dictGetValue)])
+  .cell (mkPfxLeafRoot "dictGetRoot" keyMatchBits dictGetValue)
 
 private def dictGetRootLong : Value :=
-  .cell (mkDictFromBitPairs "dictGetRootLong" #[(keyMatchLongBits, dictGetValueLong)])
+  .cell (mkPfxLeafRoot "dictGetRootLong" keyMatchLongBits dictGetValueLong)
 
 private def dictGetRootN0 : Value :=
-  .cell (mkDictFromBitPairs "dictGetRootN0" #[(#[], n0Value)])
+  .cell (mkPfxLeafRoot "dictGetRootN0" #[] n0Value)
 
 private def malformedDictRoot : Cell := Cell.mkOrdinary (natToBits 1 1) #[]
 
 private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
 
-private def runFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instr (VM.push (intV dispatchSentinel)) stack
+private def runFallback (i : Instr) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrDictExt i (VM.push (intV dispatchSentinel)) stack
+
+private def expectHit
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expectedPfx expectedValue expectedRest : BitString) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok #[.slice pfx, .slice value, .slice rest] =>
+      if sliceRemBits pfx != expectedPfx then
+        throw (IO.userError s!"{label}: bad prefix bits: expected {reprStr expectedPfx}, got {reprStr (sliceRemBits pfx)}")
+      else if sliceRemBits value != expectedValue then
+        throw (IO.userError s!"{label}: bad value bits: expected {reprStr expectedValue}, got {reprStr (sliceRemBits value)}")
+      else if sliceRemBits rest != expectedRest then
+        throw (IO.userError s!"{label}: bad rest bits: expected {reprStr expectedRest}, got {reprStr (sliceRemBits rest)}")
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected [slice,slice,slice], got {reprStr st}")
 
 private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell (raw16 opcode)) with
@@ -282,10 +290,16 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        expectOkStack "unit/dispatch/fallback" (runFallback #[(.slice keyMatch), dictGetRoot, intV 4]) #[intV dispatchSentinel] },
+        expectOkStack
+          "unit/dispatch/fallback"
+          (runFallback .add #[(.slice keyMatch), dictGetRoot, intV 4])
+          #[(.slice keyMatch), dictGetRoot, intV 4, intV dispatchSentinel] },
     { name := "unit/dispatch/match" -- [B1]
       run := do
-        expectOkStack "unit/dispatch/match" (runFallback #[(.slice keyMatch), dictGetRoot, intV 4]) #[] },
+        expectHit
+          "unit/dispatch/match"
+          (runFallback instr (mkCaseRawStack keyMatchBits dictGetRoot 4))
+          keyMatchBits dictGetValue.cell.bits #[] },
     { name := "unit/underflow" -- [B2]
       run := do
         expectErr "underflow/0" (runDirect (#[(.slice keyMatch)])) .stkUnd
@@ -316,46 +330,50 @@ def suite : InstrSuite where
         expectErr "miss/short-key" (runDirect (mkCaseRawStack keyShort dictGetRoot 3)) .cellUnd },
     { name := "unit/hit-path" -- [B7][B8]
       run := do
-        expectOkStack
+        expectHit
           "hit/exact"
           (runDirect (mkCaseRawStack keyMatchBits dictGetRoot 4))
-          (#[(.slice keyMatch), .slice dictGetValue, .slice keyEmpty])
-        expectOkStack
+          keyMatchBits dictGetValue.cell.bits #[]
+        expectHit
           "hit/long-key"
           (runDirect (mkCaseRawStack keyMatchLongBits dictGetRoot 4))
-          (#[(.slice keyMatch), .slice dictGetValue, .slice (mkSliceFromBits (natToBits 1 1))])
-        expectOkStack
+          keyMatchBits dictGetValue.cell.bits (natToBits 1 1)
+        expectHit
           "hit/n0"
           (runDirect (mkCaseRawStack keyMatchLongBits dictGetRootN0 0))
-          (#[(.slice keyEmpty), .slice n0Value, .slice keyMatchLong]) },
+          #[] n0Value.cell.bits keyMatchLongBits },
     { name := "unit/n-boundaries" -- [B8]
       run := do
-        expectOkStack
+        expectHit
           "hit/n-max"
           (runDirect (mkCaseRawStack keyMatchBits dictGetRoot 1023))
-          (#[(.slice keyMatch), .slice dictGetValue, .slice keyEmpty]) },
+          keyMatchBits dictGetValue.cell.bits #[] },
     { name := "unit/malformed-root" -- [B9]
       run := do
         let _ ← expectRawErr
           "malformed-root"
           (runPFXDICTGET (mkCaseRawStack keyMatchBits (.cell malformedDictRoot) 4))
-          .dictErr
+          .cellUnd
         pure ()
       },
     { name := "unit/encode-decode" -- [B10][B11]
       run := do
-        match encodeCp0 instr with
-        | .ok c =>
-            if c != natToBits 0xF4A9 16 then
-              throw (IO.userError s!"unit/encode: expected 0xF4A9, got {c}")
-        | .error e => throw (IO.userError s!"unit/encode: expected success, got {e}")
+        match assembleCp0 [instr] with
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/encode: expected invOpcode, got {e}")
+        | .ok _ => throw (IO.userError "unit/encode: expected invOpcode")
         let _ ← expectDecodeStep "unit/decode/f4a9" (Slice.ofCell (raw16 0xF4A9)) instr 16
         let _ ← expectDecodeStep "unit/decode/f4a8" (Slice.ofCell (raw16 0xF4A8)) (.dictExt (.pfxGet .getQ)) 16
         let _ ← expectDecodeStep "unit/decode/f4aa" (Slice.ofCell (raw16 0xF4AA)) (.dictExt (.pfxGet .getJmp)) 16
         let _ ← expectDecodeStep "unit/decode/f4ab" (Slice.ofCell (raw16 0xF4AB)) (.dictExt (.pfxGet .getExec)) 16
         expectDecodeInvOpcode "unit/decode/f4a7" 0xF4A7
         expectDecodeInvOpcode "unit/decode/f4ac" 0xF4AC
-        expectDecodeInvOpcode "unit/decode/truncated-f4" 0xF4
+        match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits 0xF4 8) #[])) with
+        | .error .invOpcode => pure ()
+        | .ok (di, bits, _) =>
+            throw (IO.userError s!"unit/decode/truncated-f4: expected invOpcode, got {reprStr di}/{bits}")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/truncated-f4: expected invOpcode, got {e}")
       },
     { name := "unit/gas-exact" -- [B12]
       run := do

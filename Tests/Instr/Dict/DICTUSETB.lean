@@ -407,7 +407,7 @@ def suite : InstrSuite where
         expectErr "unit/runtime/n-nan" (runDirect instrSliceKey (#[.builder valueA, .slice mkSlice3, .cell dictSlice4Single, .int .nan])) .rangeChk
         expectErr "unit/runtime/key-type" (runDirect instrSliceKey (#[.builder valueA, .int (.num 3), .cell dictSlice4Single, intV 4])) .typeChk
         expectErr "unit/runtime/value-type" (runDirect instrSliceKey (#[.int (.num 7), .slice mkSlice3, .cell dictSlice4Single, intV 4])) .typeChk
-        expectErr "unit/runtime/dict-err" (runDirect instrSliceKey (mkSliceStack (.cell malformedDictRoot) key3 4)) .dictErr
+        expectErr "unit/runtime/dict-err" (runDirect instrSliceKey (mkSliceStack (.cell malformedDictRoot) key3 4)) .cellUnd
     }
   ]
   oracle := #[

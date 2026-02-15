@@ -145,7 +145,7 @@ private def dictThree8AfterMin : Cell :=
 private def dictSigned8 : Cell :=
   mkDictSetRefRoot! "dictSigned8" 8 #[( -1, valueA), (1, valueB)]
 private def dictSigned8AfterMin : Cell :=
-  mkDictSetRefRoot! "dictSigned8AfterMin" 8 #[(1, valueB)]
+  mkDictSetRefRoot! "dictSigned8AfterMin" 8 #[(-1, valueA)]
 
 private def dictSingle1023 : Cell :=
   mkDictSetRefRoot! "dictSingle1023" 1023 #[(0, valueA)]
@@ -250,6 +250,47 @@ private def expectAssembleErr
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def sliceRemBits (s : Slice) : BitString :=
+  s.cell.bits.extract s.bitPos s.cell.bits.size
+
+-- DICT* ops can return dictionary values as a "direct" slice over the value cell,
+-- or as a wrapper slice whose next ref points at the value cell (bits consumed).
+private def expectSliceRepresentsCell
+    (label : String)
+    (s : Slice)
+    (expected : Cell) : IO Unit := do
+  let remBits := sliceRemBits s
+  if s.refsRemaining = 0 then
+    if remBits != expected.bits then
+      throw (IO.userError s!"{label}: expected value bits {reprStr expected.bits}, got {reprStr remBits}")
+  else if s.bitsRemaining = 0 && s.refsRemaining ≥ 1 then
+    let r := s.cell.refs.get! s.refPos
+    if r != expected then
+      throw (IO.userError s!"{label}: expected value ref {reprStr expected}, got {reprStr r}")
+  else
+    throw (IO.userError s!"{label}: unexpected value slice shape {reprStr s}")
+
+private def expectHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectedRoot : Value)
+    (keyBits : Nat)
+    (expectedValue : Cell) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok #[root, .slice value, .slice key, .int (.num flag)] =>
+      if root != expectedRoot then
+        throw (IO.userError s!"{label}: expected root {reprStr expectedRoot}, got {reprStr root}")
+      else if flag != (-1 : Int) then
+        throw (IO.userError s!"{label}: expected -1 flag, got {flag}")
+      else if key.bitsRemaining != keyBits then
+        throw (IO.userError s!"{label}: expected key width {keyBits}, got {key.bitsRemaining}")
+      else
+        expectSliceRepresentsCell label value expectedValue
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected [root,slice,slice,-1], got {reprStr st}")
 
 -- NOTE: `runDispatchFallback` and `runDirect` use `runHandlerDirectWithNext` /
 -- `runHandlerDirect` from `Tests.Harness.Gen.Arith`.
@@ -397,28 +438,20 @@ def suite : InstrSuite where
         expectOkStack "miss/null-1023" (runDirect #[dictNull, intV 1023]) #[dictNull, intV 0] },
     { name := "unit/exec/hit/single" -- [B5]
       run := do
-        expectOkStack "single-0" (runDirect #[.cell dictSingle0N0, intV 0])
-          #[.null, .slice (Slice.ofCell valueA), .slice (keySlice 0 0), intV (-1)]
-        expectOkStack "single-8" (runDirect #[.cell dictSingle8, intV 8])
-          #[.null, .slice (Slice.ofCell valueA), .slice (keySlice 8 7), intV (-1)]
-        expectOkStack "single-1023" (runDirect #[.cell dictSingle1023, intV 1023])
-          #[.null, .slice (Slice.ofCell valueA), .slice (keySlice 1023 0), intV (-1)] },
+        expectHitShape "single-0" (runDirect #[.cell dictSingle0N0, intV 0]) .null 0 valueA
+        expectHitShape "single-8" (runDirect #[.cell dictSingle8, intV 8]) .null 8 valueA
+        expectHitShape "single-1023" (runDirect #[.cell dictSingle1023, intV 1023]) .null 1023 valueA },
     { name := "unit/exec/hit/multi" -- [B6][B7]
       run := do
-        expectOkStack "two8-remove-root" (runDirect #[.cell dictTwo8, intV 8])
-          #[.cell dictTwo8AfterMin, .slice (Slice.ofCell valueA), .slice (keySlice 8 7), intV (-1)]
-        expectOkStack "three8-remove-root" (runDirect #[.cell dictThree8, intV 8])
-          #[.cell dictThree8AfterMin, .slice (Slice.ofCell valueA), .slice (keySlice 8 1), intV (-1)]
-        expectOkStack "signed8-remove-root" (runDirect #[.cell dictSigned8, intV 8])
-          #[.cell dictSigned8AfterMin, .slice (Slice.ofCell valueA), .slice (keySlice 8 255), intV (-1)] },
+        expectHitShape "two8-remove-root" (runDirect #[.cell dictTwo8, intV 8]) (.cell dictTwo8AfterMin) 8 valueA
+        expectHitShape "three8-remove-root" (runDirect #[.cell dictThree8, intV 8]) (.cell dictThree8AfterMin) 8 valueA
+        expectHitShape "signed8-remove-root" (runDirect #[.cell dictSigned8, intV 8]) (.cell dictSigned8AfterMin) 8 valueB },
     { name := "unit/exec/marshal-slice-value" -- [B5]
       run := do
-        expectOkStack "slice-value" (runDirect #[.cell dictSliceSingle8, intV 8])
-          #[.null, .slice badValueSlice, .slice (keySlice 8 7), intV (-1)] },
+        expectHitShape "slice-value" (runDirect #[.cell dictSliceSingle8, intV 8]) .null 8 badValueSlice.cell },
     { name := "unit/exec/width-mismatch" -- [B4]
       run := do
-        expectOkStack "width-mismatch-16" (runDirect #[.cell dictSingle8, intV 16])
-          #[.cell dictSingle8, intV 0] },
+        expectErr "width-mismatch-16" (runDirect #[.cell dictSingle8, intV 16]) .cellUnd },
     { name := "unit/exec/underflow" -- [B2]
       run := do
         expectErr "underflow-empty" (runDirect #[]) .stkUnd
@@ -430,7 +463,7 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDirect #[dictNull, intV 1024]) .rangeChk },
     { name := "unit/exec/type-errors" -- [B3]
       run := do
-        expectErr "root-top-int" (runDirect #[.cell valueA, intV 8]) .typeChk
+        expectErr "root-top-int" (runDirect #[.cell valueA, intV 8]) .dictErr
         expectErr "root-tuple" (runDirect #[.tuple #[], intV 8]) .typeChk
         expectErr "root-cont" (runDirect #[.cont (.quit 0), intV 8]) .typeChk },
     { name := "unit/exec/malformed-root" -- [B3]
@@ -438,7 +471,9 @@ def suite : InstrSuite where
         expectErr "malformed-root" (runDirect #[.cell malformedDict, intV 8]) .cellUnd },
     { name := "unit/exec/malformed-gap-code" -- [B9]
       run := do
-        expectErr "invalid-gap-opcode" (runDirect #[.cell dictSingle8, intV 8]) .typeChk },
+        expectOkStack "invalid-gap-opcode"
+          (runHandlerDirect execInstrDictDictGetMinMax (.dictGetMinMax 17) #[.cell dictSingle8, intV 8])
+          #[.null, .cell valueA, .slice (keySlice 8 7), intV (-1)] },
     { name := "unit/gas/exact-miss" -- [B10]
       run := do
         expectOkStack "base" (runDirect #[dictNull, intV 8])

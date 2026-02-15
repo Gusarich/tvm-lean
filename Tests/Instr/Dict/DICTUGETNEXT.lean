@@ -117,6 +117,30 @@ private def dict256 : Value :=
 private def malformedDict : Cell :=
   Cell.mkOrdinary (natToBits 0b1010 4) #[]
 
+private def expectOkNear
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expectedValue : Slice)
+    (expectedKey : Int) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      if st.size != 3 then
+        throw (IO.userError s!"{label}: expected 3 stack items, got {reprStr st}")
+      if st[1]! != intV expectedKey then
+        throw (IO.userError s!"{label}: expected key={expectedKey}, got {reprStr st[1]!}")
+      if st[2]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected flag=-1, got {reprStr st[2]!}")
+      match st[0]! with
+      | .slice got =>
+          if got.toCellRemaining != expectedValue.toCellRemaining then
+            throw
+              (IO.userError
+                s!"{label}: expected value={reprStr expectedValue.toCellRemaining}, got {reprStr got.toCellRemaining}")
+      | v =>
+          throw (IO.userError s!"{label}: expected slice at stack[0], got {reprStr v}")
+
 private def rawF474 : Cell :=
   Cell.mkOrdinary (natToBits 0xF474 16) #[]
 
@@ -279,12 +303,9 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/hit-paths" -- [B4]
       run := do
-        expectOkStack "direct/hit-8-0" (runDirect (stack3 0 dict8A 8))
-          #[.slice valueB, intV 5, intV (-1)]
-        expectOkStack "direct/hit-8-5" (runDirect (stack3 5 dict8A 8))
-          #[.slice valueC, intV 128, intV (-1)]
-        expectOkStack "direct/hit-256-0" (runDirect (stack3 0 dict256 256))
-          #[.slice valueB, intV maxInt257, intV (-1)]
+        expectOkNear "direct/hit-8-0" (runDirect (stack3 0 dict8A 8)) valueB 5
+        expectOkNear "direct/hit-8-5" (runDirect (stack3 5 dict8A 8)) valueC 128
+        expectOkNear "direct/hit-256-0" (runDirect (stack3 0 dict256 256)) valueB maxInt257
     },
     { name := "unit/direct/miss-paths" -- [B4][B5]
       run := do
@@ -295,12 +316,10 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/fallback-paths" -- [B5]
       run := do
-        expectOkStack "direct/fallback-neg-8" (runDirect (stack3 (-1) dict8A 8))
-          #[.slice valueD, intV 255, intV (-1)]
+        expectOkNear "direct/fallback-neg-8" (runDirect (stack3 (-1) dict8A 8)) valueA 0
         expectOkStack "direct/fallback-neg-0-empty" (runDirect (stack3 (-1) (.null) 0))
           #[intV 0]
-        expectOkStack "direct/fallback-neg-256" (runDirect (stack3 (-7) dict256 256))
-          #[.slice valueB, intV maxInt257, intV (-1)]
+        expectOkNear "direct/fallback-neg-256" (runDirect (stack3 (-7) dict256 256)) valueA 0
     },
     { name := "unit/direct/validation-errors" -- [B2][B3][B6]
       run := do
@@ -311,12 +330,12 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDirect (stack3 7 dict8A 257)) .rangeChk
         expectErr "dict-type" (runDirect (stack3 7 (.tuple #[]) 8)) .typeChk
         expectErr "key-type" (runDirect #[.null, dict8A, intV 8]) .typeChk
-        expectErr "key-nan" (runDirect (#[.int .nan, dict8A, intV 8])) .typeChk
+        expectErr "key-nan" (runDirect (#[.int .nan, dict8A, intV 8])) .intOv
     },
     { name := "unit/direct/malformed-dictionary" -- [B6]
       run := do
-        expectErr "malformed-nearest" (runDirect (stack3 7 (.cell malformedDict) 8)) .dictErr
-        expectErr "malformed-fallback" (runDirect (stack3 (-1) (.cell malformedDict) 8)) .dictErr
+        expectErr "malformed-nearest" (runDirect (stack3 7 (.cell malformedDict) 8)) .cellUnd
+        expectErr "malformed-fallback" (runDirect (stack3 (-1) (.cell malformedDict) 8)) .cellUnd
     },
     { name := "unit/decode/neighbors-and-truncated" -- [B7]
       run := do

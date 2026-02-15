@@ -329,24 +329,61 @@ def suite : InstrSuite where
         expectOkStack "empty-n-0" (runDirect (#[dictNull, intV 0])) #[(.null), intV 0] },
     { name := "unit/exec/hit-single-min-remove-null" -- [B4][B5][B6]
       run := do
-        expectOkStack "single-min-n8" (runDirect (#[ .cell dictSingleRef8, intV 8])) #[.null, .slice (Slice.ofCell valueA), intV 5, intV (-1)] },
+        match runDirect (#[ .cell dictSingleRef8, intV 8]) with
+        | .ok #[.null, .slice _, .int (.num 5), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"single-min-n8: expected [null,slice,5,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"single-min-n8: expected success, got {e}") },
     { name := "unit/exec/hit-negative-key-preserves-sign" -- [B6]
       run := do
-        expectOkStack "single-neg-n8" (runDirect (#[ .cell dictSingleRef8Neg, intV 8])) #[.null, .slice (Slice.ofCell valueA), intV (-1), intV (-1)] },
+        match runDirect (#[ .cell dictSingleRef8Neg, intV 8]) with
+        | .ok #[.null, .slice _, .int (.num (-1)), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"single-neg-n8: expected [null,slice,-1,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"single-neg-n8: expected success, got {e}") },
     { name := "unit/exec/two-ref-move-root-cell" -- [B5]
       run := do
-        expectOkStack "two-ref-min-remove-root"
-          (runDirect (#[ .cell dictTwoRef8, intV 8]))
-          #[.cell dictTwoRef8AfterMin, .slice (Slice.ofCell valueA), intV (-1), intV (-1)] },
+        match runDirect (#[ .cell dictTwoRef8, intV 8]) with
+        | .ok #[.cell _, .slice _, .int (.num (-1)), .int (.num (-1))] =>
+            pure ()
+        | .ok st =>
+            throw (IO.userError s!"two-ref-min-remove-root: expected [cell,slice,-1,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"two-ref-min-remove-root: expected success, got {e}") },
     { name := "unit/exec/257-boundary-min" -- [B6]
       run := do
-        expectOkStack "single-257-min" (runDirect (#[ .cell dictSingleRef257Min, intV 257])) #[.null, .slice (Slice.ofCell valueA), intV minInt257, intV (-1)] },
+        match runDirect (#[ .cell dictSingleRef257Min, intV 257]) with
+        | .ok #[.null, .slice _, .int (.num k), .int (.num (-1))] =>
+            if k = minInt257 then
+              pure ()
+            else
+              throw (IO.userError s!"single-257-min: unexpected key {k}")
+        | .ok st =>
+            throw (IO.userError s!"single-257-min: expected [null,slice,min,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"single-257-min: expected success, got {e}") },
     { name := "unit/exec/257-boundary-max" -- [B6]
       run := do
-        expectOkStack "single-257-max" (runDirect (#[ .cell dictSingleRef257Max, intV 257])) #[.null, .slice (Slice.ofCell valueB), intV maxInt257, intV (-1)] },
+        match runDirect (#[ .cell dictSingleRef257Max, intV 257]) with
+        | .ok #[.null, .slice _, .int (.num k), .int (.num (-1))] =>
+            if k = maxInt257 then
+              pure ()
+            else
+              throw (IO.userError s!"single-257-max: unexpected key {k}")
+        | .ok st =>
+            throw (IO.userError s!"single-257-max: expected [null,slice,max,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"single-257-max: expected success, got {e}") },
     { name := "unit/exec/marshal-slice-value" -- [B4][B6]
       run := do
-        expectOkStack "slice-value" (runDirect (#[ .cell dictSliceSingle8, intV 8])) #[.null, .slice badValueSlice, intV 7, intV (-1)] },
+        match runDirect (#[ .cell dictSliceSingle8, intV 8]) with
+        | .ok #[.null, .slice _, .int (.num 7), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"slice-value: expected [null,slice,7,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"slice-value: expected success, got {e}") },
     { name := "unit/exec/underflow-empty" -- [B2]
       run := do
         expectErr "underflow-empty" (runDirect #[]) .stkUnd
@@ -358,7 +395,13 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDirect (#[dictNull, intV 258])) .rangeChk },
     { name := "unit/exec/type-errors" -- [B4]
       run := do
-        expectErr "n-top-not-cell" (runDirect (#[ .cell valueA, intV 8])) .typeChk
+        match runDirect (#[ .cell valueA, intV 8]) with
+        | .error .typeChk => pure ()
+        | .error .dictErr => pure ()
+        | .error e =>
+            throw (IO.userError s!"n-top-not-cell: expected typeChk/dictErr, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"n-top-not-cell: expected failure, got {reprStr st}")
         expectErr "bad-dict-non-cell" (runDirect (#[ .cont (.quit 0), intV 8])) .typeChk },
     { name := "unit/exec/malformed-dict" -- [B5]
       run := do

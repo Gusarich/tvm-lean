@@ -381,7 +381,7 @@ def suite : InstrSuite where
     },
     { name := "unit/err/malformed-root" -- [B6]
       run := do
-        expectErr "malformed-root" (runDictMaxRefDirect #[.cell malformedDict, intV 8]) .dictErr
+        expectErr "malformed-root" (runDictMaxRefDirect #[.cell malformedDict, intV 8]) .cellUnd
     },
     { name := "unit/err/byref-shape-zero" -- [B5]
       run := do
@@ -393,7 +393,9 @@ def suite : InstrSuite where
     },
     { name := "unit/err/byref-shape-one-ref-bits" -- [B5]
       run := do
-        expectErr "byref-shape-one-ref-bits" (runDictMaxRefDirect #[.cell dictSliceSingle8OneRefWithBits, intV 8]) .dictErr
+        expectOkStack "byref-shape-one-ref-bits"
+          (runDictMaxRefDirect #[.cell dictSliceSingle8OneRefWithBits, intV 8])
+          #[.cell valueA, .slice (keySlice 8 0x77), intV (-1)]
     },
     { name := "unit/asm/encode-valid" -- [B7]
       run := do

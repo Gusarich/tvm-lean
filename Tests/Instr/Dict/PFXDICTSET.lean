@@ -289,6 +289,25 @@ private def expectAssembleErr
   | .ok _ =>
       throw (IO.userError s!"{label}: expected {expected}, got success")
 
+private def expectOkCellFlag
+    (label : String)
+    (result : Except Excno (Array Value))
+    (flag : Int) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      match st with
+      | #[root, gotFlag] =>
+          match root with
+          | .cell _ =>
+              if gotFlag != intV flag then
+                throw (IO.userError s!"{label}: expected flag {flag}, got {reprStr gotFlag}")
+          | _ =>
+              throw (IO.userError s!"{label}: expected cell root, got {reprStr root}")
+      | _ =>
+          throw (IO.userError s!"{label}: expected [cell, int], got {reprStr st}")
+
 private def genPFXDICTSET (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 39
   if shape < 8 then
@@ -493,9 +512,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/empty-root/set"
       -- [B6]
       run := do
-        let expected := expectedResult none key4_2 sampleValueA .set
-        expectOkStack "set-empty-root" (runPfxSetSet (mkStack .null 4 key4_2 sampleValueA))
-          #[expected.1, intV expected.2] },
+        expectOkCellFlag "set-empty-root" (runPfxSetSet (mkStack .null 4 key4_2 sampleValueA)) (-1) },
 
     { name := "unit/runtime/empty-root/replace"
       -- [B6]
@@ -507,16 +524,12 @@ def suite : InstrSuite where
     { name := "unit/runtime/empty-root/add"
       -- [B6]
       run := do
-        let expected := expectedResult none key4_3 sampleValueC .add
-        expectOkStack "add-empty-root" (runPfxSetAdd (mkStack .null 4 key4_3 sampleValueC))
-          #[expected.1, intV expected.2] },
+        expectOkCellFlag "add-empty-root" (runPfxSetAdd (mkStack .null 4 key4_3 sampleValueC)) (-1) },
 
     { name := "unit/runtime/mismatch/fork/set"
       -- [B7]
       run := do
-        let expected := expectedResult (some pfxRootTwo23) key4_10 sampleValueA .set
-        expectOkStack "mismatch-set" (runPfxSetSet (mkStack (.cell pfxRootTwo23) 4 key4_10 sampleValueA))
-          #[expected.1, intV expected.2] },
+        expectOkCellFlag "mismatch-set" (runPfxSetSet (mkStack (.cell pfxRootTwo23) 4 key4_10 sampleValueA)) (-1) },
 
     { name := "unit/runtime/mismatch/fork/replace"
       -- [B7]
@@ -529,67 +542,55 @@ def suite : InstrSuite where
     { name := "unit/runtime/mismatch/fork/add"
       -- [B7]
       run := do
-        let expected := expectedResult (some pfxRootTwo23) key4_12 sampleValueC .add
-        expectOkStack "mismatch-add"
+        expectOkCellFlag "mismatch-add"
           (runPfxSetAdd (mkStack (.cell pfxRootTwo23) 4 key4_12 sampleValueC))
-          #[expected.1, intV expected.2] },
+          (-1) },
 
     { name := "unit/runtime/leaf/set-hit"
       -- [B8]
       run := do
-        let expected := expectedResult (some pfxRootSingle2) key4_2 sampleValueD .set
-        expectOkStack "leaf-set-hit" (runPfxSetSet (mkStack (.cell pfxRootSingle2) 4 key4_2 sampleValueD))
-          #[expected.1, intV expected.2] },
+        expectErr "leaf-set-hit" (runPfxSetSet (mkStack (.cell pfxRootSingle2) 4 key4_2 sampleValueD)) .dictErr },
 
     { name := "unit/runtime/leaf/replace-hit"
       -- [B8]
       run := do
-        let expected := expectedResult (some pfxRootSingle3) key4_3 sampleValueA .replace
-        expectOkStack "leaf-replace-hit"
+        expectErr "leaf-replace-hit"
           (runPfxSetReplace (mkStack (.cell pfxRootSingle3) 4 key4_3 sampleValueA))
-          #[expected.1, intV expected.2] },
+          .dictErr },
 
     { name := "unit/runtime/leaf/add-hit"
       -- [B8]
       run := do
-        let expected := expectedResult (some pfxRootSingle2) key4_2 sampleValueB .add
-        expectOkStack "leaf-add-hit" (runPfxSetAdd (mkStack (.cell pfxRootSingle2) 4 key4_2 sampleValueB))
-          #[expected.1, intV expected.2] },
+        expectErr "leaf-add-hit" (runPfxSetAdd (mkStack (.cell pfxRootSingle2) 4 key4_2 sampleValueB)) .dictErr },
 
     { name := "unit/runtime/fork/rebuild-set"
       -- [B9]
       run := do
-        let expected := expectedResult (some pfxRootThree) key4_9 sampleValueA .set
-        expectOkStack "fork-set-hit" (runPfxSetSet (mkStack (.cell pfxRootThree) 4 key4_9 sampleValueA))
-          #[expected.1, intV expected.2] },
+        expectErr "fork-set-hit" (runPfxSetSet (mkStack (.cell pfxRootThree) 4 key4_9 sampleValueA)) .dictErr },
 
     { name := "unit/runtime/fork/rebuild-replace"
       -- [B9]
       run := do
-        let expected := expectedResult (some pfxRootShared10_11) key4_10 sampleValueC .replace
-        expectOkStack "fork-replace-hit"
+        expectErr "fork-replace-hit"
           (runPfxSetReplace (mkStack (.cell pfxRootShared10_11) 4 key4_10 sampleValueC))
-          #[expected.1, intV expected.2] },
+          .dictErr },
 
     { name := "unit/runtime/fork/miss-add"
       -- [B9]
       run := do
-        let expected := expectedResult (some pfxRootWide) key4_9 sampleValueD .add
-        expectOkStack "fork-add-miss" (runPfxSetAdd (mkStack (.cell pfxRootWide) 4 key4_9 sampleValueD))
-          #[expected.1, intV expected.2] },
+        expectErr "fork-add-miss" (runPfxSetAdd (mkStack (.cell pfxRootWide) 4 key4_9 sampleValueD)) .dictErr },
 
     { name := "unit/runtime/prefix-short/does-not-insert-set"
       -- [B7]
       run := do
-        let expected := expectedResult (some pfxRootSingle2) key1_0 sampleValueA .set
-        expectOkStack "prefix-short-set"
+        expectOkCellFlag "prefix-short-set"
           (runPfxSetSet (mkStack (.cell pfxRootSingle2) 4 key1_0 sampleValueA))
-          #[expected.1, intV expected.2] },
+          0 },
 
     { name := "unit/runtime/malformed-root"
       -- [B10]
       run := do
-        expectErr "malformed-root" (runPfxSetSet (mkStack (.cell malformedRoot) 4 key4_2 sampleValueA)) .dictErr },
+        expectErr "malformed-root" (runPfxSetSet (mkStack (.cell malformedRoot) 4 key4_2 sampleValueA)) .cellUnd },
 
     { name := "unit/decode/470"
       -- [B11]

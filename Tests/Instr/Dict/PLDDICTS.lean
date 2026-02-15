@@ -310,16 +310,16 @@ def suite : InstrSuite where
         expectOkStack "present-true-long" (runPLDDICTS #[.slice presentSliceLong]) #[.slice presentPrefixA] },
     { name := "unit/runtime/absent-simple" -- [B4]
       run := do
-        expectOkStack "absent-simple" (runPLDDICTS #[.slice absentSliceSimple]) #[.null] },
+        expectOkStack "absent-simple" (runPLDDICTS #[.slice absentSliceSimple]) #[.slice absentSliceSimple] },
     { name := "unit/runtime/absent-tail" -- [B4]
       run := do
-        expectOkStack "absent-tail" (runPLDDICTS #[.slice absentSliceWithTail]) #[.null] },
+        expectOkStack "absent-tail" (runPLDDICTS #[.slice absentSliceWithTail]) #[.slice absentSliceSimple] },
     { name := "unit/runtime/absent-tail-many" -- [B4]
       run := do
-        expectOkStack "absent-tail-many" (runPLDDICTS #[.slice absentSliceWithTailManyBits]) #[.null] },
+        expectOkStack "absent-tail-many" (runPLDDICTS #[.slice absentSliceWithTailManyBits]) #[.slice absentSliceSimple] },
     { name := "unit/runtime/absent-with-refs" -- [B4]
       run := do
-        expectOkStack "absent-with-refs" (runPLDDICTS #[.slice absentSliceWithRefs]) #[.null] },
+        expectOkStack "absent-with-refs" (runPLDDICTS #[.slice absentSliceWithRefs]) #[.slice absentSliceSimple] },
     { name := "unit/decode/valid-plddicts" -- [B6]
       run := do
         expectDecodeOk "decode-valid-plddicts" pldDictsCode (.dictExt (.lddicts true)) },

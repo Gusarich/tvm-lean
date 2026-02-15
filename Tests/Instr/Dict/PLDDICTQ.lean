@@ -97,7 +97,7 @@ private def runPLDDICTQDirect (stack : Array Value) : Except Excno (Array Value)
   runHandlerDirect execInstrDictLddict instr stack
 
 private def runPLDDICTQDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictLddict instr (VM.push (intV fallbackSentinel)) stack
+  runHandlerDirectWithNext execInstrDictLddict .add (VM.push (intV fallbackSentinel)) stack
 
 private def expectDecodeStep
     (label : String)
@@ -229,7 +229,10 @@ def suite : InstrSuite where
         expectDecodeStep "decode/f406" 0xF406 (.lddict false true)
         expectDecodeInvOpcode "decode/f408" 0xF408
         expectDecodeInvOpcode "decode/f409" 0xF409
-        expectDecodeInvOpcode "decode/f4" 0xF4
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"decode/f4: expected invOpcode, got {e}")
+        | .ok (i, bits, _) => throw (IO.userError s!"decode/f4: expected invOpcode, got {reprStr i}/{bits}")
     },
     { name := "unit/stack-and-type" -- [B2][B3]
       run := do

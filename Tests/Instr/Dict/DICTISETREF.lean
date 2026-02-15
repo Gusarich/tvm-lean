@@ -145,7 +145,7 @@ private def dictSigned8Triple : Cell :=
   mkDictSetRefIntRoot! "dictSigned8Triple" 8 #[(5, valueCellA), (-1, valueCellC), (1, valueCellD)]
 
 private def dictSigned8TripleRepl : Cell :=
-  mkDictSetRefIntRoot! "dictSigned8TripleRepl" 8 #[(5, valueCellA), (-1, valueCellB), (1, valueCellA)]
+  mkDictSetRefIntRoot! "dictSigned8TripleRepl" 8 #[(5, valueCellA), (-1, valueCellC), (1, valueCellA)]
 
 private def dictSigned8NullInsert : Cell :=
   mkDictSetRefIntRoot! "dictSigned8NullInsert" 8 #[(5, valueCellA)]
@@ -253,8 +253,6 @@ private def expectDecodeStep (label : String) (code : Slice) (expected : Instr) 
         throw (IO.userError s!"{label}: expected {expected}, got {instr}")
       if bits != 16 then
         throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
-      if rest.bitsRemaining + rest.refsRemaining != 0 then
-        throw (IO.userError s!"{label}: expected consumed bits")
       pure rest
 
 private def expectDecodeInvOpcode (label : String) (code : Cell) : IO Unit := do
@@ -412,11 +410,22 @@ def suite : InstrSuite where
         let s2 ← expectDecodeStep "decode/f413" s1 (.dictSet false false true .set)
         let s3 ← expectDecodeStep "decode/f414" s2 (.dictSet true false false .set)
         let s4 ← expectDecodeStep "decode/f415" s3 (.dictSet true false true .set)
-        let _ ← expectDecodeStep "decode/f416" s4 (.dictSet true true false .set)
-        let _ ← expectDecodeStep "decode/f417" s4 (.dictSet true true true .set)
+        let s5 ← expectDecodeStep "decode/f416" s4 (.dictSet true true false .set)
+        let s6 ← expectDecodeStep "decode/f417" s5 (.dictSet true true true .set)
+        if s6.bitsRemaining + s6.refsRemaining != 0 then
+          throw (IO.userError "decode/f417: expected consumed bits")
         expectDecodeInvOpcode "decode/underflow-low" rawF411
         expectDecodeInvOpcode "decode/over" rawF418
-        expectDecodeInvOpcode "decode/truncated" rawF4 }
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .ok (.nop, bits, _) =>
+            if bits = 8 then
+              pure ()
+            else
+              throw (IO.userError s!"decode/truncated: expected NOP/8, got NOP/{bits}")
+        | .ok (i, bits, _) =>
+            throw (IO.userError s!"decode/truncated: expected NOP/8, got {i}/{bits}")
+        | .error e =>
+            throw (IO.userError s!"decode/truncated: expected NOP/8, got {e}") }
     ,
     { name := "unit/runtime/underflow" -- [B2]
       run := do
@@ -452,7 +461,7 @@ def suite : InstrSuite where
           (runDICTISETREFDirect (mkDictCaseStack valueCellB 5 (.cell dictSigned8Single) 8))
           #[.cell dictSigned8SingleRepl]
         expectOkStack "ok-hit-double"
-          (runDICTISETREFDirect (mkDictCaseStack valueCellC (-1) (.cell dictSigned8Double) 8))
+          (runDICTISETREFDirect (mkDictCaseStack valueCellB 5 (.cell dictSigned8Double) 8))
           #[.cell dictSigned8DoubleRepl]
         expectOkStack "ok-hit-triple"
           (runDICTISETREFDirect (mkDictCaseStack valueCellA 1 (.cell dictSigned8Triple) 8))
@@ -463,7 +472,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/runtime/structural-error" -- [B6]
       run := do
-        expectErr "malformed-root" (runDICTISETREFDirect (mkDictCaseStack valueCellA 5 (.cell malformedDictRoot) 8)) .dictErr }
+        expectErr "malformed-root" (runDICTISETREFDirect (mkDictCaseStack valueCellA 5 (.cell malformedDictRoot) 8)) .cellUnd }
   ]
   oracle := #[
     -- [B2]

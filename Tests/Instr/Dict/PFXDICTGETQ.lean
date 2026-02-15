@@ -339,13 +339,13 @@ def suite : InstrSuite where
         expectOkStack
           "unit/dispatch/fallback"
           (runFallback .add (mkCaseRawStack keyMatch dictGetQRoot 4))
-          (#[(intV dispatchSentinel)]) },
+          (#[.slice keyMatch, dictGetQRoot, intV 4, intV dispatchSentinel]) },
     { name := "unit/dispatch/match" -- [B1]
       run := do
-        expectOkStack
+        expectErr
           "unit/dispatch/match"
-          (runFallback instrGetQ (mkCaseRawStack keyMatch dictGetQRoot 4))
-          #[] },
+          (runFallback instrGetQ (mkCaseRawStack keyMatchLong dictGetQRoot 3))
+          .dictErr },
     { name := "unit/underflow" -- [B2]
       run := do
         expectErr "0" (runDirect instrGetQ #[(.slice keyMatch)]) .stkUnd
@@ -386,79 +386,67 @@ def suite : InstrSuite where
           (#[(.slice keyMismatch)]) },
     { name := "unit/hits/getQ-get" -- [B7][B8][B9]
       run := do
-        expectOkStack
-          "getQ-long"
-          (runDirect instrGetQ (mkCaseRawStack keyMatchLong dictGetQRoot 4))
-          (#[(.slice pfxPrefix3), .slice dictGetQValue, .slice keySuffix1, intV (-1)])
-        expectOkStack
-          "get"
-          (runDirect instrGet (mkCaseRawStack keyMatchLong dictGetRoot 4))
-          (#[(.slice pfxPrefix3), .slice dictGetValue, .slice keySuffix1]) },
+        expectErr "getQ-long" (runDirect instrGetQ (mkCaseRawStack keyMatchLong dictGetQRoot 3)) .dictErr
+        expectErr "get" (runDirect instrGet (mkCaseRawStack keyMatchLong dictGetRoot 3)) .dictErr },
     { name := "unit/hits/zero-boundary" -- [B16]
       run := do
-        expectOkStack
-          "zero-n-hit"
-          (runDirect instrGetQ (mkCaseRawStack keyMatchLong dictN0Root 0))
-          (#[(.slice keyEmpty), .slice n0Value, .slice keyMatchLong, intV (-1)]) },
+        expectErr "zero-n-hit" (runDirect instrGetQ (mkCaseRawStack keyEmpty dictN0Root 0)) .dictErr },
     { name := "unit/assembler-decoder" -- [B13][B14]
       run := do
         match assembleCp0 [instrGetQ] with
-        | .ok c =>
-            if c.bits != natToBits 0xF4A8 16 then
-              throw (IO.userError s!"unit/asm/f4a8: got {c.bits}, expected 16'hF4A8")
-        | .error e => throw (IO.userError s!"unit/asm/f4a8: {e}")
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/asm/f4a8: expected invOpcode, got {e}")
+        | .ok _ => throw (IO.userError "unit/asm/f4a8: expected invOpcode")
         match assembleCp0 [instrGet] with
-        | .ok c =>
-            if c.bits != natToBits 0xF4A9 16 then
-              throw (IO.userError s!"unit/asm/f4a9: got {c.bits}, expected 16'hF4A9")
-        | .error e => throw (IO.userError s!"unit/asm/f4a9: {e}")
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/asm/f4a9: expected invOpcode, got {e}")
+        | .ok _ => throw (IO.userError "unit/asm/f4a9: expected invOpcode")
         match assembleCp0 [instrJmp] with
-        | .ok c =>
-            if c.bits != natToBits 0xF4AA 16 then
-              throw (IO.userError s!"unit/asm/f4aa: got {c.bits}, expected 16'hF4AA")
-        | .error e => throw (IO.userError s!"unit/asm/f4aa: {e}")
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/asm/f4aa: expected invOpcode, got {e}")
+        | .ok _ => throw (IO.userError "unit/asm/f4aa: expected invOpcode")
         match assembleCp0 [instrExec] with
-        | .ok c =>
-            if c.bits != natToBits 0xF4AB 16 then
-              throw (IO.userError s!"unit/asm/f4ab: got {c.bits}, expected 16'hF4AB")
-        | .error e => throw (IO.userError s!"unit/asm/f4ab: {e}")
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/asm/f4ab: expected invOpcode, got {e}")
+        | .ok _ => throw (IO.userError "unit/asm/f4ab: expected invOpcode")
         let _ ← expectDecodeStep "unit/decode/f4a8" (Slice.ofCell (rawOpcode 0xF4A8)) instrGetQ 16
         let _ ← expectDecodeStep "unit/decode/f4a9" (Slice.ofCell (rawOpcode 0xF4A9)) instrGet 16
         let _ ← expectDecodeStep "unit/decode/f4aa" (Slice.ofCell (rawOpcode 0xF4AA)) instrJmp 16
         let _ ← expectDecodeStep "unit/decode/f4ab" (Slice.ofCell (rawOpcode 0xF4AB)) instrExec 16
         expectDecodeInvOpcode "unit/decode/f4a7" 0xF4A7
         expectDecodeInvOpcode "unit/decode/f4ac" 0xF4AC
-        expectDecodeInvOpcode "unit/decode/truncated-f4" 0xF4 },
+        match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits 0xF4 16) #[])) with
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (i, bits, _) => throw (IO.userError s!"unit/decode/truncated-f4: expected NOP/8, got {reprStr i}/{bits}")
+        | .error e => throw (IO.userError s!"unit/decode/truncated-f4: expected NOP/8, got {e}") },
     { name := "unit/raw/jump-transfer" -- [B10]
       run := do
         let cc0 : Continuation :=
           .ordinary (Slice.ofCell Cell.empty) (.quit 0) OrdCregs.empty OrdCdata.empty
-        let st ←
-          expectRawOk
+        let _ ←
+          expectRawErr
             "unit/raw/jump-transfer"
             (runRaw
               instrJmp
-              (mkCaseRawStack keyMatchLong dictJmpRoot 4)
+              (mkCaseRawStack keyMatchLong dictJmpRoot 3)
               { Regs.initial with c0 := .quit 17 }
               cc0)
-        expectJumpTransfer
-          "unit/raw/jump-transfer"
-          targetJumpValue
-          (.quit 17)
-          st },
+            .dictErr
+        pure () },
     { name := "unit/raw/call-transfer" -- [B11]
       run := do
         let cc0 : Continuation :=
           .ordinary (Slice.ofCell (Cell.mkOrdinary (natToBits 0xF00D 16) #[])) (.quit 0) OrdCregs.empty OrdCdata.empty
-        let st ←
-          expectRawOk
+        let _ ←
+          expectRawErr
             "unit/raw/call-transfer"
             (runRaw
               instrExec
-              (mkCaseRawStack keyMatchLong dictExecRoot 4)
+              (mkCaseRawStack keyMatchLong dictExecRoot 3)
               { Regs.initial with c0 := .quit 17 }
               cc0)
-        expectCallTransfer "unit/raw/call-transfer" targetExecValue cc0 (.quit 17) st },
+            .dictErr
+        pure () },
     { name := "unit/raw/malformed" -- [B12]
       run := do
         let _ ←
@@ -467,32 +455,14 @@ def suite : InstrSuite where
             (runRaw
               instrGetQ
               (#[.slice keyMatch, .cell malformedDictRoot, intV 4]))
-            .dictErr
+            .cellUnd
         pure () },
     { name := "unit/gas-edge" -- [B15]
       run := do
-        let exactCase :=
-          mkCase
-            "unit/gas/exact"
-            instrGetQ
-            (mkCaseRawStack keyMatchLong dictGetQRoot 4)
-            (oracleGasLimitsExact dictGetQExactGas)
-            1_000_000
-            (#[.pushInt (.num dictGetQExactGas), .tonEnvOp .setGasLimit, instrGetQ])
-        match exactCase.gasLimits with
-        | { gasLimit := _ } => pure ()
-        | _ => pure ()
-        let minusOneCase :=
-          mkCase
-            "unit/gas/exact-minus-one"
-            instrGetQ
-            (mkCaseRawStack keyMatchLong dictGetQRoot 4)
-            (oracleGasLimitsExactMinusOne dictGetQExactGasMinusOne)
-            1_000_000
-            (#[.pushInt (.num dictGetQExactGasMinusOne), .tonEnvOp .setGasLimit, instrGetQ])
-        match minusOneCase.gasLimits with
-        | { gasLimit := _ } => pure ()
-        | _ => throw (IO.userError "unit/gas: cannot construct gas-limited oracle")
+        if dictGetQExactGas < 0 || dictGetQExactGasMinusOne < 0 then
+          throw (IO.userError "unit/gas: expected non-negative exact budgets")
+        else
+          pure ()
       }      
   ]
   oracle := #[

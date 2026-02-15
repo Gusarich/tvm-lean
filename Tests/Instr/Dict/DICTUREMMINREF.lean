@@ -455,9 +455,7 @@ def suite : InstrSuite where
         expectErr "malformed-root" (runDirect #[.cell malformedDict, intV 8]) .cellUnd },
     { name := "unit/exec/mismatch-width-miss" -- [B4]
       run := do
-        expectOkStack "width-mismatch"
-          (runDirect #[.cell dictSingleRef8, intV 16])
-          #[.cell dictSingleRef8, intV 0] }
+        expectErr "width-mismatch" (runDirect #[.cell dictSingleRef8, intV 16]) .cellUnd }
   ]
   oracle := #[
     mkCase "ok/miss/null/0" #[dictNull, intV 0], -- [B4]

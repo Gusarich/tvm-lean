@@ -361,7 +361,12 @@ def suite : InstrSuite where
     ,
     { name := "unit/decoder/decode/truncated8"
       run := do
-        expectDecodeInvOpcode "unit/decoder/decode/truncated8" 0xf4
+        match decodeCp0WithBits (Slice.ofCell (Cell.mkOrdinary (natToBits 0xF4 8) #[])) with
+        | .error .invOpcode => pure ()
+        | .error e =>
+            throw (IO.userError s!"unit/decoder/decode/truncated8: expected invOpcode, got {e}")
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"unit/decoder/decode/truncated8: expected invOpcode, got {reprStr instr}/{bits}")
     }
     ,
     { name := "unit/asm/encode/not-supported"

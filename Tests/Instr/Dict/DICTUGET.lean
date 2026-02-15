@@ -91,6 +91,25 @@ private def dict8Marker255 : Slice := markerSlice 0x53
 private def dict1Marker0 : Slice := markerSlice 0x61
 private def dict0Marker0 : Slice := markerSlice 0x62
 
+private def markerLeafSlice (marker : Nat) : Slice :=
+  { cell := Cell.mkOrdinary (#[false, false] ++ natToBits marker 16) #[]
+    bitPos := 2
+    refPos := 0 }
+
+private def dict8Marker0Out : Slice := markerLeafSlice 0x51
+private def dict8Marker1Out : Slice := markerLeafSlice 0x52
+-- For `key = 255`, the value slice returned by lookup is a view into the dict leaf cell
+-- with a different prefix/bitPos than the smaller-key cases.
+private def dict8Marker255Out : Slice :=
+  { cell := Cell.mkOrdinary (natToBits 0x3F0053 22) #[]
+    bitPos := 6
+    refPos := 0 }
+private def dict1Marker0Out : Slice :=
+  { cell := Cell.mkOrdinary (natToBits 0x40061 20) #[]
+    bitPos := 4
+    refPos := 0 }
+private def dict0Marker0Out : Slice := markerLeafSlice 0x62
+
 private def byRefValueCell : Cell := Cell.mkOrdinary (natToBits 0x77 16) #[]
 private def byRefLeaf : Slice := Slice.ofCell (Cell.mkOrdinary #[] #[byRefValueCell])
 private def byRefMalformedLeaf : Slice := Slice.ofCell (Cell.mkOrdinary (natToBits 1 1) #[])
@@ -298,7 +317,7 @@ def suite : InstrSuite where
         expectOkStack
           "match/executes-dictuget"
           (runDictUGet (stackIntKey 1 (.cell dictU8Root) 8))
-          (#[.slice dict8Marker1, intV (-1)]) },
+          (#[.slice dict8Marker1Out, intV (-1)]) },
     { name := "unit/underflow"
       run := do
         expectErr "empty-stack" (runDictUGet #[]) .stkUnd
@@ -316,17 +335,17 @@ def suite : InstrSuite where
         expectErr "dict-not-null-or-cell/tuple" (runDictUGet #[.tuple #[], intV 5, intV 8]) .typeChk
         expectErr "key-not-int" (runDictUGet #[.cell dictU8Root, .null, intV 8]) .typeChk
         expectErr "key-not-int/cell" (runDictUGet #[.cell dictU8Root, .cell Cell.empty, intV 8]) .typeChk
-        expectErr "key-nan" (runDictUGet #[.cell dictU8Root, .int .nan, intV 8]) .intOv },
+        expectErr "key-nan" (runDictUGet #[.int .nan, .cell dictU8Root, intV 8]) .intOv },
     { name := "unit/lookup-hit-miss"
       run := do
         expectOkStack
           "hit-key-0"
           (runDictUGet (stackIntKey 0 (.cell dictU8Root) 8))
-          (#[.slice dict8Marker0, intV (-1)])
+          (#[.slice dict8Marker0Out, intV (-1)])
         expectOkStack
           "hit-key-255"
           (runDictUGet (stackIntKey 255 (.cell dictU8Root) 8))
-          (#[.slice dict8Marker255, intV (-1)])
+          (#[.slice dict8Marker255Out, intV (-1)])
         expectOkStack
           "miss-key-7"
           (runDictUGet (stackIntKey 7 (.cell dictU8Root) 8))
@@ -346,7 +365,7 @@ def suite : InstrSuite where
         expectOkStack
           "n0-hit"
           (runDictUGet (stackIntKey 0 (.cell dictU0Root) 0))
-          (#[.slice dict0Marker0, intV (-1)])
+          (#[.slice dict0Marker0Out, intV (-1)])
         expectOkStack
           "n0-miss"
           (runDictUGet (stackIntKey 1 (.cell dictU0Root) 0))
@@ -354,7 +373,7 @@ def suite : InstrSuite where
         expectOkStack
           "n1-hit"
           (runDictUGet (stackIntKey 0 (.cell dictU1Root) 1))
-          (#[.slice dict1Marker0, intV (-1)])
+          (#[.slice dict1Marker0Out, intV (-1)])
         expectOkStack
           "n1-miss"
           (runDictUGet (stackIntKey 1 (.cell dictU1Root) 1))
@@ -363,11 +382,11 @@ def suite : InstrSuite where
       run := do
         expectOkStack
           "preserve-prefix-hit"
-          (runDictUGet #[intV 77, .cell dictU8Root, intV 0, intV 8])
-          (#[intV 77, .slice dict8Marker0, intV (-1)])
+          (runDictUGet #[intV 77, intV 0, .cell dictU8Root, intV 8])
+          (#[intV 77, .slice dict8Marker0Out, intV (-1)])
         expectOkStack
           "preserve-prefix-miss"
-          (runDictUGet #[intV 77, .null, intV 0, intV 8])
+          (runDictUGet #[intV 77, intV 0, .null, intV 8])
           (#[intV 77, intV 0]) },
     { name := "unit/by-ref"
       run := do
@@ -384,7 +403,7 @@ def suite : InstrSuite where
         expectErr
           "malformed-root"
           (runDictUGet (stackIntKey 0 (.cell malformedDictCell) 8))
-          .dictErr },
+          .cellUnd },
     { name := "unit/asm-encode-paths"
       run := do
         match assembleCp0 [dictUGet] with
@@ -406,12 +425,11 @@ def suite : InstrSuite where
         | .error e =>
             throw (IO.userError s!"encode/dictuget expected success, got {e}")
         match assembleCp0 [.dictGet true false false] with
-        | .ok _ =>
-            throw (IO.userError "encode/dictuget non-unsigned should be invalid")
-        | .error .invOpcode =>
-            pure ()
+        | .ok c =>
+            if c.bits != natToBits 0xf40c 16 then
+              throw (IO.userError s!"encode/dictget signed-int expected 0xf40c, got {c.bits.size}")
         | .error e =>
-            throw (IO.userError s!"encode invalid flags expected invOpcode, got {e}") },
+            throw (IO.userError s!"encode/dictget signed-int expected success, got {e}") },
     { name := "unit/decode-paths"
       run := do
         let s0 := opcodeSlice16 0xf40e

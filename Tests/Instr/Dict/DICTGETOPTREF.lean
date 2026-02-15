@@ -53,8 +53,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - malformed dict payload in root/traversal path throws `.dictErr` before value handling.
 
 9. [B9] Assembler encoding behavior.
-   - `.dictExt` is not supported by assembler, so `assembleCp0` must throw
-     `.invOpcode` for `.dictExt (.getOptRef ...)`.
+   - `.dictExt (.getOptRef ...)` is supported by assembler; `assembleCp0` should succeed.
 
 10. [B10] Decoder behavior.
    - raw opcodes `0xF469`, `0xF46A`, `0xF46B` decode to
@@ -64,7 +63,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
 
 11. [B11] Gas accounting.
    - Gas is fixed budget for this opcode path in this model (`computeExactGasBudget`
-     via fallback encoder path because `.dictExt` has no dedicated assembler encoding).
+     via the fixed instruction gas model for this opcode family.
    - No variable gas adjustments are observable in this instruction body.
    - Need exact-gas success and exact-1 fail via explicit `PUSHINT; SETGASLIMIT` wrappers.
 
@@ -72,8 +71,8 @@ TOTAL BRANCHES: 11
 
 Assembler/gas notes:
 - No variable gas penalty per runtime branch is modeled for this suite.
-- Assembler coverage must therefore use explicit `.invOpcode` assertions and decoder
-  checks for raw opcode boundaries.
+- Assembler coverage should include encode+decode roundtrip, plus decoder checks for
+  raw opcode boundaries.
 -/
 
 private def suiteId : InstrId :=
@@ -105,15 +104,14 @@ private def mkGasPrefix (gas : Int) : Cell :=
 private def gasCode (gas : Int) (opcode : Cell) : Cell :=
   Cell.mkOrdinary ((mkGasPrefix gas).bits ++ opcode.bits) ((mkGasPrefix gas).refs ++ opcode.refs)
 
-private def assembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def assembleOk16 (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
-  | .ok c =>
-      throw (IO.userError s!"{label}: expected invOpcode, got {reprStr c}")
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {reprStr e}")
+      throw (IO.userError s!"{label}: expected assemble success, got {reprStr e}")
 
 private def mkDictSetRefRoot! (label : String) (n : Nat) (unsigned : Bool) (entries : Array (Int × Cell)) : Cell :=
   Id.run do
@@ -308,17 +306,17 @@ private def genDICTGETOPTREF (rng0 : StdGen) : OracleCase × StdGen :=
 def suite : InstrSuite where
   id := suiteId
   unit := #[
-    { name := "unit/assembler/reject-raw-getoptref" 
+    { name := "unit/assembler/encode-getoptref" 
       run := do
-        assembleInvOpcode "dictgetoptref/nokey" dictGetOptRef
+        assembleOk16 "dictgetoptref/nokey" dictGetOptRef
     },
-    { name := "unit/assembler/reject-raw-getoptref-int" 
+    { name := "unit/assembler/encode-getoptref-int" 
       run := do
-        assembleInvOpcode "dictgetoptref/int" dictGetOptRefInt
+        assembleOk16 "dictgetoptref/int" dictGetOptRefInt
     },
-    { name := "unit/assembler/reject-raw-getoptref-uint" 
+    { name := "unit/assembler/encode-getoptref-uint" 
       run := do
-        assembleInvOpcode "dictgetoptref/uint" dictGetOptRefUInt
+        assembleOk16 "dictgetoptref/uint" dictGetOptRefUInt
     },
     { name := "unit/decode/raw-family" 
       run := do

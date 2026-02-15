@@ -355,7 +355,7 @@ def suite : InstrSuite where
           (.dictExt (.subdictGet false false true)) },
     { name := "unit/decode/lower-neighbor"
       run := do
-        expectDecodeOk "unit/decode/lower-neighbor" rawOpcodeLower (.dictExt (.subdictGet false false false)) },
+        expectDecodeOk "unit/decode/lower-neighbor" rawOpcodeLower (.dictExt (.subdictGet true true false)) },
     { name := "unit/decode/int-neighbor"
       run := do
         expectDecodeOk "unit/decode/int-neighbor" rawOpcodeInt (.dictExt (.subdictGet true false true)) },

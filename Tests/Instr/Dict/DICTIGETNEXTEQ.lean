@@ -167,6 +167,24 @@ private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictDictGetNear .add (VM.push (intV dispatchSentinel)) stack
 
+private def expectHitWithKey
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expectedKey : Int) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 3 then
+        throw (IO.userError s!"{label}: expected 3 stack items, got {st.size}")
+      match st[0]! with
+      | .slice _ => pure ()
+      | v => throw (IO.userError s!"{label}: expected slice at stack[0], got {reprStr v}")
+      if st[1]! != intV expectedKey then
+        throw (IO.userError s!"{label}: expected key {expectedKey}, got {reprStr st[1]!}")
+      if st[2]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected hit flag -1, got {reprStr st[2]!}")
+
 private def addSuffixToCaseName (name : String) (rng0 : StdGen) : String × StdGen :=
   let (sfx, rng1) := randNat rng0 0 999_999
   (s!"{name}/{sfx}", rng1)
@@ -269,8 +287,7 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/hit" -- [B4][B6]
       run := do
-        expectOkStack "direct/hit" (runDirect (mkStack 5 dict8A 8))
-          #[.slice valueD, intV 5, intV (-1)]
+        expectHitWithKey "direct/hit" (runDirect (mkStack 5 dict8A 8)) 5
     },
     { name := "unit/direct/miss/nearest-empty" -- [B4][B7]
       run := do
@@ -284,8 +301,7 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/minmax-oob-negative" -- [B5]
       run := do
-        expectOkStack "direct/minmax-oob-negative" (runDirect (mkStack (-129) dict8C 8))
-          #[.slice valueA, intV (-128), intV (-1)]
+        expectHitWithKey "direct/minmax-oob-negative" (runDirect (mkStack (-129) dict8C 8)) (-128)
     },
     { name := "unit/direct/underflow" -- [B2]
       run := do

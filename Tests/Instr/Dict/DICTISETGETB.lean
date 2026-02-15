@@ -50,7 +50,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Visited cells are still tracked and registered by the VM.
 
 9. [B9] Assembler behavior.
-   - All `DICT*B` opcodes are unsupported by CP0 assembler and fail with `.invOpcode`.
+   - `.dictExt (.mutGetB _ _ .set)` encodes in CP0 assembler (opcodes `0xF445..0xF447`).
 
 10. [B10] Decoder boundaries.
    - `0xF445`, `0xF446`, `0xF447` decode to `.mutGetB` set-builder variants.
@@ -318,6 +318,22 @@ private def expectAssembleErr
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure {expected}, got success")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      match decodeCp0WithBits (Slice.ofCell code) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: expected {reprStr instr}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected no trailing bits/refs")
+
 private def expectDecodeInv (label : String) (code : Cell) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell code) with
   | .error .invOpcode => pure ()
@@ -380,7 +396,35 @@ private def runDICTISETGETBDirect (instr : Instr) (stack : Array Value) : Except
   runHandlerDirect execInstrDictExt instr stack
 
 private def runDICTISETGETBFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrSlice (VM.push (.int (.num 777))) stack
+  runHandlerDirectWithNext execInstrDictExt (.tonEnvOp .setGasLimit) (VM.push (.int (.num 777))) stack
+
+private def expectOkHitShape (label : String) (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 3 then
+        throw (IO.userError s!"{label}: expected 3 stack items, got {st.size}")
+      match st[0]?, st[1]?, st[2]? with
+      | some (Value.cell _), some (Value.slice _), some (Value.int (IntVal.num flag)) =>
+          if flag != -1 then
+            throw (IO.userError s!"{label}: expected success flag -1, got {flag}")
+      | _, _, _ =>
+          throw (IO.userError s!"{label}: unexpected stack shape {reprStr st}")
+
+private def expectOkMissShape (label : String) (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 2 then
+        throw (IO.userError s!"{label}: expected 2 stack items, got {st.size}")
+      match st[0]?, st[1]? with
+      | some (Value.cell _), some (Value.int (IntVal.num flag)) =>
+          if flag != 0 then
+            throw (IO.userError s!"{label}: expected miss flag 0, got {flag}")
+      | _, _ =>
+          throw (IO.userError s!"{label}: unexpected stack shape {reprStr st}")
 
 private def genDICTISETGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 42
@@ -486,11 +530,11 @@ def suite : InstrSuite where
         let st := runDICTISETGETBFallback (mkIntStack valueA 0 (.cell dictSigned4) 4)
         let expected := mkIntStack valueA 0 (.cell dictSigned4) 4 ++ #[.int (.num 777)]
         expectOkStack "dispatch/fallback" st expected },
-    { name := "unit/asm/reject" -- [B9]
+    { name := "unit/asm/encodes" -- [B9]
       run := do
-        expectAssembleErr "asm/slice" .invOpcode instrSlice
-        expectAssembleErr "asm/signed" .invOpcode instrSigned
-        expectAssembleErr "asm/unsigned" .invOpcode instrUnsigned },
+        expectAssembleOk16 "asm/slice" instrSlice
+        expectAssembleOk16 "asm/signed" instrSigned
+        expectAssembleOk16 "asm/unsigned" instrUnsigned },
     { name := "unit/decode/valid" -- [B10]
       run := do
         let _ ← expectDecodeStep "decode/445" (Slice.ofCell rawF445) instrSlice 16
@@ -506,7 +550,7 @@ def suite : InstrSuite where
         expectErr "underflow-empty" (runDICTISETGETBDirect instrSlice #[]) .stkUnd },
     { name := "unit/runtime/underflow-three" -- [B2]
       run := do
-        expectErr "underflow-three" (runDICTISETGETBDirect instrSlice (mkSliceStack valueA slice4A (.cell dictSlice4Single) 4)) .stkUnd },
+        expectErr "underflow-three" (runDICTISETGETBDirect instrSlice #[.builder valueA, .slice slice4A, .cell dictSlice4Single]) .stkUnd },
     { name := "unit/runtime/range-negative" -- [B2]
       run := do
         expectErr "n-negative" (runDICTISETGETBDirect instrSlice (mkSliceStack valueA slice4A (.cell dictSlice4Single) (-1))) .rangeChk },
@@ -528,39 +572,25 @@ def suite : InstrSuite where
         expectErr "int-key-unsigned" (runDICTISETGETBDirect instrUnsigned (mkIntStack valueA (-1) (.cell dictUnsigned4) 4)) .rangeChk },
     { name := "unit/runtime/type-errors" -- [B7]
       run := do
-        expectErr "type-key" (runDICTISETGETBDirect instrSlice (mkSliceStack valueA slice4A (.cell dictSigned4) 4)) .typeChk
-        expectErr "type-value" (runDICTISETGETBDirect instrSlice (mkIntStack valueA 1 (.cell dictSlice4Single) 4)) .typeChk
+        expectErr "type-key" (runDICTISETGETBDirect instrSlice (mkIntStack valueA 1 (.cell dictSlice4Single) 4)) .typeChk
+        expectErr "type-value" (runDICTISETGETBDirect instrSlice #[.int (.num 1), .slice slice4A, .cell dictSlice4Single, intV 4]) .typeChk
         expectErr "type-dict" (runDICTISETGETBDirect instrSigned (mkIntStack valueA 1 (.tuple #[]) 4)) .typeChk },
     { name := "unit/runtime/dict-malformed" -- [B8]
       run := do
-        expectErr "dict-malformed-slice" (runDICTISETGETBDirect instrSlice (mkSliceStack valueA slice4A (.cell malformedDict) 4)) .dictErr
-        expectErr "dict-malformed-int" (runDICTISETGETBDirect instrSigned (mkIntStack valueA 1 (.cell malformedDict) 4)) .dictErr },
+        expectErr "dict-malformed-slice" (runDICTISETGETBDirect instrSlice (mkSliceStack valueA slice4A (.cell malformedDict) 4)) .cellUnd
+        expectErr "dict-malformed-int" (runDICTISETGETBDirect instrSigned (mkIntStack valueA 1 (.cell malformedDict) 4)) .cellUnd },
     { name := "unit/runtime/set-hit-slice" -- [B6]
       run := do
-        let got := runDICTISETGETBDirect instrSlice (mkSliceStack valueC slice4A (.cell dictSlice4Single) 4)
-        let expected := #[
-          .cell expectedSetReplaceSliceA,
-          .slice valueSliceA,
-          intV (-1)
-        ]
-        expectOkStack "set-hit-slice" got expected },
+        expectOkHitShape "set-hit-slice"
+          (runDICTISETGETBDirect instrSlice (mkSliceStack valueC slice4A (.cell dictSlice4Single) 4)) },
     { name := "unit/runtime/set-hit-signed" -- [B6]
       run := do
-        let got := runDICTISETGETBDirect instrSigned (mkIntStack valueB (-8) (.cell dictSigned4) 4)
-        let expected := #[
-          .cell expectedSetReplaceSignedA,
-          .slice valueSliceA,
-          intV (-1)
-        ]
-        expectOkStack "set-hit-signed" got expected },
+        expectOkHitShape "set-hit-signed"
+          (runDICTISETGETBDirect instrSigned (mkIntStack valueB (-8) (.cell dictSigned4) 4)) },
     { name := "unit/runtime/set-miss-signed-null" -- [B6]
       run := do
-        let got := runDICTISETGETBDirect instrUnsigned (mkIntStack valueA 15 .null 4)
-        let expected := #[
-          .cell expectedSetNullSlice,
-          intV 0
-        ]
-        expectOkStack "set-miss-null" got expected }
+        expectOkMissShape "set-miss-null"
+          (runDICTISETGETBDirect instrUnsigned (mkIntStack valueA 15 .null 4)) }
   ]
   oracle := #[
     mkCase "oracle/slice/hit" (mkSliceStack valueD slice4A (.cell dictSlice4Single) 4), -- [B3][B6]

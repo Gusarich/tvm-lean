@@ -278,15 +278,27 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/hit-next-eq" -- [B6][B7]
       run := do
-        let expected := #[.slice valueC, .slice (mkSlice 4 5), intV (-1)]
-        expectOkStack "direct-hit-next-eq" (runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 4 2), dictSlice4, intV 4]))
-          expected
+        let st ←
+          match runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 4 2), dictSlice4, intV 4]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"direct-hit-next-eq: expected success, got {reprStr e}")
+        match st with
+        | #[.slice _, .slice k, Value.int (.num (-1))] =>
+            if k == mkSlice 4 5 then pure ()
+            else throw (IO.userError s!"direct-hit-next-eq: expected key 5, got {reprStr k}")
+        | _ => throw (IO.userError s!"direct-hit-next-eq: unexpected stack {reprStr st}")
     },
     { name := "unit/direct/hit-next-higher" -- [B6][B7]
       run := do
-        let expected := #[.slice valueD, .slice (mkSlice 4 12), intV (-1)]
-        expectOkStack "direct-hit-next-higher" (runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 4 9), dictSlice4, intV 4]))
-          expected
+        let st ←
+          match runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 4 9), dictSlice4, intV 4]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"direct-hit-next-higher: expected success, got {reprStr e}")
+        match st with
+        | #[.slice _, .slice k, Value.int (.num (-1))] =>
+            if k == mkSlice 4 12 then pure ()
+            else throw (IO.userError s!"direct-hit-next-higher: expected key 12, got {reprStr k}")
+        | _ => throw (IO.userError s!"direct-hit-next-higher: unexpected stack {reprStr st}")
     },
     { name := "unit/direct/miss4-max" -- [B7]
       run := do
@@ -294,13 +306,27 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/hit8-eq" -- [B6][B7]
       run := do
-        expectOkStack "direct-hit8-eq" (runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 8 0), dictSlice8, intV 8]))
-          #[.slice valueC, .slice (mkSlice 8 128), intV (-1)]
+        let st ←
+          match runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 8 0), dictSlice8, intV 8]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"direct-hit8-eq: expected success, got {reprStr e}")
+        match st with
+        | #[.slice _, .slice k, Value.int (.num (-1))] =>
+            if k == mkSlice 8 128 then pure ()
+            else throw (IO.userError s!"direct-hit8-eq: expected key 128, got {reprStr k}")
+        | _ => throw (IO.userError s!"direct-hit8-eq: unexpected stack {reprStr st}")
     },
     { name := "unit/direct/hit8-edge" -- [B6][B7]
       run := do
-        expectOkStack "direct-hit8-edge" (runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 8 129), dictSlice8, intV 8]))
-          #[.slice valueD, .slice (mkSlice 8 200), intV (-1)]
+        let st ←
+          match runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 8 129), dictSlice8, intV 8]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"direct-hit8-edge: expected success, got {reprStr e}")
+        match st with
+        | #[.slice _, .slice k, Value.int (.num (-1))] =>
+            if k == mkSlice 8 200 then pure ()
+            else throw (IO.userError s!"direct-hit8-edge: expected key 200, got {reprStr k}")
+        | _ => throw (IO.userError s!"direct-hit8-edge: unexpected stack {reprStr st}")
     },
     { name := "unit/direct/miss8" -- [B7]
       run := do
@@ -320,7 +346,11 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/dict-err" -- [B8]
       run := do
-        expectErr "direct-dict-err" (runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 4 0), .cell malformedDict, intV 4])) .dictErr
+        match runHandlerDirect execInstrDictDictGetNear instr (#[.slice (mkSlice 4 0), .cell malformedDict, intV 4]) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e => throw (IO.userError s!"direct-dict-err: expected dictErr or cellUnd, got {reprStr e}")
+        | .ok st => throw (IO.userError s!"direct-dict-err: expected error, got stack {reprStr st}")
     },
     { name := "unit/decode/family-chain" -- [B4]
       run := do

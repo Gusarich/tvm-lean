@@ -43,7 +43,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed dictionary roots and invalid payload/label invariants raise `.dictErr`.
 
 8. [B8] Assembler encoding behavior.
-   - `.dictExt` instructions are not assembled by CP0 (`assembleCp0` returns `invOpcode`).
+   - CP0 assembler encodes `.dictExt (.mutGetB ...)` to 16-bit opcodes `0xf445..0xf447`.
 
 9. [B9] Decoder opcode boundaries and aliasing.
    - Opcodes `0xf445`, `0xf446`, `0xf447` decode to
@@ -223,11 +223,27 @@ private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit :
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure invOpcode")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: expected {reprStr instr}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
+
 private def runDictSetGetBDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
 
-private def runDictSetGetBFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrSlice (VM.push (.int (.num 777))) stack
+private def runDictSetGetBFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrDictExt instr (VM.push (.int (.num 777))) stack
 
 private def dictKeyBits! (label : String) (n : Nat) (unsigned : Bool) (key : Int) : BitString :=
   match dictKeyBits? key n unsigned with
@@ -428,7 +444,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/next"
       run := do
         expectOkStack "dispatch/next"
-          (runDictSetGetBFallback #[
+          (runDictSetGetBFallback .add #[
           .builder valueA
           , .slice keySlice4A
           , .cell dictSigned4
@@ -463,11 +479,11 @@ def suite : InstrSuite where
         | .ok _ =>
             throw (IO.userError "decode/f4-8bit should fail")
     },
-    { name := "unit/asm/invOpcode"
+    { name := "unit/asm/encodes"
       run := do
-        expectAssembleInvOpcode "asm/slice" instrSlice
-        expectAssembleInvOpcode "asm/signed" instrSigned
-        expectAssembleInvOpcode "asm/unsigned" instrSignedUnsigned
+        expectAssembleOk16 "asm/slice" instrSlice
+        expectAssembleOk16 "asm/signed" instrSigned
+        expectAssembleOk16 "asm/unsigned" instrSignedUnsigned
     },
     { name := "unit/runtime/validation"
       run := do
@@ -525,7 +541,7 @@ def suite : InstrSuite where
           , .slice keySlice4A
           , .cell malformedDictRoot
           , intV 4
-        ])) .dictErr
+        ])) .cellUnd
         expectErr "int-nan" (runDictSetGetBDirect instrSigned (#[
           .builder valueA
           , .int (.num 1)

@@ -262,7 +262,7 @@ def suite : InstrSuite where
         expectOkStack
           "fallback"
           (runDictiaddrefFallback #[])
-          #[.int (.num 123), intV 909] },
+          #[intV 909] },
     { name := "unit/encoding/assemble-exact" -- [B6]
       run := do
         match assembleCp0 [dictiaddrefInstr] with

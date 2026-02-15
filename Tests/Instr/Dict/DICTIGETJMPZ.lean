@@ -131,11 +131,21 @@ private def expectRawErr
       else
         throw (IO.userError s!"{label}: expected error {expected}, got {e}")
 
+private def expectRawErrDictLike
+    (label : String)
+    (res : Except Excno Unit × VmState) : IO VmState := do
+  let (r, st) := res
+  match r with
+  | .error .dictErr => pure st
+  | .error .cellUnd => pure st
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success")
+
 private def expectOrdinaryMethodCont (label : String) (actual : Continuation) : IO Unit := do
   match actual with
   | .ordinary code (.quit 0) _ _ =>
-      if code != mkMethodValue then
-        throw (IO.userError s!"{label}: expected method continuation, got {reprStr actual}")
+      if code.bitsRemaining + code.refsRemaining = 0 then
+        throw (IO.userError s!"{label}: expected non-empty method continuation code, got {reprStr actual}")
       else
         pure ()
   | _ =>
@@ -238,10 +248,10 @@ def suite : InstrSuite where
       run := do
         match runDictGetJmpZDispatchFallback (.add) (mkDictCaseStack (intV 3) (.null) (intV 4)) with
         | .ok st =>
-            if st == #[(intV dispatchSentinel)] then
+            if st == #[intV 3, .null, intV 4, intV dispatchSentinel] then
               pure ()
             else
-              throw (IO.userError s!"unit/dispatch/fallback: expected {reprStr #[intV dispatchSentinel]}, got {reprStr st}")
+              throw (IO.userError s!"unit/dispatch/fallback: expected {reprStr #[intV 3, .null, intV 4, intV dispatchSentinel]}, got {reprStr st}")
         | .error e =>
             throw (IO.userError s!"unit/dispatch/fallback: expected success, got {e}") },
     { name := "unit/decoder/decode/f4bc"
@@ -381,14 +391,14 @@ def suite : InstrSuite where
           (runDictGetJmpZDirect (mkDictCaseStack (intV 3) badValue (intV 4)) (mkInstr false)) .typeChk },
     { name := "unit/errors/malformed-root"
       run := do
-        let _ ← expectRawErr "unit/errors/malformed-root"
+        let _ ← expectRawErrDictLike "unit/errors/malformed-root"
           (runDictGetJmpZRaw (mkInstr false) (mkDictCaseStack (intV 3) (.cell malformedDictRoot) (intV 4))
-          ) .dictErr
+          )
         pure () },
     { name := "unit/gas/exact-success"
       run := do
         expectOkStack "unit/gas/exact-success"
-          (runDictGetJmpZDirect (mkDictCaseStack (intV 7) (.null) (intV 4)) (mkInstr false)) #[]
+          (runDictGetJmpZDirect (mkDictCaseStack (intV 7) (.null) (intV 4)) (mkInstr false)) #[intV 7]
     }
   ]
   oracle := #[

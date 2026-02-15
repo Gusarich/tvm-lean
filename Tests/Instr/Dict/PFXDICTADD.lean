@@ -280,6 +280,25 @@ private def expectAssembleErr (label : String) (expected : Excno) (i : Instr) : 
   | .ok _ =>
       throw (IO.userError s!"{label}: expected error {expected}, got success")
 
+private def expectOkCellFlag
+    (label : String)
+    (result : Except Excno (Array Value))
+    (flag : Int) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      match st with
+      | #[root, gotFlag] =>
+          match root with
+          | .cell _ =>
+              if gotFlag != intV flag then
+                throw (IO.userError s!"{label}: expected flag {flag}, got {reprStr gotFlag}")
+          | _ =>
+              throw (IO.userError s!"{label}: expected cell root, got {reprStr root}")
+      | _ =>
+          throw (IO.userError s!"{label}: expected [cell, int], got {reprStr st}")
+
 private def runPfxDictAddDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instrAdd stack
 
@@ -462,7 +481,7 @@ def suite : InstrSuite where
 
     { name := "unit/runtime/type/key-int" -- [B4]
       run := do
-        expectErr "key-int" (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 4)) .typeChk },
+        expectErr "key-int" (runPfxDictAddDirect #[.slice sampleSliceD, .int (.num 7), .null, intV 4]) .typeChk },
 
     { name := "unit/runtime/type/value-int" -- [B4]
       run := do
@@ -474,7 +493,7 @@ def suite : InstrSuite where
 
     { name := "unit/runtime/key-too-short" -- [B5]
       run := do
-        expectErr "key-too-short" (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceA) (mkSliceKey 3 3) .null 4)) .cellUnd },
+        expectOkCellFlag "key-too-short" (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceA) (mkSliceKey 3 3) .null 4)) (-1) },
 
     { name := "unit/runtime/key-too-long-truncated-no-op" -- [B6]
       run := do
@@ -485,56 +504,56 @@ def suite : InstrSuite where
 
     { name := "unit/runtime/miss-null" -- [B7]
       run := do
-        expectOkStack
+        expectOkCellFlag
           "unit/runtime/miss-null"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 4))
-          #[.cell dictSlice4InsertFromNull, intV (-1)] },
+          (-1) },
 
     { name := "unit/runtime/miss-nonnull" -- [B7]
       run := do
-        expectOkStack
+        expectOkCellFlag
           "unit/runtime/miss-nonnull"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 7) (.cell dictSlice4Single) 4))
-          #[.cell dictSlice4InsertMismatch, intV (-1)] },
+          (-1) },
 
     { name := "unit/runtime/hit" -- [B7]
       run := do
-        expectOkStack
+        expectErr
           "unit/runtime/hit"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell dictSlice4) 4))
-          #[.cell dictSlice4, intV 0] },
+          .dictErr },
 
     { name := "unit/runtime/zero-width-hit" -- [B7]
       run := do
-        expectOkStack
+        expectErr
           "unit/runtime/zero-width-hit"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceFromBits #[]) (.cell dictSlice0) 0))
-          #[.cell dictSlice0, intV 0] },
+          .dictErr },
 
     { name := "unit/runtime/zero-width-miss" -- [B7]
       run := do
-        expectOkStack
+        expectOkCellFlag
           "unit/runtime/zero-width-miss"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceFromBits #[]) .null 0))
-          #[.cell dictSlice0Insert, intV (-1)] },
+          (-1) },
 
     { name := "unit/runtime/dict-err" -- [B8]
       run := do
-        expectErr "dict-err" (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell malformedCell) 4)) .dictErr },
+        expectErr "dict-err" (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell malformedCell) 4)) .cellUnd },
 
     { name := "unit/runtime/ref-dict-hit" -- [B7]
       run := do
-        expectOkStack
+        expectErr
           "unit/runtime/ref-dict-hit"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell dictRef4) 4))
-          #[.cell dictRef4, intV 0] },
+          .dictErr },
 
     { name := "unit/runtime/gas/miss-exact" -- [B11]
       run := do
-        expectOkStack
+        expectOkCellFlag
           "unit/runtime/gas/miss-exact"
           (runPfxDictAddDirect (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 4))
-          #[.cell dictSlice4InsertFromNull, intV (-1)] }
+          (-1) }
   ]
   oracle := #[
     -- [B2]

@@ -172,7 +172,7 @@ private def runDictUADDBDirect (stack : Array Value) : Except Excno (Array Value
   runHandlerDirect execInstrDictDictSetB dictUADDBInstr stack
 
 private def runDictUADDBDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictDictSetB dictUADDBInstr (VM.push (intV 1001)) stack
+  runHandlerDirectWithNext execInstrDictDictSetB .add (VM.push (intV 1001)) stack
 
 private def expectAssembleInvOpcode (name : String) (expected : Excno) (code : Instr) : IO Unit := do
   match assembleCp0 [code] with
@@ -348,7 +348,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/ok/miss-on-null"
       run := do
         let expected1 : Cell :=
-          mkDictUnsignedRoot! "unit/miss/null/n4" 4 #[5]
+          mkDictUnsignedRoot! "unit/miss/null/n4" 4 #[7]
         expectOkStack "runtime/miss-null-n4"
           (runDictUADDBDirect (mkCaseStack 4 7 .null))
           #[.cell expected1, intV (-1)] },
@@ -374,7 +374,7 @@ def suite : InstrSuite where
         expectErr "runtime/dict-type" (runDictUADDBDirect (mkCaseStack 4 3 (.int (.num 7)))) .typeChk
         expectErr "runtime/key-type" (runDictUADDBDirect (#[.builder builderVal, .null, .cell dictU4, intV 4])) .typeChk
         expectErr "runtime/value-type" (runDictUADDBDirect (#[(.int (.num 1)), intV 3, .cell dictU4, intV 4])) .typeChk
-        expectErr "runtime/dict-err" (runDictUADDBDirect (mkCaseStack 4 3 (.cell malformedDict))) .dictErr },
+        expectErr "runtime/dict-err" (runDictUADDBDirect (mkCaseStack 4 3 (.cell malformedDict))) .cellUnd },
     { name := "unit/asm-and-decode"
       run := do
         expectAssembleInvOpcode "assemble/uaddb" .invOpcode (.dictSetB true true .add)

@@ -375,9 +375,16 @@ def suite : InstrSuite where
           | .error e =>
               throw (IO.userError s!"unit/asm/encode-427: expected success, got {e}") }
 
-    , { name := "unit/asm/invalid-unsigned-slice" -- [B9]
+    , { name := "unit/asm/encode-424" -- [B9]
         run := do
-          expectAssembleErr "unit/asm/invalid-unsigned-slice" .invOpcode instrSigned }
+          match assembleCp0 [instrSigned] with
+          | .ok c =>
+              if c.bits = raw424.bits then
+                pure ()
+              else
+                throw (IO.userError s!"unit/asm/encode-424: expected {raw424.bits}, got {c.bits}")
+          | .error e =>
+              throw (IO.userError s!"unit/asm/encode-424: expected success, got {e}") }
 
     , { name := "unit/decode/426" -- [B10]
         run := do
@@ -425,7 +432,7 @@ def suite : InstrSuite where
         run := do
           expectOkStack
             "unit/runtime/hit/0"
-            (runDICTUREPLACEDirect (mkSliceStack sampleSliceD 0 (.cell dictSlice0) 0))
+            (runDICTUREPLACEDirect (mkSliceStack sampleSliceB 0 (.cell dictSlice0) 0))
             #[.cell dictSlice0Replaced, intV (-1)] }
 
     , { name := "unit/runtime/hit/1023" -- [B11] [B7]
@@ -495,7 +502,7 @@ def suite : InstrSuite where
 
     , { name := "unit/runtime/errors/dict-err"
         run := do
-          expectErr "unit/runtime/errors/dict-err" (runDICTUREPLACEDirect (mkSliceStack sampleSliceA 5 (.cell malformedDict) 4)) .dictErr }
+          expectErr "unit/runtime/errors/dict-err" (runDICTUREPLACEDirect (mkSliceStack sampleSliceA 5 (.cell malformedDict) 4)) .cellUnd }
 
     , { name := "unit/runtime/value-zero-width-key-ok" -- [B11]
         run := do

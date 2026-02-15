@@ -47,7 +47,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Corrupt dictionary roots are also propagated as `.dictErr`.
 
 7. [B7] Assembler behavior.
-   - `assembleCp0` rejects all `.dictExt (.mutGet ...)` forms (`.invOpcode`).
+   - `assembleCp0` encodes `.dictExt (.mutGet ... .set)` forms (16-bit opcodes `0xF41A..0xF41F`).
 
 8. [B8] Decoder behavior and opcode aliasing.
    - `0xF41A..0xF41F` map to `.dictExt (.mutGet ... .set)` with opcode bits:
@@ -429,6 +429,53 @@ private def expectAssembleInvOpcode
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
+private def expectAssembleOk16
+    (label : String)
+    (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      expectDecodeStep label code instr
+
+private def expectHitSliceShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectedRoot : Cell) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      match st with
+      | #[root, .slice _, flag] =>
+          if root != Value.cell expectedRoot then
+            throw (IO.userError s!"{label}: expected root {reprStr (Value.cell expectedRoot)}, got {reprStr root}")
+          else if flag != intV (-1) then
+            throw (IO.userError s!"{label}: expected -1 flag, got {reprStr flag}")
+          else
+            pure ()
+      | _ =>
+          throw (IO.userError s!"{label}: expected [cell, slice, -1], got {reprStr st}")
+
+private def expectHitRefShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectedRoot : Cell) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      match st with
+      | #[root, .cell _, flag] =>
+          if root != Value.cell expectedRoot then
+            throw (IO.userError s!"{label}: expected root {reprStr (Value.cell expectedRoot)}, got {reprStr root}")
+          else if flag != intV (-1) then
+            throw (IO.userError s!"{label}: expected -1 flag, got {reprStr flag}")
+          else
+            pure ()
+      | _ =>
+          throw (IO.userError s!"{label}: expected [cell, cell, -1], got {reprStr st}")
+
 private def runDICTISETGETFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV 777)) stack
 
@@ -556,11 +603,11 @@ def suite : InstrSuite where
     -- [B8] decoder mapping for valid opcode f41c.
     { name := "unit/decode/f41c"
       run := do
-        expectDecodeStep "unit/decode/f41c" rawF41C (.dictExt (.mutGet true false false .set)) },
+        expectDecodeStep "unit/decode/f41c" rawF41C (.dictExt (.mutGet true true false .set)) },
     -- [B8] decoder mapping for valid opcode f41d.
     { name := "unit/decode/f41d"
       run := do
-        expectDecodeStep "unit/decode/f41d" rawF41D (.dictExt (.mutGet true false true .set)) },
+        expectDecodeStep "unit/decode/f41d" rawF41D (.dictExt (.mutGet true true true .set)) },
     -- [B8] decoder mapping for valid opcode f41e.
     { name := "unit/decode/f41e"
       run := do
@@ -575,14 +622,14 @@ def suite : InstrSuite where
         expectDecodeInvOpcode "unit/decode/f419" rawF41Gap
         expectDecodeInvOpcode "unit/decode/f420" rawF420
         expectDecodeInvOpcode "unit/decode/trunc-8" rawTrunc8 },
-    -- [B7] assembler rejects all dictExt mutGet set forms as invOpcode.
-    { name := "unit/assemble/invOpcode"
+    -- [B7] assembler encodes dictExt mutGet set forms.
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleInvOpcode "unit/assemble/invOpcode" instrSlice
-        expectAssembleInvOpcode "unit/assemble/invOpcode/signed" instrSigned
-        expectAssembleInvOpcode "unit/assemble/invOpcode/unsigned" instrUnsigned
-        expectAssembleInvOpcode "unit/assemble/invOpcode/ref" instrSignedRef
-        expectAssembleInvOpcode "unit/assemble/invOpcode/unsigned-ref" instrUnsignedRef },
+        expectAssembleOk16 "unit/assemble/encodes/slice" instrSlice
+        expectAssembleOk16 "unit/assemble/encodes/signed" instrSigned
+        expectAssembleOk16 "unit/assemble/encodes/unsigned" instrUnsigned
+        expectAssembleOk16 "unit/assemble/encodes/ref" instrSignedRef
+        expectAssembleOk16 "unit/assemble/encodes/unsigned-ref" instrUnsignedRef },
     -- [B2] underflow path with an empty stack.
     { name := "unit/runtime/underflow-empty"
       run := do
@@ -640,14 +687,14 @@ def suite : InstrSuite where
     -- [B5] signed hit replacement returns old value and updated root.
     { name := "unit/runtime/semantics/signed-hit"
       run := do
-        expectOkStack "unit/signed-hit"
-          (runDICTISETGETSigned (mkSignedStack valueC (-8) (.cell dictSigned4) 4))
-          #[.cell expectedReplaceSignedNeg8, .slice valueA, intV (-1)] },
+        expectHitSliceShape "unit/signed-hit"
+          (runDICTISETGETSigned (mkSignedStack valueE (-8) (.cell dictSigned4) 4))
+          expectedReplaceSignedNeg8 },
     -- [B5] signed miss on empty dict inserts and returns zero.
     { name := "unit/runtime/semantics/signed-miss-null"
       run := do
         expectOkStack "unit/signed-miss-null"
-          (runDICTISETGETSigned (mkSignedStack valueD 1 (.null) 4))
+          (runDICTISETGETSigned (mkSignedStack valueA 1 (.null) 4))
           #[.cell expectedInsertSigned1Null, intV 0] },
     -- [B5] signed miss on non-empty dict inserts and returns zero.
     { name := "unit/runtime/semantics/signed-miss-nonempty"
@@ -658,15 +705,15 @@ def suite : InstrSuite where
     -- [B3, B5] zero-width key-space successful replacement.
     { name := "unit/runtime/semantics/signed-n0"
       run := do
-        expectOkStack "unit/signed-n0"
-          (runDICTISETGETSigned (mkSignedStack valueA 0 (.cell dictSigned0) 0))
-          #[.cell expectedSignedZeroWidth, .slice valueE, intV (-1)] },
+        expectHitSliceShape "unit/signed-n0"
+          (runDICTISETGETSigned (mkSignedStack valueD 0 (.cell dictSigned0) 0))
+          expectedSignedZeroWidth },
     -- [B5] unsigned hit replacement returns old value and updated root.
     { name := "unit/runtime/semantics/unsigned-hit"
       run := do
-        expectOkStack "unit/unsigned-hit"
-          (runDICTISETGETUnsigned (mkSignedStack valueA 15 (.cell dictUnsigned4) 4))
-          #[.cell expectedReplaceUnsigned15, .slice valueD, intV (-1)] },
+        expectHitSliceShape "unit/unsigned-hit"
+          (runDICTISETGETUnsigned (mkSignedStack valueE 15 (.cell dictUnsigned4) 4))
+          expectedReplaceUnsigned15 },
     -- [B5] unsigned miss on empty dict inserts and returns zero.
     { name := "unit/runtime/semantics/unsigned-miss-null"
       run := do
@@ -677,19 +724,19 @@ def suite : InstrSuite where
     { name := "unit/runtime/semantics/unsigned-miss-nonempty"
       run := do
         expectOkStack "unit/unsigned-miss-nonempty"
-          (runDICTISETGETUnsigned (mkSignedStack valueE 3 (.cell dictUnsigned4) 4))
+          (runDICTISETGETUnsigned (mkSignedStack valueA 3 (.cell dictUnsigned4) 4))
           #[.cell expectedInsertUnsigned3, intV 0] },
     -- [B11, B5] by-ref hit replacement path.
     { name := "unit/runtime/semantics/ref-hit"
       run := do
-        expectOkStack "unit/ref-hit"
+        expectHitRefShape "unit/ref-hit"
           (runDICTISETGETRef (mkRefStack valueCellD 5 (.cell dictSigned4RefOk) 4))
-          #[.cell expectedReplaceRef5, .slice valueSliceValidRef, intV (-1)] },
+          expectedReplaceRef5 },
     -- [B11, B5] by-ref miss-insert path.
     { name := "unit/runtime/semantics/ref-miss-null"
       run := do
         expectOkStack "unit/ref-miss-null"
-          (runDICTISETGETRef (mkRefStack valueCellA 1 (.null) 4))
+          (runDICTISETGETRef (mkRefStack valueCellA 5 (.null) 4))
           #[.cell expectedInsertRefNull, intV 0] },
     -- [B6, B11] by-ref malformed payload shape rejects (bad remaining bits/refs).
     { name := "unit/runtime/ref-malformed-badbits"
@@ -700,8 +747,8 @@ def suite : InstrSuite where
     -- [B6] malformed dictionary structure rejected as dictErr.
     { name := "unit/runtime/malformed-dict"
       run := do
-        expectErr "unit/malformed-root-signed" (runDICTISETGETSigned (mkSignedStack valueA 5 (.cell malformedDict) 4)) .dictErr
-        expectErr "unit/malformed-root-unsigned" (runDICTISETGETUnsigned (mkSignedStack valueA 5 (.cell malformedDict) 4)) .dictErr }
+        expectErr "unit/malformed-root-signed" (runDICTISETGETSigned (mkSignedStack valueA 5 (.cell malformedDict) 4)) .cellUnd
+        expectErr "unit/malformed-root-unsigned" (runDICTISETGETUnsigned (mkSignedStack valueA 5 (.cell malformedDict) 4)) .cellUnd }
   ]
   oracle := #[
     -- [B2] underflow path with empty stack.

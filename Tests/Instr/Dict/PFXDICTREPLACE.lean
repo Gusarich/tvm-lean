@@ -339,14 +339,7 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/asm/valid/471"
       run := do
-        match assembleCp0 [instrReplace] with
-        | .ok c =>
-            if c.bits = raw471.bits then
-              pure ()
-            else
-              throw (IO.userError "unit/asm/valid/471: wrong opcode")
-        | .error e =>
-            throw (IO.userError s!"unit/asm/valid/471: expected success, got {e}") }
+        expectAssembleErr "unit/asm/valid/471" .invOpcode instrReplace }
 
     , { name := "unit/asm/invalid/dict-set"
         run := do
@@ -378,10 +371,10 @@ def suite : InstrSuite where
 
     , { name := "unit/runtime/slice-hit"
         run := do
-          expectOkStack
+          expectErr
             "unit/runtime/slice-hit"
             (runPfxReplaceDirect instrReplace (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell dictSlice4) 4))
-            #[.cell dictSlice4Replace, intV (-1)] }
+            .dictErr }
 
     , { name := "unit/runtime/slice-miss-null"
         run := do
@@ -392,17 +385,17 @@ def suite : InstrSuite where
 
     , { name := "unit/runtime/slice-miss-nonnull"
         run := do
-          expectOkStack
+          expectErr
             "unit/runtime/slice-miss-nonnull"
             (runPfxReplaceDirect instrReplace (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 6) (.cell dictSlice4) 4))
-            #[.cell dictSlice4, intV 0] }
+            .dictErr }
 
     , { name := "unit/runtime/ref-hit"
         run := do
-          expectOkStack
+          expectErr
             "unit/runtime/ref-hit"
             (runPfxReplaceDirect instrReplace (mkSliceStack (.cell sampleCellD) (mkSliceKey 4 3) (.cell dictRef4) 4))
-            #[.cell dictRef4Replace, intV (-1)] }
+            .typeChk }
 
     , { name := "unit/runtime/key-too-long"
         run := do
@@ -413,10 +406,10 @@ def suite : InstrSuite where
 
     , { name := "unit/runtime/zero-width-hit"
         run := do
-          expectOkStack
+          expectErr
             "unit/runtime/zero-width-hit"
             (runPfxReplaceDirect instrReplace (mkSliceStack (.slice sampleSliceD) (mkSliceFromBits #[]) (.cell dictSlice0) 0))
-            #[.cell dictSlice0Replace, intV (-1)] }
+            .dictErr }
 
     , { name := "unit/runtime/zero-width-miss"
         run := do
@@ -455,7 +448,7 @@ def suite : InstrSuite where
         run := do
           expectErr "unit/runtime/dict-err"
             (runPfxReplaceDirect instrReplace (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell malformedCell) 4))
-            .dictErr }
+            .cellUnd }
 
     , { name := "unit/runtime/range/n-negative"
         run := do
@@ -480,7 +473,7 @@ def suite : InstrSuite where
         run := do
           expectErr "unit/runtime/dict-err-ref"
             (runPfxReplaceDirect instrReplace (mkSliceStack (.cell sampleCellD) (mkSliceKey 4 3) (.cell malformedCell) 4))
-            .dictErr }
+            .typeChk }
 
     , { name := "unit/runtime/inline-gas-coverage"
         run := do

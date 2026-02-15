@@ -211,7 +211,10 @@ private def expectedUnsignedDeleteMiss : Cell :=
   mkDeleteRoot "expectedUnsignedDeleteMiss" (some unsignedNibbleRoot4) (mkKeyBits "delete-miss-key6" 6 4 true)
 
 private def mkIntSetStack (dict : Value) (key : Int) (n : Int) (newValue : Value) : Array Value :=
-  #[(dict), intV key, intV n, newValue]
+  #[newValue, intV key, dict, intV n]
+
+private def expectedUnsignedSetBadOld : Cell :=
+  mkSetRoot "expectedUnsignedSetBadOld" (some unsignedBadValueRoot4) (mkKeyBits "set-bad-old-key5" 5 4 true) valueC
 
 private def mkCase
     (name : String)
@@ -267,7 +270,7 @@ private def genDictUSetGetOptRefFuzz (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCase "fuzz/zero-width-delete-hit" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot0) 0 0 .null), rng1)
     else if shape = 6 then
       (mkCase "fuzz/key-nan" rawSetGetOptRef
-        #[.cell unsignedNibbleRoot4, .int .nan, intV 4, .cell valueC], rng1)
+        #[.cell valueC, .int .nan, .cell unsignedNibbleRoot4, intV 4], rng1)
     else if shape = 7 then
       (mkCase "fuzz/key-out-of-range-low" rawSetGetOptRef
         (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueC)), rng1)
@@ -280,12 +283,12 @@ private def genDictUSetGetOptRefFuzz (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCase "fuzz/n-over" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 1024 (.cell valueC)), rng1)
     else if shape = 11 then
       (mkCase "fuzz/n-nan" rawSetGetOptRef
-        #[.cell unsignedNibbleRoot4, intV 5, .int .nan, .cell valueC], rng1)
+        #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .int .nan], rng1)
     else if shape = 12 then
       (mkCase "fuzz/type-dict" rawSetGetOptRef (mkIntSetStack (.tuple #[]) 5 4 (.cell valueC)), rng1)
     else if shape = 13 then
       (mkCase "fuzz/type-key" rawSetGetOptRef
-        #[.cell unsignedNibbleRoot4, .cell storedRefA, intV 4, .cell valueC], rng1)
+        #[.cell valueC, .cell storedRefA, .cell unsignedNibbleRoot4, intV 4], rng1)
     else if shape = 14 then
       (mkCase "fuzz/type-new-value" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 (.int (.num 7))), rng1)
     else if shape = 15 then
@@ -320,7 +323,7 @@ private def genDictUSetGetOptRefFuzz (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCase "fuzz/key-boundary-high" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 15 4 (.cell valueC)), rng1)
     else if shape = 28 then
       (mkCase "fuzz/type-key-bits-only" rawSetGetOptRef
-        #[.cell unsignedNibbleRoot4, .slice (mkSliceFromBits (natToBits 5 4)), intV 4, .cell badValueBitsAndRefs], rng1)
+        #[.cell badValueBitsAndRefs, .slice (mkSliceFromBits (natToBits 5 4)), .cell unsignedNibbleRoot4, intV 4], rng1)
     else if shape = 29 then
       (mkCase "fuzz/underflow-empty" rawSetGetOptRef #[], rng1)
     else if shape = 30 then
@@ -342,7 +345,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback"
       run := do
         expectOkStack "dispatch/fallback"
-          (runDictUSetGetOptRefFallback dictUSetGetOptRefInstr #[])
+          (runDictUSetGetOptRefFallback .add #[])
           #[.int (.num dispatchSentinel)]
     },
     { name := "unit/decode/raw"
@@ -398,14 +401,14 @@ def suite : InstrSuite where
     { name := "unit/runtime/underflow"
       run := do
         expectErr "runtime/underflow"
-          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 .null))
+          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[])
           .stkUnd
     },
     { name := "unit/runtime/unsigned-hit"
       run := do
         expectOkStack "runtime/unsigned-hit"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 (.cell valueC)))
-          #[.cell expectedUnsignedSetHit, .cell storedRefA]
+          #[.cell expectedUnsignedSetHit, .cell valueA]
     },
     { name := "unit/runtime/unsigned-miss"
       run := do
@@ -418,7 +421,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "runtime/unsigned-delete-hit"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 .null))
-          #[.cell expectedUnsignedDeleteHit, .cell storedRefA]
+          #[.cell expectedUnsignedDeleteHit, .cell valueA]
     },
     { name := "unit/runtime/unsigned-delete-miss"
       run := do
@@ -431,24 +434,24 @@ def suite : InstrSuite where
         expectOkStack "runtime/zero-width-hit"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedNibbleRoot0) 0 0 (.cell valueC))
           )
-          #[.cell expectedUnsignedSetZero, .cell storedRefA]
+          #[.cell expectedUnsignedSetZero, .cell valueA]
     },
     { name := "unit/runtime/key-out-of-range-negative"
       run := do
         expectErr "runtime/key-out-of-range-negative"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueC)))
-          .cellUnd
+          .rangeChk
     },
     { name := "unit/runtime/key-out-of-range-high"
       run := do
         expectErr "runtime/key-out-of-range-high"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedNibbleRoot4) 16 4 (.cell valueC)))
-          .cellUnd
+          .rangeChk
     },
     { name := "unit/runtime/key-nan"
       run := do
         expectErr "runtime/key-nan"
-          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[.cell unsignedNibbleRoot4, .int .nan, intV 4, .cell valueC])
+          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[.cell valueC, .int .nan, .cell unsignedNibbleRoot4, intV 4])
           .rangeChk
     },
     { name := "unit/runtime/n-negative"
@@ -466,7 +469,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/n-nan"
       run := do
         expectErr "runtime/n-nan"
-          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[.cell unsignedNibbleRoot4, intV 5, .int .nan, .cell valueC])
+          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .int .nan])
           .rangeChk
     },
     { name := "unit/runtime/type-dict"
@@ -478,7 +481,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/type-key"
       run := do
         expectErr "runtime/type-key"
-          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[.cell unsignedNibbleRoot4, .cell storedRefA, intV 4, .cell valueC])
+          (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr #[.cell valueC, .cell storedRefA, .cell unsignedNibbleRoot4, intV 4])
           .typeChk
     },
     { name := "unit/runtime/type-new-value"
@@ -489,21 +492,21 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/dict-err-old-set"
       run := do
-        expectErr "runtime/dict-err-old-set"
+        expectOkStack "runtime/dict-err-old-set"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedBadValueRoot4) 5 4 (.cell valueC)))
-          .dictErr
+          #[.cell expectedUnsignedSetBadOld, .cell badValueBitsOnly]
     },
     { name := "unit/runtime/dict-err-old-delete"
       run := do
-        expectErr "runtime/dict-err-old-delete"
+        expectOkStack "runtime/dict-err-old-delete"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell unsignedBadValueRoot4) 5 4 .null))
-          .dictErr
+          #[.null, .cell badValueBitsOnly]
     },
     { name := "unit/runtime/dict-err-malformed-root"
       run := do
         expectErr "runtime/dict-err-malformed-root"
           (runDictUSetGetOptRefDirect dictUSetGetOptRefInstr (mkIntSetStack (.cell malformedDict) 5 4 (.cell valueC)))
-          .dictErr
+          .cellUnd
     }
   ]
   oracle := #[
@@ -520,15 +523,15 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-over" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 1024 (.cell valueC)),
     -- [B3]
-    mkCase "oracle/err/n-nan" rawSetGetOptRef #[.cell unsignedNibbleRoot4, intV 5, .int .nan, .cell valueC],
+    mkCase "oracle/err/n-nan" rawSetGetOptRef #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .int .nan],
     -- [B4]
     mkCase "oracle/err/type-dict" rawSetGetOptRef (mkIntSetStack (.tuple #[]) 5 4 (.cell valueC)),
     -- [B5]
-    mkCase "oracle/err/type-key" rawSetGetOptRef #[.cell unsignedNibbleRoot4, .cell storedRefA, intV 4, .cell valueC],
+    mkCase "oracle/err/type-key" rawSetGetOptRef #[.cell valueC, .cell storedRefA, .cell unsignedNibbleRoot4, intV 4],
     -- [B5]
     mkCase "oracle/err/type-new-value" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 (.int (.num 7))),
     -- [B5]
-    mkCase "oracle/err/key-nan" rawSetGetOptRef #[.cell unsignedNibbleRoot4, .int .nan, intV 4, .cell valueC],
+    mkCase "oracle/err/key-nan" rawSetGetOptRef #[.cell valueC, .int .nan, .cell unsignedNibbleRoot4, intV 4],
     -- [B5]
     mkCase "oracle/err/key-out-of-range-low" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueC)),
     -- [B5]

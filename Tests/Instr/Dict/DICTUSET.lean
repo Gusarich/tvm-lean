@@ -90,7 +90,7 @@ private def raw416 : Cell := opcode16 0xF416
 private def raw417 : Cell := opcode16 0xF417
 private def raw411 : Cell := opcode16 0xF411
 private def raw418 : Cell := opcode16 0xF418
-private def rawF4 : Cell := opcode16 0xF4
+private def rawF4 : Cell := Cell.mkOrdinary (natToBits 0xF4 8) #[]
 
 private def opcodeSlice16 (w : Nat) : Slice :=
   Slice.ofCell (Cell.mkOrdinary (natToBits w 16) #[])
@@ -443,7 +443,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/runtime/malformed-root" -- [B8]
       run := do
-        expectErr "malformed-root" (runDICTUSET (mkStack sampleSliceA 5 (.cell malformedDictCell) 8)) .dictErr }
+        expectErr "malformed-root" (runDICTUSET (mkStack sampleSliceA 5 (.cell malformedDictCell) 8)) .cellUnd }
     ,
     { name := "unit/asm/encode/decode" -- [B9]
       run := do

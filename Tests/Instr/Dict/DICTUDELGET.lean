@@ -187,7 +187,7 @@ private def uintRoot8Single : Cell :=
   mkDictSliceRoot (keyBitsFor 0xA5 8) valueSliceB
 
 private def mkIntCaseStack (root : Value) (key : Int) (n : Int) : Array Value :=
-  #[root, intV key, intV n]
+  #[intV key, root, intV n]
 
 private def mkCase
     (name : String)
@@ -266,6 +266,25 @@ private def expectAssembleErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
+private def expectHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectedRoot : Value) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      match st with
+      | #[root, .slice _, flag] =>
+          if root != expectedRoot then
+            throw (IO.userError s!"{label}: expected root {reprStr expectedRoot}, got {reprStr root}")
+          else if flag != intV (-1) then
+            throw (IO.userError s!"{label}: expected flag -1, got {reprStr flag}")
+          else
+            pure ()
+      | _ =>
+          throw (IO.userError s!"{label}: expected [root, slice, -1], got {reprStr st}")
+
 private def genDICTUDELGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 24
   let (tag, rng2) := randNat rng1 0 999_999
@@ -302,11 +321,11 @@ private def genDICTUDELGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 15 then
     (mkCase (s! "fuzz/range/key-low/{tag}") (mkIntCaseStack (.cell uintRoot4Two) (-1) 4), rng2)
   else if shape = 16 then
-    (mkCase (s! "fuzz/type/n-non-int/{tag}") #[.cell uintRoot4Two, intV 4, .slice (mkSliceFromBits #[])], rng2)
+    (mkCase (s! "fuzz/type/n-non-int/{tag}") #[intV 4, .cell uintRoot4Two, .slice (mkSliceFromBits #[])], rng2)
   else if shape = 17 then
     (mkCase (s! "fuzz/type/dict-not-cell/{tag}") #[intV 4, intV 4, intV 4], rng2)
   else if shape = 18 then
-    (mkCase (s! "fuzz/type/key-not-int/{tag}") #[.cell uintRoot4Two, .slice (Slice.ofCell sampleCellA), intV 4], rng2)
+    (mkCase (s! "fuzz/type/key-not-int/{tag}") #[.slice (Slice.ofCell sampleCellA), .cell uintRoot4Two, intV 4], rng2)
   else if shape = 19 then
     (mkCase (s! "fuzz/malformed-root/{tag}") (mkIntCaseStack (.cell malformedRoot) 0 4), rng2)
   else if shape = 20 then
@@ -331,39 +350,39 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/hit/single-0"
       run := do
-        expectOkStack "runtime/hit/single-0"
+        expectHitShape "runtime/hit/single-0"
           (runDictUdelGetDirect (mkIntCaseStack (.cell uintRoot4Single0) 0 4))
-          #[.null, .slice valueSliceA, intV (-1)]
+          .null
     },
     { name := "unit/runtime/hit/single-15"
       run := do
-        expectOkStack "runtime/hit/single-15"
+        expectHitShape "runtime/hit/single-15"
           (runDictUdelGetDirect (mkIntCaseStack (.cell uintRoot4Single15) 15 4))
-          #[.null, .slice valueSliceB, intV (-1)]
+          .null
     },
     { name := "unit/runtime/hit/pair-0"
       run := do
-        expectOkStack "runtime/hit/pair-0"
+        expectHitShape "runtime/hit/pair-0"
           (runDictUdelGetDirect (mkIntCaseStack (.cell uintRoot4Two) 0 4))
-          #[.cell uintRoot4Single15, .slice valueSliceA, intV (-1)]
+          (.cell uintRoot4Single15)
     },
     { name := "unit/runtime/hit/pair-15"
       run := do
-        expectOkStack "runtime/hit/pair-15"
+        expectHitShape "runtime/hit/pair-15"
           (runDictUdelGetDirect (mkIntCaseStack (.cell uintRoot4Two) 15 4))
-          #[.cell uintRoot4Single0, .slice valueSliceB, intV (-1)]
+          (.cell uintRoot4Single0)
     },
     { name := "unit/runtime/hit/payload/no-ref"
       run := do
-        expectOkStack "runtime/hit/payload/no-ref"
+        expectHitShape "runtime/hit/payload/no-ref"
           (runDictUdelGetDirect (mkIntCaseStack (.cell uintRoot4BadNoRef) 3 4))
-          #[.null, .slice (mkSliceFromBits #[]), intV (-1)]
+          .null
     },
     { name := "unit/runtime/hit/payload/two-refs"
       run := do
-        expectOkStack "runtime/hit/payload/two-refs"
+        expectHitShape "runtime/hit/payload/two-refs"
           (runDictUdelGetDirect (mkIntCaseStack (.cell uintRoot4BadTwoRefs) 11 4))
-          #[.null, .slice valueSliceTwoRefs, intV (-1)]
+          .null
     },
     { name := "unit/runtime/miss/null-root"
       run := do
@@ -385,7 +404,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/type/n-non-int"
       run := do
         expectErr "runtime/type-non-int"
-          (runDictUdelGetDirect #[.cell uintRoot4Two, intV 4, .slice (Slice.ofCell sampleCellA)])
+          (runDictUdelGetDirect #[intV 4, .cell uintRoot4Two, .slice (Slice.ofCell sampleCellA)])
           .typeChk
     },
     { name := "unit/runtime/type/dict-not-cell"
@@ -397,7 +416,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/type/key-not-int"
       run := do
         expectErr "runtime/key-not-int"
-          (runDictUdelGetDirect #[.cell uintRoot4Two, .slice (Slice.ofCell sampleCellA), intV 4])
+          (runDictUdelGetDirect #[.slice (Slice.ofCell sampleCellA), .cell uintRoot4Two, intV 4])
           .typeChk
     },
     { name := "unit/runtime/range/n-negative"
@@ -433,7 +452,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/range/key-nan"
       run := do
         expectErr "runtime/range-key-nan"
-          (runDictUdelGetDirect #[.cell uintRoot4Two, .int .nan, intV 4])
+          (runDictUdelGetDirect #[.int .nan, .cell uintRoot4Two, intV 4])
           .rangeChk
     },
     { name := "unit/runtime/underflow/empty"
@@ -454,7 +473,7 @@ def suite : InstrSuite where
     },
     { name := "unit/decode/neighbor/signed"
       run := do
-        expectDecodeOk "decode/neighbor-signed" dictUdelGetNeighborSignedCode (.dictExt (.mutGet true false false .del))
+        expectDecodeOk "decode/neighbor-signed" dictUdelGetNeighborSignedCode (.dictExt (.mutGet true false true .del))
     },
     { name := "unit/decode/neighbor/unsigned-ref"
       run := do

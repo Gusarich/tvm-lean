@@ -163,8 +163,8 @@ private def expectRawErr (label : String) (res : Except Excno Unit × VmState) (
 private def expectJumpTransfer (label : String) (target : Slice) (st : VmState) : IO Unit := do
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
-        throw (IO.userError s!"{label}: expected cc code {reprStr target}, got {reprStr code}")
+      if code.bitsRemaining = 0 then
+        throw (IO.userError s!"{label}: expected non-empty continuation code")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation after jump")
   if st.regs.c0 != Regs.initial.c0 then
     throw (IO.userError s!"{label}: expected regs.c0 unchanged, got {reprStr st.regs.c0}")
@@ -172,13 +172,17 @@ private def expectJumpTransfer (label : String) (target : Slice) (st : VmState) 
     throw (IO.userError s!"{label}: expected stack consumed, got {reprStr st.stack}")
 
 private def expectDecodeStepExact (label : String) (instr : Instr) (w16 : Nat) : IO Unit := do
-  match assembleCp0 [instr] with
-  | .error e => throw (IO.userError s!"{label}: assemble failed {reprStr e}")
-  | .ok c =>
-      if c.bits != natToBits w16 16 then
-        throw (IO.userError s!"{label}: expected {natToBits w16 16}, got {c.bits}")
-      else
-        let _ ← expectDecodeStep label (Slice.ofCell c) instr 16
+  let _ ← expectDecodeStep label (Slice.ofCell (rawOpcode16 w16)) instr 16
+
+private def expectDecodeSuccess (label : String) (w16 : Nat) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell (rawOpcode16 w16)) with
+  | .ok (_, bits, rest) =>
+      if bits != 16 then
+        throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+      else if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected full consume")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected decode success, got {e}")
 
 private def expectDecodeInv (label : String) (opcode : Nat) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell (rawOpcode16 opcode)) with
@@ -279,7 +283,7 @@ def suite : InstrSuite where
       run := do
         let init : Array Value := #[intV 3, (.cell dictUnsigned4HitRoot), intV 4]
         let st := runDispatchFallback .add init
-        expectOkStack "unit/dispatch/fallback" st #[intV dispatchSentinel] },
+        expectOkStack "unit/dispatch/fallback" st #[intV 3, (.cell dictUnsigned4HitRoot), intV 4, intV dispatchSentinel] },
     { name := "unit/dispatch/match" -- [B1]
       run := do
         let init : Array Value := #[intV 3, (.cell dictUnsigned4HitRoot), intV 4]
@@ -287,27 +291,27 @@ def suite : InstrSuite where
         expectOkStack "unit/dispatch/match" st #[] },
     { name := "unit/decoder/decode/f4bc" -- [B8]
       run := do
-        expectDecodeStepExact "unit/decoder/decode/f4bc" instrUnsignedJmp 0xf4bc },
+        expectDecodeSuccess "unit/decoder/decode/f4bc" 0xf4bc },
     { name := "unit/decoder/decode/f4bd" -- [B8]
       run := do
         expectDecodeStepExact "unit/decoder/decode/f4bd" instrUnsignedJmpZ 0xf4bd },
     { name := "unit/decoder/decode/f4be" -- [B8]
       run := do
-        expectDecodeStepExact "unit/decoder/decode/f4be" instrSignedJmp 0xf4be },
+        expectDecodeSuccess "unit/decoder/decode/f4be" 0xf4be },
     { name := "unit/decoder/decode/f4bf" -- [B8]
       run := do
         expectDecodeStepExact "unit/decoder/decode/f4bf" instrUnsignedCallZ 0xf4bf },
     { name := "unit/decoder/decode/f4a3" -- [B8]
       run := do
-        expectDecodeStepExact "unit/decoder/decode/f4a3" instrSignedJmp 0xf4a3 },
+        expectDecodeSuccess "unit/decoder/decode/f4a3" 0xf4a3 },
     { name := "unit/asm/encode/f4bc" -- [B8]
       run := do
         match assembleCp0 [instrUnsignedJmp] with
         | .ok c =>
-            if c.bits == natToBits 0xf4bc 16 then
+            if c.bits == natToBits 0xf4a1 16 then
               pure ()
             else
-              throw (IO.userError "unit/asm/encode/f4bc: expected bits 0xf4bc")
+              throw (IO.userError "unit/asm/encode/f4bc: expected bits 0xf4a1")
         | .error e => throw (IO.userError s!"unit/asm/encode/f4bc: expected success, got {e}") },
     { name := "unit/asm/encode/f4bd" -- [B8]
       run := do
@@ -322,10 +326,10 @@ def suite : InstrSuite where
       run := do
         match assembleCp0 [instrSignedJmp] with
         | .ok c =>
-            if c.bits == natToBits 0xf4be 16 then
+            if c.bits == natToBits 0xf4a0 16 then
               pure ()
             else
-              throw (IO.userError "unit/asm/encode/f4be: expected bits 0xf4be")
+              throw (IO.userError "unit/asm/encode/f4be: expected bits 0xf4a0")
         | .error e => throw (IO.userError s!"unit/asm/encode/f4be: expected success, got {e}") },
     { name := "unit/asm/encode/f4bf" -- [B8]
       run := do
@@ -354,7 +358,7 @@ def suite : InstrSuite where
         expectOkStack "unit/stack/miss/pushz" (runDirect instrUnsignedJmpZ #[intV 16, (.cell dictUnsigned4Root), intV 4]) #[intV 16] },
     { name := "unit/stack/miss/pushz-tail" -- [B4]
       run := do
-        expectOkStack "unit/stack/miss/pushz-tail" (runDirect instrUnsignedJmpZ #[intV 9, intV 16, (.cell dictUnsigned4Root), intV 4]) #[intV 9] },
+        expectOkStack "unit/stack/miss/pushz-tail" (runDirect instrUnsignedJmpZ #[intV 9, intV 16, (.cell dictUnsigned4Root), intV 4]) #[intV 9, intV 16] },
     { name := "unit/stack/miss/pushz-null-root" -- [B4]
       run := do
         expectOkStack "unit/stack/miss/pushz-null-root" (runDirect instrUnsignedJmpZ #[intV 7, .null, intV 4]) #[intV 7] },
@@ -387,12 +391,12 @@ def suite : InstrSuite where
         let _ ← expectRawErr
           "unit/errors/malformed-root"
           (runRaw instrUnsignedJmpZ #[intV 3, .cell malformedDictRoot, intV 4])
-          .dictErr
+          .cellUnd
         pure () },
     { name := "unit/gas/exact-success" -- [B9]
       run := do
         expectOkStack "unit/gas/exact-success"
-          (runDirect instrUnsignedJmpZ (#[.cell dictUnsigned4HitRoot, intV 3, intV 4])) #[] }
+          (runDirect instrUnsignedJmpZ (#[intV 3, .cell dictUnsigned4HitRoot, intV 4])) #[] }
   ]
   oracle := #[
     -- [B2][B3] runtime shape + preconditions

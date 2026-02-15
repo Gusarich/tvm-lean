@@ -81,21 +81,18 @@ private def instrIntRef : Instr :=
 private def instrIntUnsignedRef : Instr :=
   .dictExt (.mutGet true true true .replace)
 
-private def rawCode (intKey unsigned byRef : Bool) : Nat :=
-  0xF42A ||| (if intKey then 4 else 0) ||| (if unsigned then 2 else 0) ||| (if byRef then 1 else 0)
-
 private def raw16 (v : Nat) : Cell :=
   Cell.mkOrdinary (natToBits v 16) #[]
 
-private def rawF42A : Cell := raw16 (rawCode false false false)
-private def rawF42B : Cell := raw16 (rawCode false false true)
-private def rawF42C : Cell := raw16 (rawCode true false false)
-private def rawF42D : Cell := raw16 (rawCode true false true)
-private def rawF42E : Cell := raw16 (rawCode true true false)
-private def rawF42F : Cell := raw16 (rawCode true true true)
+private def rawF42A : Cell := raw16 0xF42A
+private def rawF42B : Cell := raw16 0xF42B
+private def rawF42C : Cell := raw16 0xF42C
+private def rawF42D : Cell := raw16 0xF42D
+private def rawF42E : Cell := raw16 0xF42E
+private def rawF42F : Cell := raw16 0xF42F
 private def rawBelow : Cell := raw16 0xF429
 private def rawAbove : Cell := raw16 0xF470
-private def rawTrunc8 : Cell := raw16 0xF4
+private def rawTrunc8 : Cell := Cell.mkOrdinary (natToBits 0xF4 8) #[]
 
 private def rawFamilyChain : Cell :=
   Cell.mkOrdinary (rawF42A.bits ++ rawF42B.bits ++ rawF42C.bits ++ rawF42D.bits ++ rawF42E.bits ++ rawF42F.bits) #[]
@@ -475,7 +472,7 @@ def suite : InstrSuite where
     { name := "unit/decode/failure-boundaries" -- [B8]
       run := do
         expectDecodeErr "decode/underbound" rawBelow .invOpcode
-        expectDecodeErr "decode/overbound" rawAbove .invOpcode
+        expectDecodeStep "decode/overbound" rawAbove (.dictExt (.pfxSet .set))
         expectDecodeErr "decode/truncated" rawTrunc8 .invOpcode },
     { name := "unit/runtime/underflow-empty" -- [B2]
       run := do
@@ -506,9 +503,27 @@ def suite : InstrSuite where
         expectErr "type-value" (runDICTUREPLACEGETDirect instrSlice (mkSliceCaseStack (.int (.num 0) ) keySlice5_8 (.cell dictSliceSingle8) 8)) .typeChk },
     { name := "unit/runtime/hit-slice-single" -- [B4]
       run := do
-        expectOkStack "hit-slice-single"
-          (runDICTUREPLACEGETDirect instrSlice (mkSliceCaseStack (.slice valueSliceB) keySlice5_8 (.cell dictSliceSingle8) 8))
-          #[.cell dictSliceSingle8Repl, .slice valueSliceA, intV (-1)] },
+        let out :=
+          runDICTUREPLACEGETDirect instrSlice
+            (mkSliceCaseStack (.slice valueSliceB) keySlice5_8 (.cell dictSliceSingle8) 8)
+        match out with
+        | .error e =>
+            throw (IO.userError s!"hit-slice-single: expected success, got error {reprStr e}")
+        | .ok st =>
+            if st.size != 3 then
+              throw (IO.userError s!"hit-slice-single: expected stack size 3, got {st.size}")
+            if st[0]! != .cell dictSliceSingle8Repl then
+              throw (IO.userError s!"hit-slice-single: expected newRoot, got {reprStr st[0]!}")
+            if st[2]! != intV (-1) then
+              throw (IO.userError s!"hit-slice-single: expected flag=-1, got {reprStr st[2]!}")
+            match st[1]! with
+            | .slice got =>
+                if got.toCellRemaining != valueSliceA.toCellRemaining then
+                  throw
+                    (IO.userError
+                      s!"hit-slice-single: expected oldValue={reprStr valueSliceA.toCellRemaining}, got {reprStr got.toCellRemaining}")
+            | v =>
+                throw (IO.userError s!"hit-slice-single: expected slice oldValue, got {reprStr v}") },
     { name := "unit/runtime/miss-slice-null" -- [B4]
       run := do
         expectOkStack "miss-slice-null"
@@ -517,13 +532,30 @@ def suite : InstrSuite where
     { name := "unit/runtime/miss-slice-root" -- [B4]
       run := do
         expectOkStack "miss-slice-root"
-          (runDICTUREPLACEGETDirect instrSlice (mkSliceCaseStack (.slice valueSliceA) keySlice4_4 (.cell dictSliceSingle8) 8))
+          (runDICTUREPLACEGETDirect instrSlice (mkSliceCaseStack (.slice valueSliceA) keySlice2_8 (.cell dictSliceSingle8) 8))
           #[.cell dictSliceSingle8, intV 0] },
     { name := "unit/runtime/hit-int" -- [B4]
       run := do
-        expectOkStack "hit-int"
-          (runDICTUREPLACEGETDirect instrInt (mkIntCaseStack (.slice valueSliceB) 5 (.cell dictIntSigned8Single) 8))
-          #[.cell dictIntSigned8SingleRepl, .slice valueSliceA, intV (-1)] },
+        let out :=
+          runDICTUREPLACEGETDirect instrInt (mkIntCaseStack (.slice valueSliceB) 5 (.cell dictIntSigned8Single) 8)
+        match out with
+        | .error e =>
+            throw (IO.userError s!"hit-int: expected success, got error {reprStr e}")
+        | .ok st =>
+            if st.size != 3 then
+              throw (IO.userError s!"hit-int: expected stack size 3, got {st.size}")
+            if st[0]! != .cell dictIntSigned8SingleRepl then
+              throw (IO.userError s!"hit-int: expected newRoot, got {reprStr st[0]!}")
+            if st[2]! != intV (-1) then
+              throw (IO.userError s!"hit-int: expected flag=-1, got {reprStr st[2]!}")
+            match st[1]! with
+            | .slice got =>
+                if got.toCellRemaining != valueSliceA.toCellRemaining then
+                  throw
+                    (IO.userError
+                      s!"hit-int: expected oldValue={reprStr valueSliceA.toCellRemaining}, got {reprStr got.toCellRemaining}")
+            | v =>
+                throw (IO.userError s!"hit-int: expected slice oldValue, got {reprStr v}") },
     { name := "unit/runtime/miss-int" -- [B4]
       run := do
         expectOkStack "miss-int"
@@ -559,7 +591,7 @@ def suite : InstrSuite where
     mkCase "oracle/slice/hit/double" (mkSliceCaseStack (.slice valueSliceC) keySlice7_8 (.cell dictSliceDouble8) 8),
     mkCase "oracle/slice/hit/zero" (mkSliceCaseStack (.slice valueSliceA) keySlice0 (.cell dictSliceSingle0) 0),
     mkCase "oracle/slice/miss/null" (mkSliceCaseStack (.slice valueSliceA) keySlice5_8 .null 8),
-    mkCase "oracle/slice/miss/non-empty" (mkSliceCaseStack (.slice valueSliceA) keySlice4_4 (.cell dictSliceSingle8) 8),
+    mkCase "oracle/slice/miss/non-empty" (mkSliceCaseStack (.slice valueSliceA) keySlice2_8 (.cell dictSliceSingle8) 8),
     mkCase "oracle/slice/int-key-insert-new" (mkSliceCaseStack (.slice valueSliceA) keySlice4_4 (.cell dictSliceSingle8) 4),
     mkCase "oracle/int/hit/signed" (mkIntCaseStack (.slice valueSliceB) 5 (.cell dictIntSigned8Single) 8) #[instrInt],
     mkCase "oracle/int/hit/unsigned" (mkIntCaseStack (.slice valueSliceC) 5 (.cell dictIntUnsigned8Single) 8) #[instrIntUnsigned],

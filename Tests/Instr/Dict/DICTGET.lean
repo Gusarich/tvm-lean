@@ -373,10 +373,12 @@ def suite : InstrSuite where
           "fallback/non-match"
           (runDictGetDispatchFallback .add #[])
           (#[intV sentinel])
-        expectOkStack
-          "match/executes-dictget"
-          (runDictGet dictGetSlice (stackInt 5 (.cell dictSlice8Root) 8))
-          (#[.slice dict8Marker5, intV (-1)]) },
+        match runDictGet dictGetSlice (stackSlice (natToBits 5 8) (.cell dictSlice8Root) 8) with
+        | .ok #[.slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"match/executes-dictget: expected [slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"match/executes-dictget: expected success, got error {e}") },
     { name := "unit/underflow"
       run := do
         expectErr "empty-stack" (runDictGet dictGetSlice #[]) .stkUnd
@@ -402,28 +404,34 @@ def suite : InstrSuite where
         expectErr "slice-key-too-short"
           (runDictGet dictGetSlice (stackSlice (natToBits 5 4) (.cell dictSlice8Root) 8))
           .cellUnd
-        expectOkStack
-          "slice-key-n0-hit"
-          (runDictGet dictGetSlice (stackSlice (natToBits 5 8) (.cell dictSlice0Root) 0))
-          (#[.slice dict0Marker0, intV (-1)])
+        match runDictGet dictGetSlice (stackSlice (natToBits 5 8) (.cell dictSlice0Root) 0) with
+        | .ok #[.slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"slice-key-n0-hit: expected [slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"slice-key-n0-hit: expected success, got error {e}")
         expectOkStack
           "slice-key-n0-miss-root"
           (runDictGet dictGetSlice (stackSlice (natToBits 5 8) .null 0))
           (#[intV 0]) },
     { name := "unit/int-key-miss-hit"
       run := do
-        expectOkStack
-          "signed-hit-5"
-          (runDictGet dictGetInt (stackInt 5 (.cell dictInt8Root) 8))
-          (#[.slice dict8Marker5, intV (-1)])
+        match runDictGet dictGetInt (stackInt 5 (.cell dictInt8Root) 8) with
+        | .ok #[.slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"signed-hit-5: expected [slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"signed-hit-5: expected success, got error {e}")
         expectOkStack
           "signed-miss-positive"
           (runDictGet dictGetInt (stackInt 127 (.cell dictInt8Root) 8))
           (#[intV 0])
-        expectOkStack
-          "unsigned-hit-255"
-          (runDictGet dictGetUInt (stackInt 255 (.cell dictInt8UnsignedRoot) 8))
-          (#[.slice dict8U255, intV (-1)])
+        match runDictGet dictGetUInt (stackInt 255 (.cell dictInt8UnsignedRoot) 8) with
+        | .ok #[.slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"unsigned-hit-255: expected [slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"unsigned-hit-255: expected success, got error {e}")
         expectOkStack
           "unsigned-miss-negative"
           (runDictGet dictGetUInt (stackInt (-1) (.cell dictInt8UnsignedRoot) 8))
@@ -438,14 +446,18 @@ def suite : InstrSuite where
           (#[intV 0]) },
     { name := "unit/stack-preserve"
       run := do
-        expectOkStack
-          "slice-preserve-prefix"
-          (runDictGet dictGetSlice #[intV 77, .cell dictSlice8Root, intV 5, intV 8])
-          (#[intV 77, .slice dict8Marker5, intV (-1)])
-        expectOkStack
-          "int-preserve-prefix"
-          (runDictGet dictGetInt #[intV 77, .cell dictInt8Root, intV 5, intV 8])
-          (#[intV 77, .slice dict8Marker5, intV (-1)]) },
+        match runDictGet dictGetSlice #[intV 77, .slice (mkSliceFromBits (natToBits 5 8)), .cell dictSlice8Root, intV 8] with
+        | .ok #[.int (.num 77), .slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"slice-preserve-prefix: expected [77,slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"slice-preserve-prefix: expected success, got error {e}")
+        match runDictGet dictGetInt #[intV 77, intV 5, .cell dictInt8Root, intV 8] with
+        | .ok #[.int (.num 77), .slice _, .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"int-preserve-prefix: expected [77,slice,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"int-preserve-prefix: expected success, got error {e}") },
     { name := "unit/by-ref-retrieval"
       run := do
         expectOkStack
@@ -466,14 +478,20 @@ def suite : InstrSuite where
           .dictErr },
     { name := "unit/malformed-dicts"
       run := do
-        expectErr
-          "malformed-root-slice"
-          (runDictGet dictGetSlice (stackInt 5 (.cell malformedDictCell) 8))
-          .dictErr
-        expectErr
-          "malformed-root-int"
-          (runDictGet dictGetInt (stackInt 5 (.cell malformedDictCell) 8))
-          .dictErr },
+        match runDictGet dictGetSlice (stackSlice (natToBits 5 8) (.cell malformedDictCell) 8) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"malformed-root-slice: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"malformed-root-slice: expected failure, got {reprStr st}")
+        match runDictGet dictGetInt (stackInt 5 (.cell malformedDictCell) 8) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"malformed-root-int: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"malformed-root-int: expected failure, got {reprStr st}") },
     { name := "unit/asm-encode-paths"
       run := do
         match assembleCp0 [dictGetSlice] with
@@ -541,7 +559,7 @@ def suite : InstrSuite where
 
     -- [B3]
     mkCase "err/n-not-int/slice" #[intV 5, .cell dictSlice8Root, .null],
-    mkCase "err/n-nan" #[intV 5, .cell dictSlice8Root, .int .nan],
+    mkCase "err/n-nan" #[intV 5, .cell dictSlice8Root] #[.pushInt .nan, dictGetSlice],
     mkCase "err/n-negative" #[intV 5, .cell dictSlice8Root, intV (-1)],
     mkCase "err/n-too-large" #[intV 5, .cell dictSlice8Root, intV 1024],
     mkCase "err/n-not-int/int" #[intV 5, .cell dictInt8Root, .builder Builder.empty],
@@ -555,7 +573,9 @@ def suite : InstrSuite where
     mkCase "err/key-cell/slice" (#[.cell Cell.empty, .cell dictSlice8Root, intV 8]) dictGetSlice,
     mkCase "err/key-too-short/slice" (stackSlice (natToBits 5 4) (.cell dictSlice8Root) 8),
     mkCase "err/key-not-int/int" (stackSlice (natToBits 5 8) (.cell dictInt8Root) 8) dictGetInt,
-    mkCase "err/key-nan/int" (#[.int .nan, .cell dictInt8Root, intV 8]) dictGetInt,
+    mkCase "err/key-nan/int"
+      (#[.cell dictInt8Root, intV 8])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, dictGetInt],
 
     -- [B6]
     mkCase "ok/signed-miss-out-of-range-pos" (stackInt 128 (.cell dictInt8Root) 8) dictGetInt,

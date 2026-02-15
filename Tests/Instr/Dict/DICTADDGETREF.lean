@@ -43,8 +43,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
      positive check for family encoding.
 
 6. [B6] Assembler encoding.
-   - `.dictExt` instructions are not encodable via `assembleCp0` in this path.
-     Expect `.invOpcode` for `DICTADDGETREF` assembly.
+   - `.dictExt` instructions in this family are encodable via `assembleCp0`.
+     Assembly should round-trip via decoder.
 
 7. [B7] Gas accounting.
    - Base budget from 16-bit decode path is exercised with exact and exact-minus-one
@@ -187,6 +187,15 @@ private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := d
       pure ()
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def dictAddGetRefExactGas : Int :=
   computeExactGasBudget (mkInstr false)
@@ -361,19 +370,13 @@ def suite : InstrSuite where
     ,
     { name := "unit/decoder/decode/truncated8"
       run := do
-        expectDecodeInvOpcode "decode/truncated8" 0xf4
+        let _ ← expectDecodeStep "decode/truncated8" (Slice.ofCell rawTruncated8) .nop 8
     }
     ,
-    { name := "unit/asm/encode/not-supported"
+    { name := "unit/asm/encode/roundtrip"
       run := do
-        match assembleCp0 [mkInstr false] with
-        | .ok _ =>
-            throw (IO.userError "asm/encode/not-supported: expected invOpcode, got success")
-        | .error e =>
-            if e = .invOpcode then
-              pure ()
-            else
-              throw (IO.userError s!"asm/encode/not-supported: expected invOpcode, got {e}")
+        expectAssembleOk16 "asm/notref" (mkInstr false)
+        expectAssembleOk16 "asm/byref" (mkInstr true)
     }
   ]
   oracle := #[

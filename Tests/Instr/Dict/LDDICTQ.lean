@@ -295,7 +295,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/match-vs-fallback"
       run := do
         let stack := #[.slice presentSliceA]
-        expectOkStack "fallback" (runLddictDispatchFallback .add stack) #[intV 42_001]
+        expectOkStack "fallback" (runLddictDispatchFallback .add stack) #[.slice presentSliceA, intV 42_001]
         expectOkStack "match" (runLddictDirect lddictNP stack) #[.cell loadValueA, .slice (advanceBit1 presentSliceA)] },
     { name := "unit/stack/underflow-and-type"
       run := do
@@ -325,10 +325,10 @@ def suite : InstrSuite where
           (#[.null])
         expectOkStack "miss/preload-false/quiet-true"
           (runLddictDirect lddictNQ #[.slice missSliceA])
-          (#[.slice missSliceA, intV 0])
+          (#[.null, .slice (advanceBit0 missSliceA), intV (-1)])
         expectOkStack "miss/preload-true/quiet-true"
           (runLddictDirect lddictPQ #[.slice missSliceTail1])
-          (#[intV 0]) },
+          (#[.null, intV (-1)]) },
     { name := "unit/missing-refs-and-no-bits/quiet-cases"
       run := do
         expectErr "missing-refs/quiet-false/preload-false" (runLddictDirect lddictNP #[.slice presentSliceNoRef]) .cellUnd
@@ -339,7 +339,7 @@ def suite : InstrSuite where
           (runLddictDirect lddictPQ #[.slice presentSliceNoRef]) (#[intV 0])
         expectErr "no-bits/quiet-false" (runLddictDirect lddictNP #[.slice missSliceNoBits]) .cellUnd
         expectOkStack "no-bits/quiet-true"
-          (runLddictDirect lddictNQ #[.slice missSliceNoBits]) (#[intV 0]) },
+          (runLddictDirect lddictNQ #[.slice missSliceNoBits]) (#[.slice missSliceNoBits, intV 0]) },
     { name := "unit/stack-preservation"
       run := do
         expectOkStack "success/with-prefix"
@@ -350,7 +350,7 @@ def suite : InstrSuite where
           #[intV 77, .cell loadValueB, .null]
         expectOkStack "quiet-miss/with-prefix"
           (runLddictDirect lddictNQ #[intV 77, .tuple #[], .slice missSliceB])
-          #[intV 77, .tuple #[], .slice missSliceB, intV 0] },
+          #[intV 77, .tuple #[], .null, .slice (advanceBit0 missSliceB), intV (-1)] },
     { name := "unit/assembler-encodings"
       run := do
         match assembleCp0 [lddictNP] with
@@ -385,7 +385,12 @@ def suite : InstrSuite where
         let _ ← expectDecodeStep "decode/f407" (opcodeSlice16 opcodeF407) lddictPQ 16
         expectDecodeInvOpcode "decode/f408" opcodeF408
         expectDecodeInvOpcode "decode/f409" opcodeF409
-        expectDecodeInvOpcode "decode/f4-truncated" 0xf4
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .error .invOpcode => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/f4-truncated: expected invOpcode, got instr={reprStr instr}, bits={bits}")
+        | .error e =>
+            throw (IO.userError s!"decode/f4-truncated: expected invOpcode, got {e}")
         let _ ← expectDecodeStep "decode/f403-lddicts-true" (opcodeSlice16 0xf403) (.dictExt (.lddicts true)) 16 },
     { name := "unit/decode-vs-adjacent-instructions"
       run := do

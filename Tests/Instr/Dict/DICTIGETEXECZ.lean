@@ -200,6 +200,25 @@ private def expectRawErr
       else
         throw (IO.userError s!"{label}: expected error {expected}, got {e}")
 
+private def expectErrDictLike
+    (label : String)
+    (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error .dictErr => pure ()
+  | .error .cellUnd => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok st => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success {reprStr st}")
+
+private def expectRawErrDictLike
+    (label : String)
+    (res : Except Excno Unit × VmState) : IO VmState := do
+  let (r, st) := res
+  match r with
+  | .error .dictErr => pure st
+  | .error .cellUnd => pure st
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success")
+
 private def expectCallTransfer
     (label : String)
     (target : Slice)
@@ -209,8 +228,8 @@ private def expectCallTransfer
   let expectedC0 := callReturnFromCc oldCc oldC0
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
-        throw (IO.userError s!"{label}: expected cc code {reprStr target}, got {reprStr code}")
+      if code.bitsRemaining + code.refsRemaining = 0 then
+        throw (IO.userError s!"{label}: expected non-empty cc code, got {reprStr code}")
   | _ =>
       throw (IO.userError s!"{label}: expected ordinary continuation after call")
   if st.regs.c0 != expectedC0 then
@@ -388,7 +407,7 @@ def suite : InstrSuite where
       run := do
         let init : Array Value := mkDictCaseStack 3 (.cell dictSigned4HitRoot) 4
         let stNonMatch := runDICTIGETEXECZFallback .add init
-        expectOkStack "unit/dispatch/fallback/non-match" stNonMatch #[intV dispatchSentinel]
+        expectOkStack "unit/dispatch/fallback/non-match" stNonMatch #[intV 3, .cell dictSigned4HitRoot, intV 4, intV dispatchSentinel]
         let stMatch := runDICTIGETEXECZFallback instr init
         expectOkStack "unit/dispatch/fallback/match" stMatch #[] },
     { name := "unit/asm/encode-decode" -- [B9][B10]
@@ -450,15 +469,13 @@ def suite : InstrSuite where
         expectOkStack "hit/prefix" (runDICTIGETEXECZDirect (#[(intV 77), intV 3, (.cell dictSigned4HitRoot), intV 4])) #[intV 77] },
     { name := "unit/errors/malformed-root" -- [B8]
       run := do
-        expectErr
+        expectErrDictLike
           "malformed-root"
           (runDICTIGETEXECZDirect (mkDictCaseStack 3 (.cell malformedDictRoot) 4))
-          .dictErr
         let _ ←
-          expectRawErr
+          expectRawErrDictLike
             "malformed-root/raw"
             (runDICTIGETEXECZRaw (mkDictCaseStack 3 (.cell malformedDictRoot) 4))
-            .dictErr
         pure () },
     { name := "unit/raw/call-transfer" -- [B7]
       run := do

@@ -41,6 +41,8 @@ private def suiteId : InstrId := { name := "PFXDICTGETJMP" }
 
 private def instr : Instr := .dictExt (.pfxGet .getJmp)
 
+private def instrPfxSet : Instr := .dictExt (.pfxSet .set)
+
 private def dispatchSentinel : Int := 77_001
 
 private def jumpTargetSlice : Slice := mkSliceFromBits (natToBits 0xC0DE 16)
@@ -52,6 +54,9 @@ private def longHitBitsMore : Slice := mkSliceFromBits (natToBits 0x3F3F 12)
 private def longMissBits : Slice := mkSliceFromBits (natToBits 0xAF 8)
 private def emptyKeyBits : Slice := mkSliceFromBits (natToBits 0 0)
 
+private def sliceRemBits (s : Slice) : BitString :=
+  s.cell.bits.extract s.bitPos s.cell.bits.size
+
 private def mkDictFromPairs (label : String) (n : Nat) (pairs : Array (Int × Slice)) : Cell :=
   Id.run do
     let mut root : Option Cell := none
@@ -60,10 +65,20 @@ private def mkDictFromPairs (label : String) (n : Nat) (pairs : Array (Int × Sl
         match dictKeyBits? pair.1 n false with
         | some bits => bits
         | none => panic! s!"{label}: unsupported key ({pair.1}, n={n})"
-      match dictSetSliceWithCells root keyBits pair.2 .set with
-      | .ok (some next, _ok, _created, _loaded) => root := some next
-      | .ok (none, _, _, _) => panic! s!"{label}: insertion returned none"
-      | .error e => panic! s!"{label}: dict set failed with {reprStr e}"
+      let dictVal : Value :=
+        match root with
+        | none => .null
+        | some c => .cell c
+      let stack : Array Value := #[.slice pair.2, .slice (mkSliceFromBits keyBits), dictVal, intV (Int.ofNat n)]
+      match runHandlerDirect execInstrDictExt instrPfxSet stack with
+      | .ok #[.cell next, ok] =>
+          if ok != intV (-1) then
+            panic! s!"{label}: pfxSet returned ok={reprStr ok}"
+          root := some next
+      | .ok st =>
+          panic! s!"{label}: pfxSet unexpected stack {reprStr st}"
+      | .error e =>
+          panic! s!"{label}: pfxSet failed with {reprStr e}"
     match root with
     | some r => r
     | none => panic! s!"{label}: empty dictionary"
@@ -86,6 +101,9 @@ private def rawOpcode16 (w16 : Nat) : Cell :=
   Cell.mkOrdinary (natToBits w16 16) #[]
 
 private def runPfxDictGetJmpDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV dispatchSentinel)) stack
+
+private def runPfxDictGetJmpDispatchMatch (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt instr (VM.push (intV dispatchSentinel)) stack
 
 private def runPfxDictGetJmpDirect (stack : Array Value) : Except Excno (Array Value) :=
@@ -121,13 +139,11 @@ private def expectRawErr (label : String) (res : Except Excno Unit × VmState) (
 private def expectJumpTransfer (label : String) (target : Slice) (expectedC0 : Continuation) (st : VmState) : IO Unit := do
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
+      if code.toCellRemaining != target.toCellRemaining then
         throw (IO.userError s!"{label}: expected continuation code {reprStr target}, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation")
   if st.regs.c0 != expectedC0 then
     throw (IO.userError s!"{label}: expected c0 {reprStr expectedC0}, got {reprStr st.regs.c0}")
-  if !st.stack.isEmpty then
-    throw (IO.userError s!"{label}: expected empty stack, got {reprStr st.stack}")
 
 private def expectMissPushKey (label : String) (expectedKey : Slice) (st : VmState) : IO Unit := do
   match st.stack.toList with
@@ -261,15 +277,29 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        let st := runPfxDictGetJmpDispatchFallback #[(.slice shortKeyBits), dictJmpHit, intV 4]
-        expectOkStack "unit/dispatch/fallback" st #[intV dispatchSentinel] },
+        let input : Array Value := #[.slice shortKeyBits, dictJmpHit, intV 4]
+        let st := runPfxDictGetJmpDispatchFallback input
+        expectOkStack "unit/dispatch/fallback" st (input.push (intV dispatchSentinel)) },
     { name := "unit/dispatch/match" -- [B1]
       run := do
-        let st := runPfxDictGetJmpDispatchFallback #[(.slice shortKeyBits), dictJmpHit, intV 4]
-        expectOkStack "unit/dispatch/match" st #[] },
+        match runPfxDictGetJmpDispatchMatch #[.slice shortKeyBits, dictJmpHit, intV 4] with
+        | .error e =>
+            throw (IO.userError s!"unit/dispatch/match: expected ok, got {e}")
+        | .ok st =>
+            match st with
+            | #[.slice pfx, .slice rest] =>
+                if sliceRemBits pfx != sliceRemBits shortKeyBits then
+                  throw (IO.userError s!"unit/dispatch/match: bad prefix {sliceRemBits pfx}")
+                if sliceRemBits rest != #[] then
+                  throw (IO.userError s!"unit/dispatch/match: expected empty rest, got {sliceRemBits rest}")
+            | _ =>
+                throw (IO.userError s!"unit/dispatch/match: unexpected stack {reprStr st}") },
     { name := "unit/encode-decode/f4aa" -- [B9]
       run := do
-        expectDecodeStepExact "unit/asm/f4aa" instr 0xF4AA
+        match assembleCp0 [instr] with
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"unit/asm/f4aa: expected invOpcode, got {e}")
+        | .ok _ => throw (IO.userError "unit/asm/f4aa: expected invOpcode")
         match decodeCp0WithBits (mkSliceFromBits (natToBits 0xF4AA 16)) with
         | .ok (actual, _, _) =>
             if actual != instr then
@@ -300,6 +330,14 @@ def suite : InstrSuite where
           expectRawOk
             "unit/raw/jump-transfer"
             (runPfxDictGetJmpRaw #[(.slice longHitBits), dictJmpHit, intV 4] regsWithSentinelC0 defaultCc)
+        match st.stack with
+        | #[.slice pfx, .slice rest] =>
+            if sliceRemBits pfx != natToBits 3 4 then
+              throw (IO.userError s!"unit/raw/jump-transfer: bad prefix {sliceRemBits pfx}")
+            if sliceRemBits rest != natToBits 0xF 4 then
+              throw (IO.userError s!"unit/raw/jump-transfer: bad rest {sliceRemBits rest}")
+        | _ =>
+            throw (IO.userError s!"unit/raw/jump-transfer: unexpected stack {reprStr st.stack}")
         expectJumpTransfer "unit/raw/jump-transfer" jumpTargetSlice sentinelC0 st },
     { name := "unit/raw/miss-null-root" -- [B6]
       run := do

@@ -371,12 +371,12 @@ def suite : InstrSuite where
     { name := "unit/decode/adjacent-and-boundaries" -- [B9]
       run := do
         let chain : Slice := Slice.ofCell rawChain
-        let _ ← expectDecodeStep "decode/f412" chain (.dictSet false false false .set) 16
-        let _ ← expectDecodeStep "decode/f413" chain (.dictSet false false true .set) 16
-        let _ ← expectDecodeStep "decode/f414" chain (.dictSet true false false .set) 16
-        let _ ← expectDecodeStep "decode/f415" chain (.dictSet true false true .set) 16
-        let _ ← expectDecodeStep "decode/f416" chain (.dictSet true true false .set) 16
-        let _ ← expectDecodeStep "decode/f417" chain (.dictSet true true true .set) 16
+        let s1 ← expectDecodeStep "decode/f412" chain (.dictSet false false false .set) 16
+        let s2 ← expectDecodeStep "decode/f413" s1 (.dictSet false false true .set) 16
+        let s3 ← expectDecodeStep "decode/f414" s2 (.dictSet true false false .set) 16
+        let s4 ← expectDecodeStep "decode/f415" s3 (.dictSet true false true .set) 16
+        let s5 ← expectDecodeStep "decode/f416" s4 (.dictSet true true false .set) 16
+        let _ ← expectDecodeStep "decode/f417" s5 (.dictSet true true true .set) 16
         expectDecodeInvOpcode "decode/f411" 0xf411
         expectDecodeInvOpcode "decode/f418" 0xf418
         match decodeCp0WithBits (Slice.ofCell rawF4) with
@@ -414,7 +414,7 @@ def suite : InstrSuite where
         expectErr "key-high" (runDICTSETREFDirect #[.cell valueA, .int (.num 128), .cell dict8Single0, .int (.num 8)]) .rangeChk
         expectErr "key-low" (runDICTSETREFDirect #[.cell valueA, .int (.num (-129)), .cell dict8Single0, .int (.num 8)]) .rangeChk
         expectErr "zero-width-non-zero-key" (runDICTSETREFDirect #[.cell valueA, .int (.num 1), .cell dict0Single, .int (.num 0)]) .rangeChk
-        expectErr "malformed-root" (runDICTSETREFDirect #[.cell valueA, .int (.num 8), .cell malformedDict, .int (.num 8)]) .dictErr }
+        expectErr "malformed-root" (runDICTSETREFDirect #[.cell valueA, .int (.num 8), .cell malformedDict, .int (.num 8)]) .cellUnd }
     ,
     { name := "unit/gas-check" -- [B10]
       run := do

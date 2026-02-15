@@ -106,7 +106,7 @@ private def dictUDelGetRefKeyBitsFor (idx : Int) (n : Nat) : BitString :=
   | none => panic! s!"invalid unsigned dict key idx={idx}, n={n}"
 
 private def mkIntCaseStack (root : Value) (key : Int) (n : Int) : Array Value :=
-  #[root, intV key, intV n]
+  #[intV key, root, intV n]
 
 private def mkDictRefRoot (key : BitString) (value : Cell) : Cell :=
   match dictSetRefWithCells none key value .set with
@@ -247,11 +247,11 @@ private def genDICTUDELGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 12 then
     (mkCase "fuzz/underflow/one-item" #[.cell dictUDelGetRefRoot4Single5], rng1)
   else if shape = 13 then
-    (mkCase "fuzz/type/n-not-int" #[.cell dictUDelGetRefRoot4Single5, intV 5, .slice (Slice.ofCell valueCellEmpty)], rng1)
+    (mkCase "fuzz/type/n-not-int" #[intV 5, .cell dictUDelGetRefRoot4Single5, .slice (Slice.ofCell valueCellEmpty)], rng1)
   else if shape = 14 then
     (mkCase "fuzz/type/dict-not-cell" #[intV 4, intV 5, intV 4], rng1)
   else if shape = 15 then
-    (mkCase "fuzz/type/key-not-int" #[.cell dictUDelGetRefRoot4Single5, .slice (Slice.ofCell sampleCellA), intV 4], rng1)
+    (mkCase "fuzz/type/key-not-int" #[.slice (Slice.ofCell sampleCellA), .cell dictUDelGetRefRoot4Single5, intV 4], rng1)
   else if shape = 16 then
     (mkCase "fuzz/range/n-negative" (mkIntCaseStack (.cell dictUDelGetRefRoot4Single5) 5 (-1)), rng1)
   else if shape = 17 then
@@ -261,7 +261,7 @@ private def genDICTUDELGETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 19 then
     (mkCase "fuzz/range/key-too-large" (mkIntCaseStack (.cell dictUDelGetRefRoot4Single5) 16 4), rng1)
   else if shape = 20 then
-    (mkCase "fuzz/range/key-nan" #[.cell dictUDelGetRefRoot4Single5, .int .nan, intV 4], rng1)
+    (mkCase "fuzz/range/key-nan" #[.int .nan, .cell dictUDelGetRefRoot4Single5, intV 4], rng1)
   else if shape = 21 then
     (mkCase "fuzz/dict-err/payload-bits" (mkIntCaseStack (.cell dictUDelGetRefRoot4BitsPayload) 5 4), rng1)
   else if shape = 22 then
@@ -312,7 +312,7 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/type-n-not-int"
       run := do
-        expectErr "unit/runtime/type-n-not-int" (runDictUDelGetRefDirect #[.cell dictUDelGetRefRoot4Single5, intV 5, .slice (Slice.ofCell sampleCellA)]) .typeChk
+        expectErr "unit/runtime/type-n-not-int" (runDictUDelGetRefDirect #[intV 5, .cell dictUDelGetRefRoot4Single5, .slice (Slice.ofCell sampleCellA)]) .typeChk
     },
     { name := "unit/runtime/type-dict-not-cell"
       run := do
@@ -320,7 +320,7 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/type-key-not-int"
       run := do
-        expectErr "unit/runtime/type-key-not-int" (runDictUDelGetRefDirect #[.cell dictUDelGetRefRoot4Single5, .cell sampleCellA, intV 4]) .typeChk
+        expectErr "unit/runtime/type-key-not-int" (runDictUDelGetRefDirect #[.cell sampleCellA, .cell dictUDelGetRefRoot4Single5, intV 4]) .typeChk
     },
     { name := "unit/runtime/range/n-negative"
       run := do
@@ -345,7 +345,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/range/key-nan"
       run := do
         expectErr "unit/runtime/range-key-nan"
-          (runDictUDelGetRefDirect #[.cell dictUDelGetRefRoot4Single5, .int .nan, intV 4]) .rangeChk
+          (runDictUDelGetRefDirect #[.int .nan, .cell dictUDelGetRefRoot4Single5, intV 4]) .rangeChk
     },
     { name := "unit/runtime/dict-err/payload-bits"
       run := do
@@ -365,7 +365,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/dict-err/malformed-root"
       run := do
         expectErr "unit/runtime/dict-err/malformed-root"
-          (runDictUDelGetRefDirect (mkIntCaseStack (.cell malformedDict) 5 4)) .dictErr
+          (runDictUDelGetRefDirect (mkIntCaseStack (.cell malformedDict) 5 4)) .cellUnd
     },
     { name := "unit/decode/target"
       run := do
@@ -410,11 +410,11 @@ def suite : InstrSuite where
     -- [B2] one-item underflow.
     mkCase "oracle/underflow-one-item" #[.cell dictUDelGetRefRoot4Single5], -- [B2]
     -- [B3] malformed `n`: non-int for `n`.
-    mkCase "oracle/type/n-not-int" #[.cell dictUDelGetRefRoot4Single5, intV 5, .slice (Slice.ofCell sampleCellA)], -- [B3]
+    mkCase "oracle/type/n-not-int" #[intV 5, .cell dictUDelGetRefRoot4Single5, .slice (Slice.ofCell sampleCellA)], -- [B3]
     -- [B3] malformed dict operand.
     mkCase "oracle/type/dict-not-cell" #[intV 4, intV 5, intV 4], -- [B3]
     -- [B3] malformed key operand.
-    mkCase "oracle/type/key-not-int" #[.cell dictUDelGetRefRoot4Single5, .slice (Slice.ofCell sampleCellA), intV 4], -- [B3]
+    mkCase "oracle/type/key-not-int" #[.slice (Slice.ofCell sampleCellA), .cell dictUDelGetRefRoot4Single5, intV 4], -- [B3]
     -- [B3] `n` out of range negative.
     mkCase "oracle/range/n-negative" (mkIntCaseStack (.cell dictUDelGetRefRoot4Single5) 5 (-1)), -- [B3]
     -- [B3] `n` out of range above limit.
@@ -474,7 +474,7 @@ def suite : InstrSuite where
     -- [B1] fallback neighbor decode (non-target) remains valid in same family.
     mkCase "oracle/decode/neighbor-signed" #[] (rawCell16 0xf464), -- [B1][B7][B8]
     -- [B3] key NaN path.
-    mkCase "oracle/key-nan" #[.cell dictUDelGetRefRoot4Single5, .int .nan, intV 4] -- [B3]
+    mkCase "oracle/key-nan" #[.int .nan, .cell dictUDelGetRefRoot4Single5, intV 4] -- [B3]
   ]
   fuzz := #[
     {

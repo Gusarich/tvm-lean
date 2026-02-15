@@ -53,7 +53,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Truncated 8-bit input is invalid.
 
 10. [B10] Assembler behavior.
-    - `.dictExt` instructions in this family are not currently supported by assembly and must error `.invOpcode`.
+    - `.dictExt` instructions in this family are encodable by the CP0 assembler.
 
 11. [B11] Gas accounting.
     - Base gas is `computeExactGasBudget instr`.
@@ -259,6 +259,22 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error e =>
       throw (IO.userError s!"{label}: expected invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      match decodeCp0WithBits (Slice.ofCell code) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != i then
+            throw (IO.userError s!"{label}: expected {reprStr i}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
+
 private def runDICTREPLACEGETREFDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.dictGet false false false) (VM.push (.int (.num 909))) stack
 
@@ -412,9 +428,9 @@ def suite : InstrSuite where
         match decodeCp0WithBits (Slice.ofCell rawTruncated8) with
         | .error _ => pure ()
         | .ok _ => throw (IO.userError "decode/truncated unexpectedly succeeded") },
-    { name := "unit/asm/unsupported" -- [B10]
+    { name := "unit/asm/encodes" -- [B10]
       run := do
-        expectAssembleInvOpcode "asm/unsupported" instr }
+        expectAssembleOk16 "asm/encodes" instr }
   ]
   oracle := #[
     -- [B2]

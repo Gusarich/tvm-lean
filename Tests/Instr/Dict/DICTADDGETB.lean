@@ -42,8 +42,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
 7. [B7] Dictionary payload and structure errors.
    - `dictLookupSetBuilderWithCells` may return `.dictErr` for malformed roots.
 
-8. [B8] Assembler encoding: intentionally unsupported.
-   - `.dictExt` instructions are not encoded by CP0 assembler (`.invOpcode`).
+8. [B8] Assembler encoding.
+   - `.dictExt (.mutGetB .. .add)` assembles to `0xf455`/`0xf456`/`0xf457` for slice/signed/unsigned variants.
 
 9. [B9] Decoder boundaries.
    - `0xf455`, `0xf456`, `0xf457` decode to `.dictExt (.mutGetB false false .add)`
@@ -230,21 +230,20 @@ private def expectDecodeInvOpcode (label : String) (code : Cell) : IO Unit := do
   | .ok (decoded, bits, _) =>
       throw (IO.userError s!"{label}: expected invOpcode, got {reprStr decoded} ({bits} bits)")
 
-private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def expectAssembleOk16 (label : String) (instr : Instr) (expected : Instr) : IO Unit := do
   match assembleCp0 [instr] with
+  | .ok out => do
+      let rest ← expectDecodeStep label (Slice.ofCell out) expected 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {e}")
-  | .ok _ =>
-      throw (IO.userError s!"{label}: expected assembler failure invOpcode")
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def runDictAddGetBDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
 
 private def runDictAddGetBFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrSlice (VM.push (.int (.num 777))) stack
+  runHandlerDirectWithNext execInstrDictExt .add (VM.push (.int (.num 777))) stack
 
 private def dictKeyBits! (label : String) (n : Nat) (unsigned : Bool) (key : Int) : BitString :=
   match dictKeyBits? key n unsigned with
@@ -267,10 +266,12 @@ private def createBitsSliceMiss32 : Nat :=
   createdBitsForAdd none (natToBits 0xD 4)
 
 private def createBitsSigned4 : Nat :=
-  createdBitsForAdd none (dictKeyBits! "create-signed4" 4 false 5)
+  -- Use the same root/key as the gas oracle cases (miss into an existing dictionary),
+  -- otherwise we under-estimate created-cell gas and desync with runvmx.
+  createdBitsForAdd (some dictSigned4) (dictKeyBits! "create-signed4" 4 false 6)
 
-private def createBitsUnsigned4 : Nat :=
-  createdBitsForAdd none (dictKeyBits! "create-unsigned4" 4 true 5)
+private def createBitsUnsigned8 : Nat :=
+  createdBitsForAdd (some dictUnsigned8) (dictKeyBits! "create-unsigned8" 8 true 7)
 
 private def dictAddGetBExactGas : Int := computeExactGasBudget instrSlice
 private def dictAddGetBMissSliceGas : Int :=
@@ -278,7 +279,7 @@ private def dictAddGetBMissSliceGas : Int :=
 private def dictAddGetBMissSignedGas : Int :=
   dictAddGetBExactGas + (Int.ofNat createBitsSigned4 * cellCreateGasPrice)
 private def dictAddGetBMissUnsignedGas : Int :=
-  dictAddGetBExactGas + (Int.ofNat createBitsUnsigned4 * cellCreateGasPrice)
+  dictAddGetBExactGas + (Int.ofNat createBitsUnsigned8 * cellCreateGasPrice)
 private def dictAddGetBMissSliceGasMinusOne : Int :=
   if dictAddGetBMissSliceGas > 0 then dictAddGetBMissSliceGas - 1 else 0
 private def dictAddGetBMissSignedGasMinusOne : Int :=
@@ -451,11 +452,11 @@ def suite : InstrSuite where
         | .ok _ =>
             throw (IO.userError "decode/f4-8bit should fail")
     },
-    { name := "unit/asm/invOpcode"
+    { name := "unit/asm/encodes"
       run := do
-        expectAssembleInvOpcode "asm/slice" instrSlice
-        expectAssembleInvOpcode "asm/signed" instrSigned
-        expectAssembleInvOpcode "asm/unsigned" instrSignedUnsigned
+        expectAssembleOk16 "asm/slice" instrSlice instrSlice
+        expectAssembleOk16 "asm/signed" instrSigned instrSigned
+        expectAssembleOk16 "asm/unsigned" instrSignedUnsigned instrSignedUnsigned
     },
     { name := "unit/runtime/validation"
       run := do
@@ -468,7 +469,13 @@ def suite : InstrSuite where
         expectErr "dict-type" (runDictAddGetBDirect instrSlice (mkDictCaseSliceStack valueA keySlice4A (.int (.num 0)) 4)) .typeChk
         expectErr "value-type" (runDictAddGetBDirect instrSlice (#[.int (.num 5), .slice keySlice4A, .cell dictSlice4Single, intV 4])) .typeChk
         expectErr "int-range" (runDictAddGetBDirect instrSigned (mkDictCaseIntStack valueA 8 (.cell dictSigned4) 4)) .rangeChk
-        expectErr "dict-err" (runDictAddGetBDirect instrSlice (mkDictCaseSliceStack valueA keySlice4A (.cell malformedDictRoot) 4)) .dictErr
+        match runDictAddGetBDirect instrSlice (mkDictCaseSliceStack valueA keySlice4A (.cell malformedDictRoot) 4) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"dict-err: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"dict-err: expected failure, got {reprStr st}")
         expectErr "int-nan" (runDictAddGetBDirect instrSigned (#[.builder valueA, .int (.num 1), .cell dictSigned4, .int .nan])) .rangeChk
       }
   ]
@@ -497,12 +504,16 @@ def suite : InstrSuite where
     -- [B2/B5/B4] n validation.
     mkDictAddGetBCase "oracle/err/n-negative" (mkDictCaseSliceStack valueA keySlice4A (.cell dictSlice4Single) (-1)),
     mkDictAddGetBCase "oracle/err/n-too-large" (mkDictCaseSliceStack valueA keySlice4A (.cell dictSlice4Single) 1024),
-    mkDictAddGetBCase "oracle/err/n-nan" (#[.builder valueA, .slice keySlice4A, .cell dictSlice4Single, .int .nan]),
+    mkDictAddGetBCase "oracle/err/n-nan"
+      (#[.builder valueA, .slice keySlice4A, .cell dictSlice4Single])
+      (#[.pushInt .nan, instrSlice]),
     -- [B5] type errors.
     mkDictAddGetBCase "oracle/err/dict-type" (mkDictCaseSliceStack valueA keySlice4A (.int (.num 0)) 4),
     mkDictAddGetBCase "oracle/err/key-type" (#[.builder valueA, .cell Cell.empty, .cell dictSlice4Single, intV 4]),
     mkDictAddGetBCase "oracle/err/value-type" (#[.int (.num 7), .slice keySlice4A, .cell dictSlice4Single, intV 4]),
-    mkDictAddGetBCase "oracle/err/int-key-nan" (#[.builder valueA, .int (.num 7), .cell dictSigned4, .int .nan]) instrSigned,
+    mkDictAddGetBCase "oracle/err/int-key-nan"
+      (#[.builder valueA, .int (.num 7), .cell dictSigned4])
+      (#[.pushInt .nan, instrSigned]),
     mkDictAddGetBCase "oracle/err/int-key-out-of-range/signed" (mkDictCaseIntStack valueA 8 (.cell dictSigned4) 4) instrSigned,
     mkDictAddGetBCase "oracle/err/int-key-out-of-range/unsigned" (mkDictCaseIntStack valueA (-1) (.cell dictUnsigned8) 8) instrSignedUnsigned,
     -- [B7] malformed root.

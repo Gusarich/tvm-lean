@@ -48,7 +48,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - `0xf439` / `0xf440` and truncated forms must decode as `.invOpcode`.
 
 7. [B7] Assembler encoding:
-   - `assembleCp0` has no `.dictExt` clause and must fail with `.invOpcode`.
+   - `.dictExt (.mutGet .. .add)` is supported by the assembler and should round-trip via decoder.
 
 8. [B8] Gas accounting:
    - Instruction-level budget is constant (`computeExactGasBudget` / minus-one helper).
@@ -183,15 +183,14 @@ private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := d
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
-private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {e}")
-  | .ok _ =>
-      throw (IO.userError s!"{label}: expected invOpcode, got success")
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def dictAddGetExactGas : Int :=
   computeExactGasBudget (mkInstr false)
@@ -331,12 +330,19 @@ def suite : InstrSuite where
     ,
     { name := "unit/decoder/decode/truncated8"
       run := do
-        expectDecodeInvOpcode "decode/truncated8" 0xf4
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .ok (instr, _, _) =>
+            throw (IO.userError s!"decode/truncated8: expected .invOpcode, got {reprStr instr}")
+        | .error .invOpcode =>
+            pure ()
+        | .error e =>
+            throw (IO.userError s!"decode/truncated8: expected .invOpcode, got {e}")
     }
     ,
-    { name := "unit/asm/encode/not-supported"
+    { name := "unit/asm/encode/roundtrip"
       run := do
-        expectAssembleInvOpcode "asm/not-supported" (mkInstr false)
+        expectAssembleOk16 "asm/notref" (mkInstr false)
+        expectAssembleOk16 "asm/byref" (mkInstr true)
     }
   ]
   oracle := #[

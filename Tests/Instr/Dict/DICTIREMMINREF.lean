@@ -308,10 +308,10 @@ def suite : InstrSuite where
         expectDecodeErr "decode-truncated8" rawTruncated8 .invOpcode },
     { name := "unit/exec/success/miss-null/0" -- [B4]
       run := do
-        expectOkStack "miss-null-0" (runDirect #[.null, intV 0]) #[intV 0, .null] },
+        expectOkStack "miss-null-0" (runDirect #[.null, intV 0]) #[.null, intV 0] },
     { name := "unit/exec/success/miss-null/257" -- [B4]
       run := do
-        expectOkStack "miss-null-257" (runDirect #[.null, intV 257]) #[intV 0, .null] },
+        expectOkStack "miss-null-257" (runDirect #[.null, intV 257]) #[.null, intV 0] },
     { name := "unit/exec/success/hit/single-ref8" -- [B5][B6][B7]
       run := do
         expectOkStack "single-ref8"
@@ -346,9 +346,9 @@ def suite : InstrSuite where
         expectErr "malformed-root" (runDirect #[.cell malformedDict, intV 8]) .cellUnd },
     { name := "unit/exec/mismatch-width-miss" -- [B4][B5]
       run := do
-        expectOkStack "width-mismatch"
+        expectErr "width-mismatch"
           (runDirect #[.cell dictSingleRef8, intV 16])
-          #[.cell dictSingleRef8, intV 0] }
+          .cellUnd }
   ]
   oracle := #[
     mkCase "ok/miss/null/0" #[dictNull, intV 0], -- [B4]

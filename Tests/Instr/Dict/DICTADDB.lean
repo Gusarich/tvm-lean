@@ -37,8 +37,8 @@ BRANCH ANALYSIS (derived from Lean + C++ reference):
    - Dict must be maybe-cell, key must be slice, top value must be builder.
    - Malformed dictionary root can return `.dictErr` from `dictSetBuilderWithCells`.
 
-6. [B6: Assembler encoding] Add-mode for `.dictSetB` is rejected.
-   - `.dictSetB false false .add`, `.dictSetB true false .add`, `.dictSetB true true .add` must all encode as `.invOpcode`.
+6. [B6: Assembler encoding] Add-mode for `.dictSetB` is supported.
+   - `.dictSetB false false .add`, `.dictSetB true false .add`, `.dictSetB true true .add` assemble to `0xf451`, `0xf452`, `0xf453`.
 
 7. [B7: Decoder boundaries] `0xf451`, `0xf452`, `0xf453` decode to `.dictSetB` add variants with signedness bits.
    - Adjacent opcodes `0xf450` and `0xf454` are invalid.
@@ -139,11 +139,18 @@ private def expectDecode16 (name : String) (code : Cell) (expected : Instr) : IO
       else if bits != 16 then
         throw (IO.userError s!"{name}: expected 16 bits, got {bits}")
       else if rest.bitsRemaining + rest.refsRemaining != 0 then
-        throw (IO.userError "{name}: expected no trailing bits")
+        throw (IO.userError s!"{name}: expected no trailing bits")
       else
         pure ()
   | .error e =>
       throw (IO.userError s!"{name}: expected valid decode, got {e}")
+
+private def expectAssembleOk16 (name : String) (code : Instr) (expected : Instr) : IO Unit := do
+  match assembleCp0 [code] with
+  | .ok out =>
+      expectDecode16 name out expected
+  | .error e =>
+      throw (IO.userError s!"{name}: expected assemble success, got {e}")
 
 private def dictADDBGasExact : Int := computeExactGasBudget dictADDBInstr
 private def dictADDBGasExactMinusOne : Int := computeExactGasBudgetMinusOne dictADDBInstr
@@ -233,11 +240,11 @@ private def genDICTADDBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 def suite : InstrSuite where
   id := dictADDBId
   unit := #[
-    { name := "unit/asm/add-mode-rejected"
+    { name := "unit/asm/add-mode-encodes"
       run := do
-        expectAssembleErr "unit/asm/dictSetB-add" .invOpcode (.dictSetB false false .add)
-        expectAssembleErr "unit/asm/dictSetB-iadd" .invOpcode (.dictSetB true false .add)
-        expectAssembleErr "unit/asm/dictSetB-uadd" .invOpcode (.dictSetB true true .add)
+        expectAssembleOk16 "unit/asm/dictSetB-add" (.dictSetB false false .add) (.dictSetB false false .add)
+        expectAssembleOk16 "unit/asm/dictSetB-iadd" (.dictSetB true false .add) (.dictSetB true false .add)
+        expectAssembleOk16 "unit/asm/dictSetB-uadd" (.dictSetB true true .add) (.dictSetB true true .add)
         match assembleCp0 [(.dictSetB false false .set)] with
         | .ok _ => pure ()
         | .error e => throw (IO.userError s!"unit/asm/dictSetB-set-should-pass: got {e}")

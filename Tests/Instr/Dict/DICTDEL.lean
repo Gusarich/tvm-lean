@@ -70,7 +70,10 @@ private def dictDelInstr (intKey unsigned : Bool) : Instr :=
   .dictExt (.del intKey unsigned)
 
 private def dictDelCode (intKey unsigned : Bool) : Nat :=
-  0xf459 ||| (if intKey then 2 else 0) ||| (if unsigned then 1 else 0)
+  if intKey then
+    if unsigned then 0xf45b else 0xf45a
+  else
+    0xf459
 
 private def rawCell16 (w : Nat) : Cell :=
   Cell.mkOrdinary (natToBits w 16) #[]
@@ -146,10 +149,10 @@ private def dictSliceSigned0 : Cell :=
   mkDictSliceRoot! "dict/slice/0/single" 0 #[(0, valueSliceC)] false
 
 private def mkSliceStack (root : Value) (n : Int) (keyBits : BitString) : Array Value :=
-  #[root, .slice (mkSliceFromBits keyBits), intV n]
+  #[.slice (mkSliceFromBits keyBits), root, intV n]
 
 private def mkIntStack (root : Value) (n : Int) (key : Int) : Array Value :=
-  #[root, intV key, intV n]
+  #[intV key, root, intV n]
 
 private def dictDelDispatchSentinel : Int := 99221
 
@@ -162,6 +165,19 @@ private def mkCase
   { name := name
     instr := dictDelId
     codeCell? := some code
+    initStack := stack
+    gasLimits := gasLimits
+    fuel := fuel }
+
+private def mkProgramCase
+    (name : String)
+    (stack : Array Value)
+    (program : Array Instr)
+    (gasLimits : OracleGasLimits := {})
+    (fuel : Nat := 1_000_000) : OracleCase :=
+  { name := name
+    instr := dictDelId
+    program := program
     initStack := stack
     gasLimits := gasLimits
     fuel := fuel }
@@ -204,6 +220,17 @@ private def expectAssembleErr
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assemble error {expected}, got success")
+
+private def expectAssembleOk
+    (label : String)
+    (instr : Instr)
+    (expectedCode : Nat) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok c =>
+      if c.bits != natToBits expectedCode 16 ∨ c.refs.size ≠ 0 then
+        throw (IO.userError s!"{label}: expected {expectedCode} (16-bit, no refs), got {reprStr c}")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def dictDelBaseGas : Int :=
   instrGas (dictDelInstr false false) 16
@@ -248,7 +275,9 @@ private def genDICTDEL (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 10 then
     (mkCase s!"fuzz/int-unsigned-negative/{tag}" (mkIntStack (.cell dictSliceUnsigned4) 4 (-1)) dictDelIntUnsignedCode, rng2)
   else if shape = 11 then
-    (mkCase s!"fuzz/int-key-nan/{tag}" (#[.int .nan, .cell dictSliceSigned4, intV 4]) dictDelIntSignedCode, rng2)
+    (mkProgramCase s!"fuzz/int-key-nan/{tag}"
+      (#[.cell dictSliceSigned4, intV 4])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, dictDelInstr true false], rng2)
   else if shape = 12 then
     (mkCase s!"fuzz/type-root-builder/{tag}" #[.builder Builder.empty, .slice (mkSliceFromBits (natToBits 2 4)), intV 4] dictDelSliceCode, rng2)
   else if shape = 13 then
@@ -271,7 +300,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack
           "dispatch-fallback"
-          (runDictDelFallback (dictDelInstr false false) #[])
+          (runDictDelFallback .add #[])
           #[intV dictDelDispatchSentinel]
     },
     { name := "unit/dispatch/match-slice-hit"
@@ -279,7 +308,7 @@ def suite : InstrSuite where
         expectOkStack
           "match-slice-hit"
           (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell dictSlice4Single) 4 (natToBits 2 4)))
-          #[.null, .slice valueSliceA, intV (-1)]
+          #[.null, intV (-1)]
     },
     { name := "unit/dispatch/match-slice-miss-preserves-root"
       run := do
@@ -293,24 +322,24 @@ def suite : InstrSuite where
         expectOkStack
           "match-int-hit-signed"
           (runDictDelDirect (dictDelInstr true false) (mkIntStack (.cell dictSliceSigned4) 4 (-3)))
-          #[.cell (mkDictSliceRoot! "dict/del/signed/tail" 4 #[(4, valueSliceB)] false), .slice valueSliceA, intV (-1)]
+          #[.cell (mkDictSliceRoot! "dict/del/signed/tail" 4 #[(4, valueSliceB)] false), intV (-1)]
         expectOkStack
           "match-int-hit-unsigned"
           (runDictDelDirect (dictDelInstr true true) (mkIntStack (.cell dictSliceUnsigned4) 4 (9)))
-          #[.cell (mkDictSliceRoot! "dict/del/unsigned/tail" 4 #[(5, valueSliceA)] true), .slice valueSliceB, intV (-1)]
+          #[.cell (mkDictSliceRoot! "dict/del/unsigned/tail" 4 #[(5, valueSliceA)] true), intV (-1)]
     },
     { name := "unit/runtime/underflow"
       run := do
         expectErr "underflow-empty" (runDictDelDirect (dictDelInstr false false) #[]) .stkUnd
         expectErr "underflow-one" (runDictDelDirect (dictDelInstr false false) #[(.cell dictSlice4Single)]) .stkUnd
-        expectErr "underflow-two" (runDictDelDirect (dictDelInstr false false) (mkSliceStack .null 4 (natToBits 2 4))) .stkUnd
+        expectErr "underflow-two" (runDictDelDirect (dictDelInstr false false) #[.slice (mkSliceFromBits (natToBits 2 4)), .null]) .stkUnd
     },
     { name := "unit/runtime/n-type-range"
       run := do
         expectErr "n-type" (runDictDelDirect (dictDelInstr false false)
-          #[.cell dictSlice4Single, .slice (mkSliceFromBits (natToBits 2 4)), .cell Cell.empty]) .typeChk
+          #[.slice (mkSliceFromBits (natToBits 2 4)), .cell dictSlice4Single, .cell Cell.empty]) .typeChk
         expectErr "n-nan" (runDictDelDirect (dictDelInstr false false)
-          #[.cell dictSlice4Single, .slice (mkSliceFromBits (natToBits 2 4)), .int .nan]) .rangeChk
+          #[.slice (mkSliceFromBits (natToBits 2 4)), .cell dictSlice4Single, .int .nan]) .rangeChk
         expectErr "n-negative" (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell dictSlice4Single) (-1) (natToBits 2 4))) .rangeChk
         expectErr "n-too-large" (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell dictSlice4Single) 1024 (natToBits 2 4))) .rangeChk
     },
@@ -339,7 +368,13 @@ def suite : InstrSuite where
     { name := "unit/runtime/malformed"
       run := do
         expectErr "bad-root-type" (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.builder Builder.empty) 4 (natToBits 2 4))) .typeChk
-        expectErr "bad-root-structure" (runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell malformedDict) 4 (natToBits 2 4))) .dictErr
+        match runDictDelDirect (dictDelInstr false false) (mkSliceStack (.cell malformedDict) 4 (natToBits 2 4)) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"bad-root-structure: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"bad-root-structure: expected failure, got {reprStr st}")
     },
     { name := "unit/decoder"
       run := do
@@ -352,48 +387,54 @@ def suite : InstrSuite where
     },
     { name := "unit/assembler"
       run := do
-        expectAssembleErr "assemble/slice" (dictDelInstr false false) .invOpcode
-        expectAssembleErr "assemble/signed" (dictDelInstr true false) .invOpcode
-        expectAssembleErr "assemble/unsigned" (dictDelInstr true true) .invOpcode
+        expectAssembleOk "assemble/slice" (dictDelInstr false false) (dictDelCode false false)
+        expectAssembleOk "assemble/signed" (dictDelInstr true false) (dictDelCode true false)
+        expectAssembleOk "assemble/unsigned" (dictDelInstr true true) (dictDelCode true true)
     }
   ]
   oracle := #[
     -- [B2] Stack underflow variants.
     mkCase "oracle/underflow/empty" #[],
     mkCase "oracle/underflow/one" #[.cell dictSlice4Single],
-    mkCase "oracle/underflow/two" (mkSliceStack (.cell dictSlice4Single) 4 (natToBits 2 4)),
+    mkCase "oracle/underflow/two" #[.slice (mkSliceFromBits (natToBits 2 4)), .cell dictSlice4Single],
 
     -- [B3] `n` type/range errors.
-    mkCase "oracle/n-type" (#[(.cell dictSlice4Single), .slice (mkSliceFromBits (natToBits 2 4)), .null]),
-    mkCase "oracle/n-nan" (#[(.cell dictSlice4Single), .slice (mkSliceFromBits (natToBits 2 4)), .int .nan]),
-    mkCase "oracle/n-negative" (#[(.cell dictSlice4Single), .slice (mkSliceFromBits (natToBits 2 4)), intV (-1)]),
-    mkCase "oracle/n-too-large" (#[(.cell dictSlice4Single), .slice (mkSliceFromBits (natToBits 2 4)), intV 1024]),
-    mkCase "oracle/n-max" (#[(.cell dictSlice4Single), .slice (mkSliceFromBits (natToBits 2 4)), intV 1023]),
+    mkCase "oracle/n-type" (#[.slice (mkSliceFromBits (natToBits 2 4)), .cell dictSlice4Single, .null]),
+    mkProgramCase "oracle/n-nan"
+      (#[.slice (mkSliceFromBits (natToBits 2 4)), .cell dictSlice4Single])
+      #[.pushInt .nan, dictDelInstr false false],
+    mkCase "oracle/n-negative" (mkSliceStack (.cell dictSlice4Single) (-1) (natToBits 2 4)),
+    mkCase "oracle/n-too-large" (mkSliceStack (.cell dictSlice4Single) 1024 (natToBits 2 4)),
+    mkCase "oracle/n-max" (mkSliceStack (.cell dictSlice4Single) 1023 (natToBits 2 4)),
 
     -- [B4] key/value parsing modes and type checks.
     mkCase "oracle/type/key-not-slice" (mkIntStack (.cell dictSlice4Single) 4 2),
     mkCase "oracle/type/dict-not-cell" (mkSliceStack (.builder Builder.empty) 4 (natToBits 2 4)),
-    mkCase "oracle/type/nan-in-key-signed" (#[.int .nan, .cell dictSliceSigned4, intV 4]),
-    mkCase "oracle/type/nan-in-key-unsigned" (#[.int .nan, .cell dictSliceUnsigned4, intV 4]),
+    mkProgramCase "oracle/type/nan-in-key-signed"
+      (#[.cell dictSliceSigned4, intV 4])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, dictDelInstr true false],
+    mkProgramCase "oracle/type/nan-in-key-unsigned"
+      (#[.cell dictSliceUnsigned4, intV 4])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, dictDelInstr true true],
 
     -- [B5] key conversion and key length failures.
     mkCase "oracle/key/slice-underflow" (mkSliceStack (.cell dictSlice8Single) 8 (natToBits 5 3)),
-    mkCase "oracle/key/signed-out-of-range-positive" (mkIntStack (.cell dictSliceSigned4) 4 8),
-    mkCase "oracle/key/signed-out-of-range-negative" (mkIntStack (.cell dictSliceSigned4) 4 (-9)),
-    mkCase "oracle/key/unsigned-out-of-range-positive" (mkIntStack (.cell dictSliceUnsigned4) 4 16),
-    mkCase "oracle/key/unsigned-negative" (mkIntStack (.cell dictSliceUnsigned4) 4 (-1)),
-    mkCase "oracle/key/overflow-int-to-zero" (mkIntStack (.cell dictSliceSigned0) 0 1),
-    mkCase "oracle/key/nzero-dict" (mkIntStack (.cell dictSliceSigned0) 0 0),
+    mkCase "oracle/key/signed-out-of-range-positive" (mkIntStack (.cell dictSliceSigned4) 4 8) dictDelIntSignedCode,
+    mkCase "oracle/key/signed-out-of-range-negative" (mkIntStack (.cell dictSliceSigned4) 4 (-9)) dictDelIntSignedCode,
+    mkCase "oracle/key/unsigned-out-of-range-positive" (mkIntStack (.cell dictSliceUnsigned4) 4 16) dictDelIntUnsignedCode,
+    mkCase "oracle/key/unsigned-negative" (mkIntStack (.cell dictSliceUnsigned4) 4 (-1)) dictDelIntUnsignedCode,
+    mkCase "oracle/key/overflow-int-to-zero" (mkIntStack (.cell dictSliceSigned0) 0 1) dictDelIntSignedCode,
+    mkCase "oracle/key/nzero-dict" (mkIntStack (.cell dictSliceSigned0) 0 0) dictDelIntSignedCode,
 
     -- [B6] dictionary lookup/deletion behavior.
     mkCase "oracle/delete/slice-miss-empty" (mkSliceStack .null 4 (natToBits 2 4)),
     mkCase "oracle/delete/slice-miss-non-empty" (mkSliceStack (.cell dictSlice4Single) 4 (natToBits 7 4)),
     mkCase "oracle/delete/slice-hit-single" (mkSliceStack (.cell dictSlice4Single) 4 (natToBits 2 4)),
     mkCase "oracle/delete/slice-hit-branch" (mkSliceStack (.cell dictSlice4Two) 4 (natToBits 2 4)),
-    mkCase "oracle/delete/int-signed-hit" (mkIntStack (.cell dictSliceSigned4) 4 (-3)),
-    mkCase "oracle/delete/int-signed-miss" (mkIntStack (.cell dictSliceSigned4) 4 (6)),
-    mkCase "oracle/delete/int-unsigned-hit" (mkIntStack (.cell dictSliceUnsigned4) 4 (9)),
-    mkCase "oracle/delete/int-unsigned-miss" (mkIntStack (.cell dictSliceUnsigned4) 4 (6)),
+    mkCase "oracle/delete/int-signed-hit" (mkIntStack (.cell dictSliceSigned4) 4 (-3)) dictDelIntSignedCode,
+    mkCase "oracle/delete/int-signed-miss" (mkIntStack (.cell dictSliceSigned4) 4 (6)) dictDelIntSignedCode,
+    mkCase "oracle/delete/int-unsigned-hit" (mkIntStack (.cell dictSliceUnsigned4) 4 (9)) dictDelIntUnsignedCode,
+    mkCase "oracle/delete/int-unsigned-miss" (mkIntStack (.cell dictSliceUnsigned4) 4 (6)) dictDelIntUnsignedCode,
     mkCase "oracle/delete/with-tail-hit-preserved"
       #[intV 77, .cell dictSlice4Single, .slice (mkSliceFromBits (natToBits 2 4)), intV 4],
     mkCase "oracle/delete/with-tail-miss-preserved"

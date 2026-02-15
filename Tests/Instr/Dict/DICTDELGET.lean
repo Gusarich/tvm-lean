@@ -47,8 +47,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - `dictDeleteWithCells` path errors propagate as thrown exceptions.
 
 7. [B7] Assembler/encoding branch:
-   - `TvmLean/Model/Instr/Asm/Cp0.lean` cannot encode `.dictExt`, returning `.invOpcode`.
-   - Only `Codepage` decode supports this form.
+   - `TvmLean/Model/Instr/Asm/Cp0.lean` can encode `.dictExt` for this family.
+   - Assembly should round-trip via decoder.
 
 8. [B8] Decoder branch (opcode map):
    - `dictExt (.mutGet ...)` for DELGET is decoded from `0xf462..0xf467`.
@@ -73,7 +73,13 @@ private def dictDelGetInstr (intKey unsigned byRef : Bool) : Instr :=
   .dictExt (.mutGet intKey unsigned byRef .del)
 
 private def dictDelGetCode (intKey unsigned byRef : Bool) : Nat :=
-  0xf462 ||| (if intKey then 4 else 0) ||| (if unsigned then 2 else 0) ||| (if byRef then 1 else 0)
+  if intKey then
+    if unsigned then
+      if byRef then 0xf467 else 0xf466
+    else
+      if byRef then 0xf465 else 0xf464
+  else
+    if byRef then 0xf463 else 0xf462
 
 private def dictDelGetCell (intKey unsigned byRef : Bool) : Cell :=
   Cell.mkOrdinary (natToBits (dictDelGetCode intKey unsigned byRef) 16) #[]
@@ -278,6 +284,13 @@ private def expectAssembleErr
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembly error {expected}, got success")
 
+private def expectAssembleOk (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok code =>
+      expectDecodeOk label code instr
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+
 private def runDictDelGetFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt instr (VM.push (intV dispatchSentinel)) stack
 
@@ -391,7 +404,7 @@ def suite : InstrSuite where
     },
     { name := "unit/dispatch/matched-empty"
       run := do
-        expectErr "dispatch-matched-empty" (runDictDelGetDirect (dictDelGetInstr false false false) #[.null, intV 7, intV 0]) .cellUnd
+        expectErr "dispatch-matched-empty" (runDictDelGetDirect (dictDelGetInstr false false false) #[.slice (makeSlice #[]), .null, intV 7]) .cellUnd
     },
     { name := "unit/decode/slice-non-ref"
       run := do
@@ -413,9 +426,9 @@ def suite : InstrSuite where
       run := do
         expectDecodeErr "decode-above-range" (rawCell16 0xf468) .invOpcode
     },
-    { name := "unit/asm/dictext-rejected"
+    { name := "unit/asm/dictext-encodes"
       run := do
-        expectAssembleErr "asm/rejected" (dictDelGetInstr false false false) .invOpcode
+        expectAssembleOk "asm/encode" (dictDelGetInstr false false false)
     }
   ]
   oracle :=

@@ -42,8 +42,8 @@ BRANCH ANALYSIS (derived from Lean + C++ reference):
    - A malformed existing root can throw `.dictErr`.
 
 7. [B7] Assembler behavior
-   - `.dictSetB true false .add` and `.dictSetB true true .add` are unsupported.
-   - `assembleCp0` must return `.invOpcode`.
+   - `.dictSetB true false .add` and `.dictSetB true true .add` are supported by the assembler.
+   - Assembly should round-trip via decoder.
 
 8. [B8] Decoder behavior
    - `0xf452` decodes to `.dictSetB true false .add`.
@@ -136,7 +136,7 @@ private def runDictIAddBDirect (stack : Array Value) : Except Excno (Array Value
   runHandlerDirect execInstrDictDictSetB dictIAddBInstr stack
 
 private def runDictIAddBDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictDictSetB dictIAddBInstr (VM.push (intV 1001)) stack
+  runHandlerDirectWithNext execInstrDictDictSetB .add (VM.push (intV 1001)) stack
 
 private def expectAssembleErr (name : String) (expected : Excno) (code : Instr) : IO Unit := do
   match assembleCp0 [code] with
@@ -147,6 +147,15 @@ private def expectAssembleErr (name : String) (expected : Excno) (code : Instr) 
         throw (IO.userError s!"{name}: expected {expected}, got {e}")
   | .ok _ =>
       throw (IO.userError s!"{name}: expected assemble failure")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def expectDecodeInvOpcode (label : String) (code : Cell) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell code) with
@@ -236,7 +245,12 @@ private def genDICTIADDBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 6 then
       (mkCase "fuzz/err/key-out-of-range" (mkIAddStackInt nI outRangeKey .null), rng4)
     else if shape = 7 then
-      (mkCase "fuzz/err/key-nan" (mkIAddStack nI (.int .nan) .null), rng4)
+      ( { name := "fuzz/err/key-nan"
+          instr := dictIAddBId
+          program := #[.pushInt .nan, .xchg0 1, .xchg 1 2, dictIAddBInstr]
+          initStack := #[.builder builderVal, .null, intV nI]
+          fuel := 1_000_000 }
+      , rng4)
     else if shape = 8 then
       (mkCase "fuzz/err/n-too-large" (mkIAddStackInt 1024 0 .null), rng4)
     else if shape = 9 then
@@ -293,8 +307,8 @@ def suite : InstrSuite where
         expectErr "runtime/dict-err" (runDictIAddBDirect (mkIAddStackInt 4 0 (.cell malformedDict))) .dictErr },
     { name := "unit/assembler-decode"
       run := do
-        expectAssembleErr "assemble/dictSetB-add" .invOpcode (.dictSetB true false .add)
-        expectAssembleErr "assemble/udictSetB-add" .invOpcode (.dictSetB true true .add)
+        expectAssembleOk16 "assemble/iadb" (.dictSetB true false .add)
+        expectAssembleOk16 "assemble/uadb" (.dictSetB true true .add)
         let _ ← expectDecodeStep "decode/iadb" (opRawSlice16 0xf452) (.dictSetB true false .add) 16
         let _ ← expectDecodeStep "decode/adb" (opRawSlice16 0xf451) (.dictSetB false false .add) 16
         let _ ← expectDecodeStep "decode/uadb" (opRawSlice16 0xf453) (.dictSetB true true .add) 16
@@ -337,11 +351,19 @@ def suite : InstrSuite where
 
     -- [B5] n/key/type validation branches.
     mkCase "err/n-not-int" (#[.builder builderVal, intV 1, .cell (mkDictCellSigned 1 0), .null]),
-    mkCase "err/n-nan" (#[.builder builderVal, intV 1, .null, .int .nan]),
+    { name := "err/n-nan"
+      instr := dictIAddBId
+      program := #[.pushInt .nan, dictIAddBInstr]
+      initStack := #[.builder builderVal, intV 1, .null]
+      fuel := 1_000_000 },
     mkCase "err/n-negative" (mkIAddStackInt (-1) 1 .null),
     mkCase "err/n-too-large" (mkIAddStackInt 1024 0 .null),
     mkCase "err/key-not-int" (mkIAddStack 4 .null (.cell (mkDictCellSigned 4 3))),
-    mkCase "err/key-nan" (mkIAddStack 4 (.int .nan) (.cell (mkDictCellSigned 4 3))),
+    { name := "err/key-nan"
+      instr := dictIAddBId
+      program := #[.pushInt .nan, .xchg0 1, .xchg 1 2, dictIAddBInstr]
+      initStack := #[.builder builderVal, .cell (mkDictCellSigned 4 3), intV 4]
+      fuel := 1_000_000 },
     mkCase "err/key-out-of-range-high" (mkIAddStackInt 4 16 .null),
     mkCase "err/key-out-of-range-low" (mkIAddStackInt 4 (-17) .null),
     mkCase "err/key-nonzero-for-n0" (mkIAddStackInt 0 1 .null),

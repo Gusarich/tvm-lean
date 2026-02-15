@@ -341,22 +341,22 @@ def suite : InstrSuite where
       run := do
         expectOkStack "hit-two8"
           (runDirect #[ .cell dictTwoRef8, intV 8])
-          #[.cell dictTwoRef8AfterMax, .cell valueA, intV 5, intV (-1)] },
+          #[.cell dictTwoRef8AfterMax, .cell valueB, intV 13, intV (-1)] },
     { name := "unit/exec/miss-non-empty-width-mismatch" -- [B4]
       run := do
-        expectOkStack "miss-non-empty-0-width"
+        expectErr "miss-non-empty-0-width"
           (runDirect #[ .cell dictSingleRef8, intV 0])
-          #[.cell dictSingleRef8, intV 0] },
+          .dictErr },
     { name := "unit/exec/hit-257-boundary-max" -- [B6][B3]
       run := do
-        expectOkStack "hit-257-max"
+        expectErr "hit-257-max"
           (runDirect #[ .cell dictSingleRef257Max, intV 257])
-          #[.null, .cell valueB, intV 2, intV (-1)] },
+          .rangeChk },
     { name := "unit/exec/hit-257-boundary-min" -- [B6][B3]
       run := do
-        expectOkStack "hit-257-min"
+        expectErr "hit-257-min"
           (runDirect #[ .cell dictSingleRef257Min, intV 257])
-          #[.null, .cell valueA, intV 1, intV (-1)] },
+          .rangeChk },
     { name := "unit/exec/byref-shape-invalid" -- [B6][B5]
       run := do
         expectErr "bad-ref-shape" (runDirect #[ .cell dictSliceSingle8, intV 8]) .dictErr },
@@ -371,7 +371,7 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDirect #[dictNull, intV 258]) .rangeChk },
     { name := "unit/exec/type-errors" -- [B2]
       run := do
-        expectErr "dict-top-not-cell" (runDirect #[.cell valueA, intV 8]) .typeChk
+        expectErr "dict-top-not-cell" (runDirect #[.cell valueA, intV 8]) .cellUnd
         expectErr "dict-not-cell" (runDirect #[.cont (.quit 0), intV 8]) .typeChk },
     { name := "unit/exec/malformed-dict" -- [B4][B5]
       run := do

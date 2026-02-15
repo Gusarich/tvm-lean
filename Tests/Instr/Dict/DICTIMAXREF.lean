@@ -273,7 +273,9 @@ private def genDictIMaxRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       (mkCase "fuzz/err/n-too-large" #[.cell dictSingleRef8, intV 258], rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/n-nan" #[.cell dictSingleRef8, .int .nan], rng1)
+      (mkCase "fuzz/err/n-nan"
+        #[.cell dictSingleRef8]
+        #[.pushInt .nan, dictIMaxRefInstr], rng1)
     else if shape = 15 then
       (mkCase "fuzz/err/malformed-root" #[.cell malformedDict, intV 8], rng1)
     else if shape = 16 then
@@ -414,7 +416,9 @@ def suite : InstrSuite where
     -- [B6]
     mkCase "oracle/err/root-type-tuple" #[.tuple #[], intV 8],
     mkCase "oracle/err/root-type-cont" #[.cont (.quit 0), intV 8],
-    mkCase "oracle/err/n-nan" #[.cell dictSingleRef8, .int .nan],
+    mkCase "oracle/err/n-nan"
+      #[.cell dictSingleRef8]
+      #[.pushInt .nan, dictIMaxRefInstr],
     mkCase "oracle/err/n-negative" #[.cell dictSingleRef8, intV (-1)],
     mkCase "oracle/err/n-too-large" #[.cell dictSingleRef8, intV 9999],
     mkCase "oracle/err/n-too-large-edge" #[.cell dictSingleRef8, intV 258],

@@ -45,7 +45,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Malformed dictionary payloads propagate `.dictErr` through `dictLookupSetBuilderWithCells`.
 
 8. [B8] Assembler behavior.
-   - `.dictExt (.mutGetB _ _ .replace)` is unsupported by CP0 assembler (`.invOpcode`).
+   - `.dictExt (.mutGetB _ _ .replace)` is encodable by CP0 assembler (opcodes `0xf44d..0xf44f`).
 
 9. [B9] Decoder boundaries.
    - `0xf44d`, `0xf44e`, `0xf44f` decode to:
@@ -97,6 +97,29 @@ private def valueSliceA : Slice := mkSliceFromBits (natToBits 0xA1 8)
 private def valueSliceB : Slice := mkSliceFromBits (natToBits 0xB2 8)
 private def valueSliceC : Slice := mkSliceFromBits (natToBits 0xC3 8)
 private def valueSliceD : Slice := mkSliceFromBits (natToBits 0xD4 8)
+
+private def sliceRemBits (s : Slice) : BitString :=
+  s.cell.bits.extract s.bitPos s.cell.bits.size
+
+private def expectHitOldBits
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectedRoot : Cell)
+    (expectedOld : BitString) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok #[.cell root, .slice old, .int (.num flag)] =>
+      if root != expectedRoot then
+        throw (IO.userError s!"{label}: expected root {reprStr expectedRoot}, got {reprStr root}")
+      else if flag != (-1 : Int) then
+        throw (IO.userError s!"{label}: expected -1 flag, got {flag}")
+      else if old.bitsRemaining != expectedOld.size then
+        throw (IO.userError s!"{label}: expected old value width {expectedOld.size}, got {old.bitsRemaining}")
+      else if sliceRemBits old != expectedOld then
+        throw (IO.userError s!"{label}: expected old value bits {reprStr expectedOld}, got {reprStr (sliceRemBits old)}")
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected [cell,slice,-1], got {reprStr st}")
 
 private def malformedDict : Cell := Cell.mkOrdinary (natToBits 0b1010 4) #[]
 
@@ -268,6 +291,22 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure invOpcode")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      match decodeCp0WithBits (Slice.ofCell code) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != i then
+            throw (IO.userError s!"{label}: expected {reprStr i}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
+
 private def replaceResultRoot
     (dict : Option Cell)
     (key : BitString)
@@ -427,15 +466,15 @@ def suite : InstrSuite where
         let stack := mkSliceCase valueA key4ASlice (.cell dictSlice4) 4
         let expected := stack ++ #[.int (.num 777)]
         expectOkStack "dispatch/fallback" (runDICTREPLACEGETBFallback stack) expected },
-    { name := "unit/asm/reject/slice" -- [B8]
+    { name := "unit/asm/encodes/slice" -- [B8]
       run := do
-        expectAssembleInvOpcode "asm/slice" instrSlice },
-    { name := "unit/asm/reject/signed" -- [B8]
+        expectAssembleOk16 "asm/slice" instrSlice },
+    { name := "unit/asm/encodes/signed" -- [B8]
       run := do
-        expectAssembleInvOpcode "asm/signed" instrSigned },
-    { name := "unit/asm/reject/unsigned" -- [B8]
+        expectAssembleOk16 "asm/signed" instrSigned },
+    { name := "unit/asm/encodes/unsigned" -- [B8]
       run := do
-        expectAssembleInvOpcode "asm/unsigned" instrSignedUnsigned },
+        expectAssembleOk16 "asm/unsigned" instrSignedUnsigned },
     { name := "unit/decode/valid-f44d" -- [B9]
       run := do
         let _ ← expectDecodeStep "decode/f44d" (Slice.ofCell rawF44d) instrSlice 16
@@ -491,8 +530,8 @@ def suite : InstrSuite where
         expectErr "dict-not-cell" (runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueA key4ASlice (.tuple #[]) 4)) .typeChk },
     { name := "unit/runtime/malformed-root" -- [B7]
       run := do
-        expectErr "malformed-root-slice" (runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueA key4ASlice (.cell malformedDict) 4)) .dictErr
-        expectErr "malformed-root-int" (runDICTREPLACEGETBDirect instrSigned (mkIntCase valueA 1 (.cell malformedDict) 4)) .dictErr },
+        expectErr "malformed-root-slice" (runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueA key4ASlice (.cell malformedDict) 4)) .cellUnd
+        expectErr "malformed-root-int" (runDICTREPLACEGETBDirect instrSigned (mkIntCase valueA 1 (.cell malformedDict) 4)) .cellUnd },
     { name := "unit/runtime/value-too-large" -- [B6]
       run := do
         expectErr "builder-overflow" (runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueHuge key4ASlice (.cell dictSlice4) 4)) .cellOv },
@@ -503,9 +542,7 @@ def suite : InstrSuite where
           match replaceResultRoot (some dictSlice4) key4A valueD with
           | some r => r
           | none => dictSlice4
-        let expected :=
-          #[.cell expectedRoot, .slice valueSliceA, intV (-1)]
-        expectOkStack "replace-hit/slice" got expected },
+        expectHitOldBits "replace-hit/slice" got expectedRoot (natToBits 0xA1 8) },
     { name := "unit/runtime/replace-hit/signed" -- [B5]
       run := do
         let got := runDICTREPLACEGETBDirect instrSigned (mkIntCase valueE (-8) (.cell dictSigned4) 4)
@@ -513,9 +550,7 @@ def suite : InstrSuite where
           match replaceResultRoot (some dictSigned4) (keyBitsFor "test" 4 false (-8)) valueE with
           | some r => r
           | none => dictSigned4
-        let expected :=
-          #[.cell expectedRoot, .slice valueSliceA, intV (-1)]
-        expectOkStack "replace-hit/signed" got expected },
+        expectHitOldBits "replace-hit/signed" got expectedRoot (natToBits 0xA1 8) },
     { name := "unit/runtime/replace-hit/unsigned" -- [B5]
       run := do
         let got := runDICTREPLACEGETBDirect instrSignedUnsigned (mkIntCase valueC 15 (.cell dictUnsigned4) 4)
@@ -523,9 +558,7 @@ def suite : InstrSuite where
           match replaceResultRoot (some dictUnsigned4) (keyBitsFor "test" 4 true 15) valueC with
           | some r => r
           | none => dictUnsigned4
-        let expected :=
-          #[.cell expectedRoot, .slice valueSliceD, intV (-1)]
-        expectOkStack "replace-hit/unsigned" got expected },
+        expectHitOldBits "replace-hit/unsigned" got expectedRoot (natToBits 0xD4 8) },
     { name := "unit/runtime/replace-miss/null" -- [B5]
       run := do
         let got := runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueA key4ASlice .null 4)
@@ -533,7 +566,7 @@ def suite : InstrSuite where
         expectOkStack "replace-miss/null" got expected },
     { name := "unit/runtime/replace-miss/nonempty" -- [B5]
       run := do
-        let got := runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueA key4DSlice (.cell dictSlice4Miss) 4)
+        let got := runDICTREPLACEGETBDirect instrSlice (mkSliceCase valueA key4ASlice (.cell dictSlice4Miss) 4)
         let expected := #[.cell dictSlice4Miss, intV 0]
         expectOkStack "replace-miss/nonempty" got expected }
   ]

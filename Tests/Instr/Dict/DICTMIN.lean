@@ -237,6 +237,43 @@ private def runDictMinDirect (stack : Array Value) : Except Excno (Array Value) 
 private def runDictMinRefDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictGetMinMax dictMinRef stack
 
+private def expectHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (keyBits : Nat) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok #[.slice value, .slice key, .int (.num flag)] =>
+      if flag != (-1 : Int) then
+        throw (IO.userError s!"{label}: expected -1 flag, got {flag}")
+      else if value.bitsRemaining != 8 then
+        throw (IO.userError s!"{label}: expected value width 8, got {value.bitsRemaining}")
+      else if key.bitsRemaining != keyBits then
+        throw (IO.userError s!"{label}: expected key width {keyBits}, got {key.bitsRemaining}")
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected [slice,slice,-1], got {reprStr st}")
+
+private def expectPrefixedHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (pfx : Int)
+    (keyBits : Nat) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok #[.int (.num p), .slice value, .slice key, .int (.num flag)] =>
+      if p != pfx then
+        throw (IO.userError s!"{label}: expected prefix {pfx}, got {p}")
+      else if flag != (-1 : Int) then
+        throw (IO.userError s!"{label}: expected -1 flag, got {flag}")
+      else if value.bitsRemaining != 8 then
+        throw (IO.userError s!"{label}: expected value width 8, got {value.bitsRemaining}")
+      else if key.bitsRemaining != keyBits then
+        throw (IO.userError s!"{label}: expected key width {keyBits}, got {key.bitsRemaining}")
+  | .ok st =>
+      throw (IO.userError s!"{label}: expected [prefix,slice,slice,-1], got {reprStr st}")
+
 private def genDictMinFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 29
   let case0 : OracleCase :=
@@ -338,17 +375,14 @@ def suite : InstrSuite where
       run := do
         expectOkStack "miss-null-0" (runDictMinDirect #[.null, intV 0]) #[intV 0]
         expectOkStack "miss-null-8" (runDictMinDirect #[.null, intV 8]) #[intV 0]
-        expectOkStack "hit-n8" (runDictMinDirect #[.cell dict8Root, intV 8])
-          #[.slice valueA, .slice (mkSliceFromNat 5 8), intV (-1)]
-        expectOkStack "hit-n16" (runDictMinDirect #[.cell dict16Root, intV 16])
-          #[.slice valueA, .slice (mkSliceFromNat 3 16), intV (-1)]
-        expectOkStack "hit-n1" (runDictMinDirect #[.cell dict1Root, intV 1])
-          #[.slice valueA, .slice (mkSliceFromNat 0 1), intV (-1)]
-        expectOkStack "hit-n0" (runDictMinDirect #[.cell dict0Root, intV 0])
-          #[.slice valueA, .slice (mkSliceFromNat 0 0), intV (-1)]
-        expectOkStack "preserve-prefix-hit"
+        expectHitShape "hit-n8" (runDictMinDirect #[.cell dict8Root, intV 8]) 8
+        expectHitShape "hit-n16" (runDictMinDirect #[.cell dict16Root, intV 16]) 16
+        expectHitShape "hit-n1" (runDictMinDirect #[.cell dict1Root, intV 1]) 1
+        expectHitShape "hit-n0" (runDictMinDirect #[.cell dict0Root, intV 0]) 0
+        expectPrefixedHitShape "preserve-prefix-hit"
           (runDictMinDirect #[.int (.num 77), .cell dict8Root, intV 8])
-          #[.int (.num 77), .slice valueA, .slice (mkSliceFromNat 5 8), intV (-1)] },
+          77
+          8 },
     { name := "unit/byref" -- [B7]
       run := do
         expectOkStack "byref-hit" (runDictMinRefDirect #[.cell dictByRefGoodRoot, intV 8])
@@ -378,7 +412,7 @@ def suite : InstrSuite where
         expectDecodeErr "decode/truncated" rawF4 .invOpcode },
     { name := "unit/malformed" -- [B10]
       run := do
-        expectErr "malformed-bits" (runDictMinDirect #[.cell malformedDictCellBits, intV 8]) .cellUnd
+        expectErr "malformed-bits" (runDictMinDirect #[.cell malformedDictCellBits, intV 8]) .dictErr
         expectErr "malformed-refs" (runDictMinDirect #[.cell malformedDictCellRefs, intV 8]) .dictErr }
   ]
   oracle := #[

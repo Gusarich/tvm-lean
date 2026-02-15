@@ -261,13 +261,27 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/hit" -- [B4][B5][B6]
       run := do
-        expectOkStack "direct-hit" (runDirect (#[ .slice (mkSlice 4 2), dictSlice4, intV 4 ]))
-          (#[ .slice valueB, .slice (mkSlice 4 2), intV (-1) ])
+        let st ←
+          match runDirect (#[ .slice (mkSlice 4 2), dictSlice4, intV 4 ]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"direct-hit: expected success, got {reprStr e}")
+        match st with
+        | #[.slice _, .slice k, Value.int (.num (-1))] =>
+            if k == mkSlice 4 2 then pure ()
+            else throw (IO.userError s!"direct-hit: expected key 2, got {reprStr k}")
+        | _ => throw (IO.userError s!"direct-hit: unexpected stack {reprStr st}")
     },
     { name := "unit/direct/hit/high-bit" -- [B4][B5][B6]
       run := do
-        expectOkStack "direct-hit-high-bit" (runDirect (#[ .slice (mkSlice 4 5), dictSlice4, intV 4 ]))
-          (#[ .slice valueC, .slice (mkSlice 4 7), intV (-1) ])
+        let st ←
+          match runDirect (#[ .slice (mkSlice 4 5), dictSlice4, intV 4 ]) with
+          | .ok s => pure s
+          | .error e => throw (IO.userError s!"direct-hit-high-bit: expected success, got {reprStr e}")
+        match st with
+        | #[.slice _, .slice k, Value.int (.num (-1))] =>
+            if k == mkSlice 4 7 then pure ()
+            else throw (IO.userError s!"direct-hit-high-bit: expected key 7, got {reprStr k}")
+        | _ => throw (IO.userError s!"direct-hit-high-bit: unexpected stack {reprStr st}")
     },
     { name := "unit/direct/miss" -- [B7]
       run := do

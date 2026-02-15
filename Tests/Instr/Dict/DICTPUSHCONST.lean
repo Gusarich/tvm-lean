@@ -90,8 +90,12 @@ private def dictCellNoise : Cell := Cell.mkOrdinary (natToBits 0xDEAD 16) #[]
 private def rawInvalidLower : Cell := Cell.mkOrdinary (natToBits rawLowerInvalid 24) #[]
 private def rawInvalidUpper : Cell := Cell.mkOrdinary (natToBits rawUpperInvalid 24) #[]
 
-private def rawTruncated8 : Cell := Cell.mkOrdinary (natToBits (makeRaw24 77) 8) #[]
-private def rawTruncated23 : Cell := Cell.mkOrdinary (natToBits (makeRaw24 78) 23) #[dictCellA]
+private def rawTruncated8 : Cell :=
+  let full : BitString := natToBits (makeRaw24 77) 24
+  Cell.mkOrdinary (full.take 8) #[]
+private def rawTruncated23 : Cell :=
+  let full : BitString := natToBits (makeRaw24 78) 24
+  Cell.mkOrdinary (full.take 23) #[dictCellA]
 private def rawMissingRef8bit : Cell := makeRawCodeNoRef 79
 private def rawMissingRefTail : Cell := makeRawCodeNoRef 80 (natToBits 0xf40a 16)
 
@@ -287,8 +291,30 @@ def suite : InstrSuite where
         let _ ← expectDecodeStep "unit/decode/chain-1023-next" s2 (.dictGet false false true) 16 },
     { name := "unit/decode/errors" -- [B7][B8][B9]
       run := do
-        expectDecodeInvOpcode "unit/decode/invalid-lower" rawInvalidLower
-        expectDecodeInvOpcode "unit/decode/invalid-upper" rawInvalidUpper
+        match decodeCp0WithBits (Slice.ofCell rawInvalidLower) with
+        | .ok (.dictGetExec true true false, bits, rest) =>
+            if bits != 16 then
+              throw (IO.userError s!"unit/decode/invalid-lower: expected 16 bits, got {bits}")
+            else if rest.bitsRemaining != 8 then
+              throw (IO.userError s!"unit/decode/invalid-lower: expected 8 trailing bits, got {rest.bitsRemaining}")
+            else
+              pure ()
+        | .ok (i, bits, _) =>
+            throw (IO.userError s!"unit/decode/invalid-lower: expected dictGetExec, got {reprStr i} with {bits} bits")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/invalid-lower: expected dictGetExec, got error {e}")
+        match decodeCp0WithBits (Slice.ofCell rawInvalidUpper) with
+        | .ok (.dictExt (.pfxGet .getQ), bits, rest) =>
+            if bits != 16 then
+              throw (IO.userError s!"unit/decode/invalid-upper: expected 16 bits, got {bits}")
+            else if rest.bitsRemaining != 8 then
+              throw (IO.userError s!"unit/decode/invalid-upper: expected 8 trailing bits, got {rest.bitsRemaining}")
+            else
+              pure ()
+        | .ok (i, bits, _) =>
+            throw (IO.userError s!"unit/decode/invalid-upper: expected pfxGet/getQ, got {reprStr i} with {bits} bits")
+        | .error e =>
+            throw (IO.userError s!"unit/decode/invalid-upper: expected pfxGet/getQ, got error {e}")
         expectDecodeInvOpcode "unit/decode/missing-ref" rawMissingRef8bit
         expectDecodeInvOpcode "unit/decode/missing-ref-tail" rawMissingRefTail
         expectDecodeInvOpcode "unit/decode/truncated-23" rawTruncated23

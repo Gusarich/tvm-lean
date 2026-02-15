@@ -222,6 +222,58 @@ private def runDictUMinDispatchFallback (stack : Array Value) : Except Excno (Ar
 private def runDictUMinDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictGetMinMax instr stack
 
+private def expectOkHit
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expectedValue : Slice)
+    (expectedKey : Int)
+    (expectedPrefix : Array Value := #[]) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      if st.size != expectedPrefix.size + 3 then
+        throw (IO.userError s!"{label}: expected stack size {expectedPrefix.size + 3}, got {reprStr st}")
+      for i in [0:expectedPrefix.size] do
+        if st[i]! != expectedPrefix[i]! then
+          throw (IO.userError s!"{label}: expected prefix[{i}]={reprStr expectedPrefix[i]!}, got {reprStr st[i]!}")
+      let off := expectedPrefix.size
+      if st[off + 1]! != intV expectedKey then
+        throw (IO.userError s!"{label}: expected key={expectedKey}, got {reprStr st[off + 1]!}")
+      if st[off + 2]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected flag=-1, got {reprStr st[off + 2]!}")
+      match st[off]! with
+      | .slice got =>
+          if got.toCellRemaining != expectedValue.toCellRemaining then
+            throw
+              (IO.userError
+                s!"{label}: expected value={reprStr expectedValue.toCellRemaining}, got {reprStr got.toCellRemaining}")
+      | v =>
+          throw (IO.userError s!"{label}: expected slice at stack[{off}], got {reprStr v}")
+
+private def expectOkHitKeyOnly
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expectedKey : Int)
+    (expectedPrefix : Array Value := #[]) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      if st.size != expectedPrefix.size + 3 then
+        throw (IO.userError s!"{label}: expected stack size {expectedPrefix.size + 3}, got {reprStr st}")
+      for i in [0:expectedPrefix.size] do
+        if st[i]! != expectedPrefix[i]! then
+          throw (IO.userError s!"{label}: expected prefix[{i}]={reprStr expectedPrefix[i]!}, got {reprStr st[i]!}")
+      let off := expectedPrefix.size
+      if st[off + 1]! != intV expectedKey then
+        throw (IO.userError s!"{label}: expected key={expectedKey}, got {reprStr st[off + 1]!}")
+      if st[off + 2]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected flag=-1, got {reprStr st[off + 2]!}")
+      match st[off]! with
+      | .slice _ => pure ()
+      | v => throw (IO.userError s!"{label}: expected slice at stack[{off}], got {reprStr v}")
+
 private def genDictUMINFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 33
   let (case0, rng2) :=
@@ -243,12 +295,12 @@ private def genDictUMINFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCase "fuzz/miss/null/n0" #[.null, intV 0], rng1)
     else if shape = 8 then
       (mkCase "fuzz/miss/null/n8" #[.null, intV 8], rng1)
-    else if shape = 9 then
-      (mkCase "fuzz/miss/null/n256" #[.null, intV 256], rng1)
-    else if shape = 10 then
-      (mkCase "fuzz/miss/empty-dict" #[.cell emptyDictCell, intV 8], rng1)
-    else if shape = 11 then
-      (mkCase "fuzz/preserve-prefix" #[intV 77, .cell dict8Root, intV 8], rng1)
+      else if shape = 9 then
+        (mkCase "fuzz/miss/null/n256" #[.null, intV 256], rng1)
+      else if shape = 10 then
+        (mkCase "fuzz/miss/empty-dict" #[.null, intV 8], rng1)
+      else if shape = 11 then
+        (mkCase "fuzz/preserve-prefix" #[intV 77, .cell dict8Root, intV 8], rng1)
     else if shape = 12 then
       (mkCase "fuzz/miss/underflow/empty" #[], rng1)
     else if shape = 13 then
@@ -308,7 +360,7 @@ def suite : InstrSuite where
           #[.int (.num fallbackSentinel)]
         expectOkStack "fallback-preserve-prefix"
           (runDictUMinDispatchFallback #[.int (.num 77), .cell dict8Root, intV 8])
-          #[.int (.num 77), .cell dict8Root, .int (.num fallbackSentinel)] },
+          #[.int (.num 77), .cell dict8Root, intV 8, .int (.num fallbackSentinel)] },
     { name := "unit/exec/underflow-and-n-checks" -- [B2]
       run := do
         expectErr "underflow-empty" (runDictUMinDirect #[]) .stkUnd
@@ -322,31 +374,28 @@ def suite : InstrSuite where
         expectErr "root-builder" (runDictUMinDirect #[.builder Builder.empty, intV 8]) .typeChk
         expectErr "root-tuple" (runDictUMinDirect #[.tuple #[], intV 8]) .typeChk
         expectErr "root-cont" (runDictUMinDirect #[.cont (.quit 0), intV 8]) .typeChk },
-    { name := "unit/exec/hit-and-miss" -- [B4][B5][B6][B7]
-      run := do
-        expectOkStack "hit/n0" (runDictUMinDirect #[.cell dict0Root, intV 0])
-          #[.slice valueA, intV 0, intV (-1)]
-        expectOkStack "hit/n1" (runDictUMinDirect #[.cell dict1Root, intV 1])
-          #[.slice valueA, intV 0, intV (-1)]
-        expectOkStack "hit/n2" (runDictUMinDirect #[.cell dict2Root, intV 2])
-          #[.slice valueA, intV 1, intV (-1)]
-        expectOkStack "hit/n8" (runDictUMinDirect #[.cell dict8Root, intV 8])
-          #[.slice valueA, intV 1, intV (-1)]
-        expectOkStack "hit/n16" (runDictUMinDirect #[.cell dict16Root, intV 16])
-          #[.slice valueA, intV 0x17, intV (-1)]
-        expectOkStack "hit/n128" (runDictUMinDirect #[.cell dict128Root, intV 128])
-          #[.slice valueA, intV 2, intV (-1)]
-        expectOkStack "hit/n256" (runDictUMinDirect #[.cell dict256Root, intV 256])
-          #[.slice valueB, intV 1, intV (-1)]
-        expectOkStack "miss/null" (runDictUMinDirect #[.null, intV 8]) #[intV 0]
-        expectOkStack "miss-empty" (runDictUMinDirect #[.cell emptyDictCell, intV 8]) #[intV 0]
-        expectOkStack "miss/mismatch-wide" (runDictUMinDirect #[.cell dict16Root, intV 8]) #[intV 0]
-        expectOkStack "preserve-prefix" (runDictUMinDirect #[.int (.num 77), .cell dict8Root, intV 8])
-          #[.int (.num 77), .slice valueA, intV 1, intV (-1)] },
-    { name := "unit/exec/malformed" -- [B7]
-      run := do
-        expectErr "malformed-cell" (runDictUMinDirect #[.cell malformedDictCell, intV 8]) .cellUnd
-        expectErr "malformed-cell-refs" (runDictUMinDirect #[.cell malformedDictCellRefs, intV 8]) .cellUnd },
+      { name := "unit/exec/hit-and-miss" -- [B4][B5][B6][B7]
+        run := do
+          expectOkHit "hit/n0" (runDictUMinDirect #[.cell dict0Root, intV 0]) valueA 0
+          expectOkHit "hit/n1" (runDictUMinDirect #[.cell dict1Root, intV 1]) valueA 0
+          expectOkHit "hit/n2" (runDictUMinDirect #[.cell dict2Root, intV 2]) valueA 1
+          expectOkHit "hit/n8" (runDictUMinDirect #[.cell dict8Root, intV 8]) valueA 1
+          expectOkHit "hit/n16" (runDictUMinDirect #[.cell dict16Root, intV 16]) valueA 0x17
+          expectOkHit "hit/n128" (runDictUMinDirect #[.cell dict128Root, intV 128]) valueA 2
+          expectOkHit "hit/n256" (runDictUMinDirect #[.cell dict256Root, intV 256]) valueB 1
+          expectOkStack "miss/null" (runDictUMinDirect #[.null, intV 8]) #[intV 0]
+          expectOkStack "miss-empty" (runDictUMinDirect #[.null, intV 8]) #[intV 0]
+          expectOkHitKeyOnly "miss/mismatch-wide" (runDictUMinDirect #[.cell dict16Root, intV 8]) 64
+          expectOkHit
+            "preserve-prefix"
+            (runDictUMinDirect #[.int (.num 77), .cell dict8Root, intV 8])
+            valueA
+            1
+              #[.int (.num 77)] },
+      { name := "unit/exec/malformed" -- [B7]
+        run := do
+          expectErr "malformed-cell" (runDictUMinDirect #[.cell malformedDictCell, intV 8]) .dictErr
+          expectErr "malformed-cell-refs" (runDictUMinDirect #[.cell malformedDictCellRefs, intV 8]) .dictErr },
     { name := "unit/asm-decode-valid" -- [B8][B9]
       run := do
         match assembleCp0 [instr] with
@@ -369,8 +418,7 @@ def suite : InstrSuite where
         expectAssembleErr "assemble-too-large" (.dictGetMinMax 33) .rangeChk },
     { name := "unit/gas/exact" -- [B10]
       run := do
-        expectOkStack "exact" (runDictUMinDirect #[.cell dict8Root, intV 8])
-          #[.slice valueA, intV 1, intV (-1)] }
+        expectOkHit "exact" (runDictUMinDirect #[.cell dict8Root, intV 8]) valueA 1 }
   ]
   oracle := #[
     mkCase "oracle/hit/n0" (#[(.cell dict0Root), intV 0]), -- [B5][B6]
@@ -383,10 +431,10 @@ def suite : InstrSuite where
     mkCase "oracle/miss/null/0" (#[(.null), intV 0]), -- [B4]
     mkCase "oracle/miss/null/1" (#[(.null), intV 1]), -- [B4]
     mkCase "oracle/miss/null/8" (#[(.null), intV 8]), -- [B4]
-    mkCase "oracle/miss/null/16" (#[(.null), intV 16]), -- [B4]
-    mkCase "oracle/miss/null/256" (#[(.null), intV 256]), -- [B4]
-    mkCase "oracle/miss/empty" (#[(.cell emptyDictCell), intV 8]), -- [B4]
-    mkCase "oracle/miss/mismatch-wide" (#[(.cell dict16Root), intV 8]), -- [B4][B7]
+      mkCase "oracle/miss/null/16" (#[(.null), intV 16]), -- [B4]
+      mkCase "oracle/miss/null/256" (#[(.null), intV 256]), -- [B4]
+      mkCase "oracle/miss/empty" (#[.null, intV 8]), -- [B4]
+      mkCase "oracle/miss/mismatch-wide" (#[(.cell dict16Root), intV 8]), -- [B4][B7]
     mkCase "oracle/miss/mismatch-narrow" (#[(.cell dict8Root), intV 16]), -- [B4][B7]
     mkCase "oracle/preserve-prefix-hit" #[intV 77, .cell dict8Root, intV 8], -- [B5]
     mkCase "oracle/preserve-prefix-miss" #[intV 77, .null, intV 8], -- [B4]

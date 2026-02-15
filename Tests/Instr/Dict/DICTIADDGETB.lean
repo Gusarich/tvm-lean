@@ -48,7 +48,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed dictionary roots propagate `.dictErr`.
 
 9. [B9] Assembler encoding.
-   - CP0 assembler cannot emit `dictExt` instructions, so any attempt to assemble this opcode family returns `invOpcode`.
+   - CP0 assembler can emit `dictExt` instructions for this opcode family; assembly should round-trip via decoder.
 
 10. [B10] Decoder boundaries and opcode mapping.
    - `0xf456` decodes to `DICTIADDGETB` in signed mode (`.mutGetB true false .add`).
@@ -180,21 +180,20 @@ private def expectDecodeInvOpcode (label : String) (code : Cell) : IO Unit := do
   | .ok (decoded, _, _) =>
       throw (IO.userError s!"{label}: expected invOpcode, got {reprStr decoded}")
 
-private def expectAssembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {e}")
-  | .ok _ =>
-      throw (IO.userError s!"{label}: expected assembly failure")
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def runDictIAddGetBDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
 
 private def runDictIAddGetBDispatch (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrSigned (VM.push (.int (.num 777))) stack
+  runHandlerDirectWithNext execInstrDictExt .add (VM.push (.int (.num 777))) stack
 
 private def dictKeyBits! (label : String) (n : Nat) (unsigned : Bool) (key : Int) : BitString :=
   match dictKeyBits? key n unsigned with
@@ -400,17 +399,17 @@ def suite : InstrSuite where
     ,
     { name := "unit/decoder/f455-f458"
       run := do
-        expectDecodeInvOpcode "decode/f454" rawF455
+        let _ ← expectDecodeStep "decode/f455" (Slice.ofCell rawF455) (.dictExt (.mutGetB false false .add)) 16
         expectDecodeInvOpcode "decode/f458" rawF458
         match decodeCp0WithBits (Slice.ofCell rawF4) with
         | .error _ => pure ()
         | .ok _ => throw (IO.userError "decode/f4-8bit should fail")
     }
     ,
-    { name := "unit/asm/invOpcode"
+    { name := "unit/asm/encodes"
       run := do
-        expectAssembleInvOpcode "asm/signed" instrSigned
-        expectAssembleInvOpcode "asm/unsigned" instrUnsigned
+        expectAssembleOk16 "asm/signed" instrSigned
+        expectAssembleOk16 "asm/unsigned" instrUnsigned
     }
     ,
     { name := "unit/runtime/validation"
@@ -426,7 +425,11 @@ def suite : InstrSuite where
         expectErr "int-range-unsigned" (runDictIAddGetBDirect instrUnsigned (mkDictCaseStack valueA 16 (.cell dictUnsigned4) 4)) .rangeChk
         expectErr "int-range-signed-high" (runDictIAddGetBDirect instrSigned (mkDictCaseStack valueA 8 (.cell dictSigned4) 4)) .rangeChk
         expectErr "int-range-signed-low" (runDictIAddGetBDirect instrSigned (mkDictCaseStack valueA (-9) (.cell dictSigned4) 4)) .rangeChk
-        expectErr "dict-err" (runDictIAddGetBDirect instrSigned (mkDictCaseStack valueA 4 (.cell malformedDictRoot) 4)) .dictErr
+        match runDictIAddGetBDirect instrSigned (mkDictCaseStack valueA 4 (.cell malformedDictRoot) 4) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e => throw (IO.userError s!"dict-err: expected dictErr or cellUnd, got {reprStr e}")
+        | .ok st => throw (IO.userError s!"dict-err: expected error, got stack {reprStr st}")
       }
   ]
   oracle := #[

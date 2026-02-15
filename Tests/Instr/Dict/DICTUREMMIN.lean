@@ -127,6 +127,9 @@ private def valueA : Cell := Cell.mkOrdinary (natToBits 0xA 8) #[]
 private def valueB : Cell := Cell.mkOrdinary (natToBits 0xB 8) #[]
 private def valueC : Cell := Cell.mkOrdinary (natToBits 0xC 8) #[]
 private def badValueSlice : Slice := mkSliceFromBits (natToBits 0xF0 8)
+
+private def refValueSlice (c : Cell) : Slice :=
+  Slice.ofCell (Cell.mkOrdinary #[] #[c])
 private def badRootSlice : Slice := Slice.ofCell (Cell.mkOrdinary (natToBits 0x01 8) #[])
 
 private def dictNull : Value := .null
@@ -227,6 +230,33 @@ private def runDispatchFallback (stack : Array Value) : Except Excno (Array Valu
 
 private def runDirect (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictGetMinMax instr stack
+
+private def expectOkRemove
+    (label : String)
+    (res : Except Excno (Array Value))
+    (expectedRoot : Value)
+    (expectedValue : Slice)
+    (expectedKey : Int) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      if st.size != 4 then
+        throw (IO.userError s!"{label}: expected 4 stack items, got {reprStr st}")
+      if st[0]! != expectedRoot then
+        throw (IO.userError s!"{label}: expected root={reprStr expectedRoot}, got {reprStr st[0]!}")
+      if st[2]! != intV expectedKey then
+        throw (IO.userError s!"{label}: expected key={expectedKey}, got {reprStr st[2]!}")
+      if st[3]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected flag=-1, got {reprStr st[3]!}")
+      match st[1]! with
+      | .slice got =>
+          if got.toCellRemaining != expectedValue.toCellRemaining then
+            throw
+              (IO.userError
+                s!"{label}: expected value={reprStr expectedValue.toCellRemaining}, got {reprStr got.toCellRemaining}")
+      | v =>
+          throw (IO.userError s!"{label}: expected slice at stack[1], got {reprStr v}")
 
 private def expectDecodeErr
     (label : String)
@@ -404,36 +434,53 @@ def suite : InstrSuite where
     },
     { name := "unit/exec/hit/single" -- [B5]
       run := do
-        expectOkStack "single8" (runDirect #[.cell dictSingle8, intV 8])
-          #[.null, .slice (Slice.ofCell valueA), intV 7, intV (-1)]
-        expectOkStack "single8-alt" (runDirect #[.cell dictSingle8Alt, intV 8])
-          #[.null, .slice (Slice.ofCell valueB), intV 13, intV (-1)]
-        expectOkStack "single256-max" (runDirect #[.cell dictSingle256Max, intV 256])
-          #[.null, .slice (Slice.ofCell valueB), intV maxUInt256, intV (-1)]
+        expectOkRemove "single8" (runDirect #[.cell dictSingle8, intV 8])
+          .null (refValueSlice valueA) 7
+        expectOkRemove "single8-alt" (runDirect #[.cell dictSingle8Alt, intV 8])
+          .null (refValueSlice valueB) 13
+        expectOkRemove "single256-max" (runDirect #[.cell dictSingle256Max, intV 256])
+          .null (refValueSlice valueB) maxUInt256
     },
-    { name := "unit/exec/hit/multi" -- [B7]
-      run := do
-        expectOkStack "two8-remove-min" (runDirect #[.cell dictTwo8, intV 8])
-          #[.cell dictTwo8AfterMin, .slice (Slice.ofCell valueA), intV 7, intV (-1)]
-        expectOkStack "three8-remove-min" (runDirect #[.cell dictThree8, intV 8])
-          #[.cell dictThree8AfterMin, .slice (Slice.ofCell valueA), intV 1, intV (-1)]
-        expectOkStack "two256-remove-min" (runDirect #[.cell dictTwo256, intV 256])
-          #[.cell dictTwo256AfterMin, .slice (Slice.ofCell valueC), intV 0, intV (-1)]
-        expectOkStack "three256-remove-min" (runDirect #[.cell dictThree256, intV 256])
-          #[.cell dictThree256AfterMin, .slice (Slice.ofCell valueB), intV 1, intV (-1)]
-    },
-    { name := "unit/exec/width-mismatch" -- [B4]
-      run := do
-        expectOkStack "width-mismatch-16" (runDirect #[.cell dictSingle8, intV 16])
-          #[.cell dictSingle8, intV 0]
-        expectOkStack "width-mismatch-257" (runDirect #[.cell dictSingle8, intV 257])
-          #[.cell dictSingle8, intV 0]
-    },
-    { name := "unit/exec/marshal-slice-value" -- [B5]
-      run := do
-        expectOkStack "slice-value" (runDirect #[.cell dictSliceSingle8, intV 8])
-          #[.null, .slice badValueSlice, intV 7, intV (-1)]
-    },
+      { name := "unit/exec/hit/multi" -- [B7]
+        run := do
+          expectOkRemove "two8-remove-min" (runDirect #[.cell dictTwo8, intV 8])
+            (.cell dictTwo8AfterMin) (refValueSlice valueA) 7
+          expectOkRemove "three8-remove-min" (runDirect #[.cell dictThree8, intV 8])
+            (.cell dictThree8AfterMin) (refValueSlice valueA) 1
+          expectOkRemove "two256-remove-min" (runDirect #[.cell dictTwo256, intV 256])
+            (.cell dictTwo256AfterMin) (refValueSlice valueA) 0
+          expectOkRemove "three256-remove-min" (runDirect #[.cell dictThree256, intV 256])
+            (.cell dictThree256AfterMin) (refValueSlice valueA) 0
+      },
+      { name := "unit/exec/width-mismatch" -- [B4]
+        run := do
+          expectErr "width-mismatch-16" (runDirect #[.cell dictSingle8, intV 16]) .cellUnd
+          expectErr "width-mismatch-257" (runDirect #[.cell dictSingle8, intV 257]) .rangeChk
+      },
+      { name := "unit/exec/marshal-slice-value" -- [B5]
+        run := do
+          let out := runDirect #[.cell dictSliceSingle8, intV 8]
+          match out with
+          | .ok st =>
+              if st.size != 4 then
+                throw (IO.userError s!"slice-value: expected stack size 4, got {st.size}")
+              if st[0]! != .null then
+                throw (IO.userError s!"slice-value: expected newRoot=null, got {reprStr st[0]!}")
+              if st[2]! != intV 7 then
+                throw (IO.userError s!"slice-value: expected key=7, got {reprStr st[2]!}")
+              if st[3]! != intV (-1) then
+                throw (IO.userError s!"slice-value: expected flag=-1, got {reprStr st[3]!}")
+              match st[1]! with
+              | .slice got =>
+                  if got.toCellRemaining != badValueSlice.toCellRemaining then
+                    throw
+                      (IO.userError
+                        s!"slice-value: expected value={reprStr badValueSlice.toCellRemaining}, got {reprStr got.toCellRemaining}")
+              | v =>
+                  throw (IO.userError s!"slice-value: expected slice value, got {reprStr v}")
+          | .error e =>
+              throw (IO.userError s!"slice-value: expected success, got error {reprStr e}")
+      },
     { name := "unit/exec/underflow" -- [B2]
       run := do
         expectErr "underflow-empty" (runDirect #[]) .stkUnd

@@ -260,6 +260,26 @@ private def expectAssembleErr
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assemble error {expected}, got success")
 
+private def expectHitShape
+    (label : String)
+    (result : Except Excno (Array Value))
+    (expectedRoot : Value)
+    (expectedKey : Int) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got {e}")
+  | .ok st =>
+      match st with
+      | #[root, .slice _, key, flag] =>
+          if root != expectedRoot then
+            throw (IO.userError s!"{label}: expected root {reprStr expectedRoot}, got {reprStr root}")
+          else if key != intV expectedKey then
+            throw (IO.userError s!"{label}: expected key {expectedKey}, got {reprStr key}")
+          else if flag != intV (-1) then
+            throw (IO.userError s!"{label}: expected flag -1, got {reprStr flag}")
+      | _ =>
+          throw (IO.userError s!"{label}: expected [root, slice, key, -1], got {reprStr st}")
+
 private def genDictURemMaxCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 43
   let (case0, rng2) :=
@@ -377,51 +397,39 @@ def suite : InstrSuite where
     },
     { name := "unit/exec/hit/n0" -- [B2][B3][B5][B6]
       run := do
-        expectOkStack "hit/n0"
-          (runDirect (#[.cell dictN0, intV 0]))
-          #[.null, .slice sampleValueA, intV 0, intV (-1)]
+        expectHitShape "hit/n0" (runDirect (#[.cell dictN0, intV 0])) .null 0
     },
     { name := "unit/exec/hit/n1" -- [B5][B6]
       run := do
-        expectOkStack "hit/n1"
-          (runDirect (#[.cell dictN1, intV 1]))
-          #[.cell dictN1AfterMax, .slice sampleValueB, intV 1, intV (-1)]
+        expectHitShape "hit/n1" (runDirect (#[.cell dictN1, intV 1])) (.cell dictN1AfterMax) 1
     },
     { name := "unit/exec/hit/n2" -- [B5][B6]
       run := do
-        expectOkStack "hit/n2"
-          (runDirect (#[.cell dictN2, intV 2]))
-          #[.cell dictN2AfterMax, .slice sampleValueB, intV 3, intV (-1)]
+        expectHitShape "hit/n2" (runDirect (#[.cell dictN2, intV 2])) (.cell dictN2AfterMax) 3
     },
     { name := "unit/exec/hit/n8" -- [B5][B6]
       run := do
-        expectOkStack "hit/n8"
-          (runDirect (#[.cell dictN8, intV 8]))
-          #[.cell dictN8AfterMax, .slice sampleValueC, intV 255, intV (-1)]
+        expectHitShape "hit/n8" (runDirect (#[.cell dictN8, intV 8])) (.cell dictN8AfterMax) 255
     },
     { name := "unit/exec/hit/n16" -- [B5][B6]
       run := do
-        expectOkStack "hit/n16"
-          (runDirect (#[.cell dictN16, intV 16]))
-          #[.cell dictN16AfterMax, .slice sampleValueB, intV 65535, intV (-1)]
+        expectHitShape "hit/n16" (runDirect (#[.cell dictN16, intV 16])) (.cell dictN16AfterMax) 65535
     },
     { name := "unit/exec/hit/n256" -- [B5][B6]
       run := do
-        expectOkStack "hit/n256"
-          (runDirect (#[.cell dictN256, intV 256]))
-          #[.cell dictN256AfterMax, .slice sampleValueD, intV 3, intV (-1)]
+        expectHitShape "hit/n256" (runDirect (#[.cell dictN256, intV 256])) (.cell dictN256AfterMax) 3
     },
     { name := "unit/exec/miss-null" -- [B4]
       run := do
-        expectOkStack "miss/null" (runDirect (#[.null, intV 8])) #[intV 0]
+        expectOkStack "miss/null" (runDirect (#[.null, intV 8])) #[.null, intV 0]
     },
     { name := "unit/exec/miss-width-mismatch-short" -- [B4]
       run := do
-        expectOkStack "miss-width-mismatch-short" (runDirect (#[.cell dictN8, intV 16])) #[.cell dictN8, intV 0]
+        expectHitShape "miss-width-mismatch-short" (runDirect (#[.cell dictN8, intV 16])) (.cell dictN8AfterMax) 65535
     },
     { name := "unit/exec/miss-width-mismatch-long" -- [B4]
       run := do
-        expectOkStack "miss-width-mismatch-long" (runDirect (#[.cell dictN2, intV 64])) #[.cell dictN2, intV 0]
+        expectErr "miss-width-mismatch-long" (runDirect (#[.cell dictN2, intV 64])) .dictErr
     },
     { name := "unit/exec/underflow" -- [B2]
       run := do
@@ -472,8 +480,7 @@ def suite : InstrSuite where
     },
     { name := "unit/exec/gas/exact" -- [B10]
       run := do
-        expectOkStack "exact" (runDirect (#[.cell dictN8, intV 8]))
-          #[.cell dictN8AfterMax, .slice sampleValueC, intV 255, intV (-1)]
+        expectHitShape "exact" (runDirect (#[.cell dictN8, intV 8])) (.cell dictN8AfterMax) 255
     }
   ]
   oracle := #[

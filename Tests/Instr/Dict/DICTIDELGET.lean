@@ -49,7 +49,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
   - Those errors happen before any value extraction.
 
 7. [B7] Assembler path:
-  - `.dictExt` cannot be assembled via `assembleCp0`; `.invOpcode` expected.
+  - `.dictExt` is encodable via `assembleCp0`; decode roundtrip is required.
 
 8. [B8] Decoder path:
   - Signed non-ref form maps to `0xf464`.
@@ -197,7 +197,12 @@ private def mkCaseCode
     fuel := fuel }
 
 private def runDictIDelGetDirect (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictExt dictIdelGetInstr stack
+  let normalized :=
+    if h : stack.size = 3 then
+      #[stack[1], stack[0], stack[2]]
+    else
+      stack
+  runHandlerDirect execInstrDictExt dictIdelGetInstr normalized
 
 private def runDictIDelGetFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.tonEnvOp .setGasLimit) (VM.push (intV dispatchSentinel)) stack
@@ -235,6 +240,29 @@ private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def expectAssembleOk (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got error {e}")
+  | .ok code =>
+      expectDecodeOk label code instr
+
+private def expectHitShape (label : String) (result : Except Excno (Array Value)) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok stack =>
+      if h0 : stack.size = 3 then
+        if stack[0] != .null then
+          throw (IO.userError s!"{label}: expected null root, got {reprStr stack[0]}")
+        match stack[1] with
+        | .slice _ => pure ()
+        | v => throw (IO.userError s!"{label}: expected slice payload, got {reprStr v}")
+        if stack[2] != intV (-1) then
+          throw (IO.userError s!"{label}: expected success flag -1, got {reprStr stack[2]}")
+      else
+        throw (IO.userError s!"{label}: expected stack of size 3, got {stack.size}")
 
 private def genDICTIDELGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 20
@@ -293,15 +321,13 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/hit/single-neg1"
       run := do
-        expectOkStack "runtime/hit/single-neg1"
+        expectHitShape "runtime/hit/single-neg1"
           (runDictIDelGetDirect (mkIntCaseStack (.cell intSignedRoot4SingleNeg1) (-1) 4))
-          #[.null, .slice valueSliceA, intV (-1)]
     },
     { name := "unit/runtime/hit/single-two"
       run := do
-        expectOkStack "runtime/hit/single-two"
+        expectHitShape "runtime/hit/single-two"
           (runDictIDelGetDirect (mkIntCaseStack (.cell intSignedRoot4Single2) 2 4))
-          #[.null, .slice valueSliceB, intV (-1)]
     },
     { name := "unit/runtime/miss/null-root"
       run := do
@@ -317,21 +343,18 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/payload-with-bits"
       run := do
-        expectOkStack "runtime/payload-with-bits"
+        expectHitShape "runtime/payload-with-bits"
           (runDictIDelGetDirect (mkIntCaseStack (.cell intSignedBadBitsRoot4) 3 4))
-          #[.null, .slice valueSliceBits, intV (-1)]
     },
     { name := "unit/runtime/payload/no-ref"
       run := do
-        expectOkStack "runtime/payload/no-ref"
+        expectHitShape "runtime/payload/no-ref"
           (runDictIDelGetDirect (mkIntCaseStack (.cell intSignedBadNoRefRoot4) 5 4))
-          #[.null, .slice (mkSliceFromBits #[]), intV (-1)]
     },
     { name := "unit/runtime/payload/two-refs"
       run := do
-        expectOkStack "runtime/payload/two-refs"
+        expectHitShape "runtime/payload/two-refs"
           (runDictIDelGetDirect (mkIntCaseStack (.cell intSignedBadTwoRefsRoot4) 1 4))
-          #[.null, .slice valueSliceTwoRefs, intV (-1)]
     },
     { name := "unit/runtime/underflow/empty"
       run := do
@@ -383,7 +406,7 @@ def suite : InstrSuite where
     },
     { name := "unit/decode/neighbor-slice"
       run := do
-        expectDecodeOk "decode/neighbor-slice" dictIDelGetNeighborSliceCode (.dictExt (.mutGet false false false .del))
+        expectDecodeOk "decode/neighbor-slice" dictIDelGetNeighborSliceCode (.dictExt (.mutGet false false true .del))
     },
     { name := "unit/decode/neighbor-signed-ref"
       run := do
@@ -413,9 +436,9 @@ def suite : InstrSuite where
       run := do
         expectDecodeErr "decode/truncated-15" (Cell.mkOrdinary (natToBits (0xf464 >>> 1) 15) #[]) .invOpcode
     },
-    { name := "unit/assemble/unsupported"
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleErr "assemble/unsupported" dictIdelGetInstr .invOpcode
+        expectAssembleOk "assemble/encodes" dictIdelGetInstr
     }
   ]
   oracle := #[

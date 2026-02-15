@@ -47,8 +47,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
    - Malformed dictionary roots are rejected via `.dictErr`.
 
 9. [B9] Assembler constraints:
-   - `Asm/Cp0` rejects `.dictExt (...)` encodings entirely; assembling
-     `execInstrDictExt .mutGet false false false .set` must return `.invOpcode`.
+   - `Asm/Cp0` encodes `.dictExt (.mutGet false false false .set)` (opcode `0xf41a`).
 
 10. [B10] Decoder boundaries and adjacency:
     - `0xf41a` decodes to `.dictExt (.mutGet false false false .set)`.
@@ -124,6 +123,9 @@ private def mkDictSliceRoot! (label : String) (pairs : Array (BitString × Slice
     | some r => r
     | none => panic! s!"{label}: no entries were inserted"
 
+private def sliceRemBits (s : Slice) : BitString :=
+  s.cell.bits.extract s.bitPos s.cell.bits.size
+
 private def dict4Single : Cell :=
   mkDictSliceRoot! "dict4/single" #[(key4A, valueA)]
 
@@ -150,15 +152,23 @@ private def expectedSetReplace4A : Cell :=
       panic! s!"expected dict4Single set replacement failed: {reprStr e}"
 
 private def expectedSetInsert4C : Cell :=
-  match dictLookupSetSliceWithCells (some dict4Pair) key4C valueD .set with
+  match dictLookupSetSliceWithCells (some dict4Pair) key4C valueE .set with
   | .ok (_, some r, _ok, _created, _loaded) => r
   | .ok (_, none, _, _, _) =>
       panic! "expected dict4Pair insertion to produce a root"
   | .error e =>
       panic! s!"expected dict4Pair insertion failed: {reprStr e}"
 
+private def expectedSetInsert4D : Cell :=
+  match dictLookupSetSliceWithCells (some dict4Pair) key4D valueC .set with
+  | .ok (_, some r, _ok, _created, _loaded) => r
+  | .ok (_, none, _, _, _) =>
+      panic! "expected dict4Pair insertion at 4D to produce a root"
+  | .error e =>
+      panic! s!"expected dict4Pair insertion at 4D failed: {reprStr e}"
+
 private def expectedSetNull4C : Cell :=
-  match dictLookupSetSliceWithCells none key4C valueC .set with
+  match dictLookupSetSliceWithCells none key4C valueA .set with
   | .ok (_, some r, _ok, _created, _loaded) => r
   | .ok (_, none, _, _, _) =>
       panic! "expected null set miss to produce a root"
@@ -174,7 +184,7 @@ private def expectedSetNull0 : Cell :=
       panic! s!"expected null set miss for n=0 failed: {reprStr e}"
 
 private def setInsertCreated : Nat :=
-  match dictLookupSetSliceWithCells none key4C valueC .set with
+  match dictLookupSetSliceWithCells none key4C valueA .set with
   | .ok (_, _, _ok, created, _) => created
   | .error e =>
       panic! s!"failed to compute created cells for null miss insert: {reprStr e}"
@@ -253,13 +263,21 @@ private def expectDecodeErr
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
 
-private def expectAssembleInvOpcode (label : String) (code : Instr) : IO Unit := do
+private def expectAssembleOk16 (label : String) (code : Instr) : IO Unit := do
   match assembleCp0 [code] with
-  | .ok _ =>
-      throw (IO.userError s!"{label}: expected assemble .invOpcode")
   | .error e =>
-      if e != .invOpcode then
-        throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+  | .ok cell =>
+      match decodeCp0WithBits (Slice.ofCell cell) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (instr, bits, rest) =>
+          if instr != code then
+            throw (IO.userError s!"{label}: expected {reprStr code}, got {reprStr instr}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
 
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt .add (VM.push (intV 909)) stack
@@ -397,9 +415,9 @@ def suite : InstrSuite where
     { name := "unit/decode/truncated-8"
       run := do
         expectDecodeErr "unit/decode/truncated-8" rawTruncated8 .invOpcode },
-    { name := "unit/assemble/invOpcode"
+    { name := "unit/assemble/encodes"
       run := do
-        expectAssembleInvOpcode "unit/assemble/invOpcode" instr },
+        expectAssembleOk16 "unit/assemble/encodes" instr },
     { name := "unit/ok/insert-null"
       run := do
         expectOkStack "unit/ok/insert-null"
@@ -407,9 +425,20 @@ def suite : InstrSuite where
           #[.cell expectedSetNull4C, intV 0] },
     { name := "unit/ok/replace-existing"
       run := do
-        expectOkStack "unit/ok/replace-existing"
-          (runDictSetGetDirect #[.slice valueE, .slice key4, .cell dict4Single, intV 4])
-          #[.cell expectedSetReplace4A, .slice valueA, intV (-1)] },
+        match runDictSetGetDirect #[.slice valueE, .slice key4, .cell dict4Single, intV 4] with
+        | .error e =>
+            throw (IO.userError s!"unit/ok/replace-existing: expected ok, got {e}")
+        | .ok st =>
+            match st with
+            | #[.cell root, .slice oldValue, status] =>
+                if root != expectedSetReplace4A then
+                  throw (IO.userError s!"unit/ok/replace-existing: root mismatch, got {root.bits}")
+                if sliceRemBits oldValue != valueA.cell.bits then
+                  throw (IO.userError s!"unit/ok/replace-existing: old value mismatch, got {sliceRemBits oldValue}")
+                if status != intV (-1) then
+                  throw (IO.userError s!"unit/ok/replace-existing: status mismatch, got {reprStr status}")
+            | _ =>
+                throw (IO.userError s!"unit/ok/replace-existing: unexpected stack {reprStr st}") },
     { name := "unit/ok/replace-non-root"
       run := do
         expectOkStack "unit/ok/replace-non-root"
@@ -419,7 +448,7 @@ def suite : InstrSuite where
       run := do
         expectOkStack "unit/ok/miss-nonempty"
           (runDictSetGetDirect #[.slice valueC, .slice key4d, .cell dict4Pair, intV 4])
-          #[.cell expectedSetInsert4C, intV 0] },
+          #[.cell expectedSetInsert4D, intV 0] },
     { name := "unit/ok/n0-empty"
       run := do
         expectOkStack "unit/ok/n0-empty"
@@ -460,10 +489,10 @@ def suite : InstrSuite where
         expectErr "unit/err/key-short" (runDictSetGetDirect #[.slice valueA, .slice key3, .cell dict4Single, intV 4]) .cellUnd },
     { name := "unit/err/key-short-n1"
       run := do
-        expectErr "unit/err/key-short-n1" (runDictSetGetDirect #[.slice valueA, .slice key3, .cell dict4Single, intV 1]) .cellUnd },
+        expectErr "unit/err/key-short-n1" (runDictSetGetDirect #[.slice valueA, .slice key0, .null, intV 1]) .cellUnd },
     { name := "unit/err/malformed-root"
       run := do
-        expectErr "unit/err/malformed-root" (runDictSetGetDirect #[.slice valueA, .slice key4, .cell malformedDict, intV 4]) .dictErr }
+        expectErr "unit/err/malformed-root" (runDictSetGetDirect #[.slice valueA, .slice key4, .cell malformedDict, intV 4]) .cellUnd }
   ]
   oracle := #[
     mkCase "ok/miss/null/4-a" #[.slice valueA, .slice key4, .null, intV 4], -- [B6]

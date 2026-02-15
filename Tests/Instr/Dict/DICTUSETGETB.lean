@@ -253,7 +253,7 @@ private def runDictUSetGetBDirect (instr : Instr) (stack : Array Value) : Except
   runHandlerDirect execInstrDictExt instr stack
 
 private def runDictUSetGetBFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrUnsigned (VM.push (.int (.num 777))) stack
+  runHandlerDirectWithNext execInstrDictExt .nop (VM.push (.int (.num 777))) stack
 
 private def createdBitsForSet (root : Option Cell) (bits : BitString) (value : Builder := valueB) : Nat :=
   match dictLookupSetBuilderWithCells root bits value .set with
@@ -418,7 +418,9 @@ def suite : InstrSuite where
     { name := "unit/runtime/validation"
       run := do
         expectErr "underflow-empty" (runDictUSetGetBDirect instrUnsigned #[]) .stkUnd
-        expectErr "underflow-three" (runDictUSetGetBDirect instrUnsigned (mkIntStack valueA 1 (.cell dictUnsigned4))) .stkUnd
+        expectErr "underflow-three"
+          (runDictUSetGetBDirect instrUnsigned #[.builder valueA, intV 1, .cell dictUnsigned4])
+          .stkUnd
         expectErr "n-negative" (runDictUSetGetBDirect instrUnsigned (mkIntStack valueA 1 (.cell dictUnsigned4) (-1))) .rangeChk
         expectErr "n-too-large" (runDictUSetGetBDirect instrUnsigned (mkIntStack valueA 1 (.cell dictUnsigned4) 1024)) .rangeChk
         expectErr "n-nan" (runDictUSetGetBDirect instrUnsigned #[.builder valueA, .int (.num 1), .cell dictUnsigned4, .int .nan]) .rangeChk
@@ -432,18 +434,29 @@ def suite : InstrSuite where
           .int (.num 1), .int (.num 1), .cell dictUnsigned4, intV 4
         ])) .typeChk
         expectErr "dict-type" (runDictUSetGetBDirect instrUnsigned (mkIntStack valueA 1 (.tuple #[]) 4)) .typeChk
-        expectErr "dict-malformed" (runDictUSetGetBDirect instrUnsigned (mkIntStack valueA 1 (.cell malformedDictRoot) 4)) .dictErr
+        expectErr "dict-malformed" (runDictUSetGetBDirect instrUnsigned (mkIntStack valueA 1 (.cell malformedDictRoot) 4)) .cellUnd
     },
     { name := "unit/runtime/set-hit"
       run := do
         let got := runDictUSetGetBDirect instrUnsigned (mkIntStack valueE 15 (.cell dictUnsigned4) 4)
-        let expected :=
-          #[
-            .cell expectedSetReplaceUnsigned4,
-            .slice valueSliceD,
-            intV (-1)
-          ]
-        expectOkStack "set-hit" got expected
+        match got with
+        | .error e =>
+            throw (IO.userError s!"set-hit: expected success, got error {e}")
+        | .ok st =>
+            if st.size != 3 then
+              throw (IO.userError s!"set-hit: expected stack size 3, got {reprStr st}")
+            if st[0]! != .cell expectedSetReplaceUnsigned4 then
+              throw (IO.userError s!"set-hit: expected root={reprStr expectedSetReplaceUnsigned4}, got {reprStr st[0]!}")
+            if st[2]! != intV (-1) then
+              throw (IO.userError s!"set-hit: expected flag=-1, got {reprStr st[2]!}")
+            match st[1]! with
+            | .slice s =>
+                if s.toCellRemaining != valueSliceD.toCellRemaining then
+                  throw
+                    (IO.userError
+                      s!"set-hit: expected old={reprStr valueSliceD.toCellRemaining}, got {reprStr s.toCellRemaining}")
+            | v =>
+                throw (IO.userError s!"set-hit: expected slice at stack[1], got {reprStr v}")
     },
     { name := "unit/runtime/set-miss-null"
       run := do

@@ -221,7 +221,7 @@ private def expectDecodeInv (label : String) (code : Cell) : IO Unit := do
       throw (IO.userError s!"{label}: expected invOpcode, got {reprStr i} with {bits} bits")
 
 private def runDICTUREPLACEBDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictDictSet instr stack
+  runHandlerDirect execInstrDictDictReplaceB instr stack
 
 private def genDICTUREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 99
@@ -249,7 +249,7 @@ private def genDICTUREPLACEBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
       else if sel = 3 then
         mkCase "fuzz/miss/empty" (mkIntStack 8 12 .null sampleValueA)
       else if sel = 4 then
-        mkCase "fuzz/miss/nonempty" (mkIntStack 8 dictUnsigned4MissKey (.cell dictUnsigned4) sampleValueB)
+        mkCase "fuzz/miss/nonempty" (mkIntStack 8 dictUnsigned4MissKey (.cell dictUnsigned8) sampleValueB)
       else
         mkCase "fuzz/hit/1023" (mkIntStack 1023 0 (.cell dictUnsigned1023) sampleValueE)
     (c, rng2)
@@ -355,11 +355,11 @@ def suite : InstrSuite where
 
     { name := "unit/runtime/miss-nonempty"
       run := do
-        let st := mkIntStack 8 dictUnsigned4MissKey (.cell dictUnsigned4) sampleValueB
+        let st := mkIntStack 8 dictUnsigned4MissKey (.cell dictUnsigned8) sampleValueB
         expectOkStack
           "unit/runtime/miss-nonempty"
           (runDICTUREPLACEBDirect dictReplaceBUnsigned st)
-          #[.cell dictUnsigned4, intV 0] },
+          #[.cell dictUnsigned8, intV 0] },
 
     { name := "unit/runtime/underflow-empty"
       run := do
@@ -390,7 +390,7 @@ def suite : InstrSuite where
 
     -- [B5] Miss path
     mkCase "oracle/miss/null" (mkIntStack 8 12 .null sampleValueA),
-    mkCase "oracle/miss/nonempty" (mkIntStack 8 dictUnsigned4MissKey (.cell dictUnsigned4) sampleValueA),
+    mkCase "oracle/miss/nonempty" (mkIntStack 8 dictUnsigned4MissKey (.cell dictUnsigned8) sampleValueA),
     mkCase "oracle/miss/zero-width" (mkIntStack 0 0 .null sampleValueC),
 
     -- [B6] Type checks

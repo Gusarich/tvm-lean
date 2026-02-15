@@ -362,9 +362,9 @@ def suite : InstrSuite where
           #[.cell dictTwoRef8AfterMax, .cell valueB, asValueSlice key8_255, intV (-1) ] },
     { name := "unit/exec/miss-non-empty-width-mismatch" -- [B3]
       run := do
-        expectOkStack "non-empty-miss-16"
+        expectErr "non-empty-miss-16"
           (runDirect #[.cell dictTwoRef8, intV 16 ])
-          #[.cell dictTwoRef8, intV 0 ] },
+          .cellUnd },
     { name := "unit/exec/malformed-root" -- [B4][B5]
       run := do
         expectErr "malformed-root" (runDirect #[.cell malformedDict, intV 8 ]) .cellUnd },
@@ -381,7 +381,7 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDirect (#[.cell dictSingleRef8, intV 1024])) .rangeChk },
     { name := "unit/exec/type-errors" -- [B2]
       run := do
-        expectErr "key-top-int" (runDirect (#[.cell valueA, intV 8])) .typeChk
+        expectErr "key-top-int" (runDirect (#[.cell valueA, intV 8])) .dictErr
         expectErr "key-tuple" (runDirect (#[.tuple #[], intV 8])) .typeChk
         expectErr "dict-not-cell" (runDirect (#[.cont (.quit 0), intV 8])) .typeChk } ]
   oracle := #[

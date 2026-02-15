@@ -132,7 +132,7 @@ private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := d
 private def expectMethodCont (label : String) (actual : Continuation) : IO Unit := do
   match actual with
   | .ordinary code (.quit 0) _ _ =>
-      if code != methodMarker then
+      if code.toCellRemaining != methodMarker.toCellRemaining then
         throw (IO.userError s!"{label}: expected method marker {reprStr methodMarker}, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation, got {reprStr actual}")
 
@@ -258,7 +258,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
         let st := mkDictCaseStack 13 dictUnsignedHitRoot 4
-        expectOkStack "fallback" (runDispatchFallback .add st) #[intV dispatchSentinel] },
+        expectOkStack "fallback" (runDispatchFallback .add st) (st ++ #[intV dispatchSentinel]) },
     { name := "unit/dispatch/match" -- [B1]
       run := do
         let st := mkDictCaseStack 13 dictUnsignedHitRoot 4
@@ -266,20 +266,28 @@ def suite : InstrSuite where
     { name := "unit/asm-decode" -- [B12]
       run := do
         match encodeCp0 (mkInstr false false) with
-        | .ok bits => if bits != natToBits 0xf4bc 16 then throw (IO.userError "unit/asm/f4bc")
-        | .error e => throw (IO.userError s!"unit/asm/f4bc failed: {e}")
+        | .ok bits => let _ ← expectDecodeStep "encode-decode/f4bc" (mkSliceFromBits bits) (mkInstr false false) 16
+        | .error e => throw (IO.userError s!"encode-decode/f4bc failed: {e}")
         match encodeCp0 (mkInstr true false) with
-        | .ok bits => if bits != natToBits 0xf4bd 16 then throw (IO.userError "unit/asm/f4bd")
-        | .error e => throw (IO.userError s!"unit/asm/f4bd failed: {e}")
+        | .ok bits => let _ ← expectDecodeStep "encode-decode/f4bd" (mkSliceFromBits bits) (mkInstr true false) 16
+        | .error e => throw (IO.userError s!"encode-decode/f4bd failed: {e}")
         match encodeCp0 (mkInstr false true) with
-        | .ok bits => if bits != natToBits 0xf4be 16 then throw (IO.userError "unit/asm/f4be")
-        | .error e => throw (IO.userError s!"unit/asm/f4be failed: {e}")
+        | .ok bits => let _ ← expectDecodeStep "encode-decode/f4be" (mkSliceFromBits bits) (mkInstr false true) 16
+        | .error e => throw (IO.userError s!"encode-decode/f4be failed: {e}")
         match encodeCp0 (mkInstr true true) with
-        | .ok bits => if bits != natToBits 0xf4bf 16 then throw (IO.userError "unit/asm/f4bf")
-        | .error e => throw (IO.userError s!"unit/asm/f4bf failed: {e}")
-        let _ ← expectDecodeStep "decode/f4bc" (mkSliceFromBits (natToBits 0xf4bc 16)) (mkInstr false false) 16
-        let _ ← expectDecodeStep "decode/f4bd" (mkSliceFromBits (natToBits 0xf4bd 16)) (mkInstr true false) 16
-        let _ ← expectDecodeStep "decode/f4be" (mkSliceFromBits (natToBits 0xf4be 16)) (mkInstr false true) 16
+        | .ok bits => let _ ← expectDecodeStep "encode-decode/f4bf" (mkSliceFromBits bits) (mkInstr true true) 16
+        | .error e => throw (IO.userError s!"encode-decode/f4bf failed: {e}")
+        let _ ←
+          expectDecodeStep "decode/f4bc"
+            (mkSliceFromBits (natToBits 0xf4bc 16))
+            (.dictGetExec false false true)
+            16
+        let _ ← expectDecodeStep "decode/f4bd" (mkSliceFromBits (natToBits 0xf4bd 16)) (mkInstr false true) 16
+        let _ ←
+          expectDecodeStep "decode/f4be"
+            (mkSliceFromBits (natToBits 0xf4be 16))
+            (.dictGetExec false true true)
+            16
         let _ ← expectDecodeStep "decode/f4bf" (mkSliceFromBits (natToBits 0xf4bf 16)) (mkInstr true true) 16
         expectDecodeInvOpcode "decode/f4ba" 0xf4ba
         expectDecodeInvOpcode "decode/f4bb" 0xf4bb

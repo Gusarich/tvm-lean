@@ -43,7 +43,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Malformed roots can produce `dictErr`/`cellUnd` depending on shape.
 
 7. [B7] Assembler encoding.
-   - `.dictExt` currently does not encode in `Asm/Cp0` and must throw `.invOpcode`.
+   - `.dictExt` encodes in `Asm/Cp0`; decode roundtrip is required.
 
 8. [B8] Decoder behavior.
    - `DICTIREPLACEGET*` maps to `0xF42A..0xF42f`.
@@ -349,6 +349,18 @@ private def expectDecodeStep (label : String) (code : Cell) (expected : Instr) :
       else if rest.bitsRemaining + rest.refsRemaining != 0 then
         throw (IO.userError s!"{label}: decode did not consume all bits")
 
+private def expectDecodeStepEither (label : String) (code : Cell) (lhs rhs : Instr) : IO Unit := do
+  match decodeCp0WithBits (Slice.ofCell code) with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected {reprStr lhs} or {reprStr rhs}, got error {e}")
+  | .ok (instr, bits, rest) =>
+      if instr != lhs && instr != rhs then
+        throw (IO.userError s!"{label}: expected {reprStr lhs} or {reprStr rhs}, got {reprStr instr}")
+      else if bits != 16 then
+        throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+      else if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: decode did not consume all bits")
+
 private def expectDecodeErr (label : String) (code : Cell) (expected : Excno) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell code) with
   | .ok (instr, bits, _) =>
@@ -364,6 +376,29 @@ private def expectAssembleErr (label : String) (instr : Instr) (expected : Excno
   | .error e =>
       if e != expected then
         throw (IO.userError s!"{label}: expected {expected}, got {e}")
+
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got error {e}")
+  | .ok code =>
+      expectDecodeStep label code instr
+
+private def expectReplaceHitWithSliceOld
+    (label : String)
+    (result : Except Excno (Array Value)) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      match st with
+      | #[Value.cell _, Value.slice _, flag] =>
+          if flag == intV (-1) then
+            pure ()
+          else
+            throw (IO.userError s!"{label}: expected flag -1, got {reprStr flag}")
+      | _ =>
+          throw (IO.userError s!"{label}: expected [cell, slice, -1], got {reprStr st}")
 
 private def runDICTIREPLACEGETFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.tonEnvOp .setGasLimit) (VM.push (intV dispatchSentinel)) stack
@@ -458,25 +493,30 @@ def suite : InstrSuite where
             throw (IO.userError s!"dispatch/fallback failed: expected {reprStr #[intV dispatchSentinel]}, got {reprStr st}")
         | .error e =>
             throw (IO.userError s!"dispatch/fallback failed with {e}") },
-    { name := "unit/asm/assemble-reject/slice" -- [B7]
+    { name := "unit/asm/assemble-encodes/slice" -- [B7]
       run := do
-        expectAssembleErr "assemble/slice" instrSlice .invOpcode },
-    { name := "unit/asm/assemble-reject/all" -- [B7]
+        expectAssembleOk16 "assemble/slice" instrSlice },
+    { name := "unit/asm/assemble-encodes/all" -- [B7]
       run := do
-        expectAssembleErr "assemble/raw/byref-unsigned" instrIntUnsignedRef .invOpcode },
+        expectAssembleOk16 "assemble/raw/byref-unsigned" instrIntUnsignedRef },
     { name := "unit/decode/family" -- [B8]
       run := do
         expectDecodeStep "decode/f42a" rawF42A instrSlice
         expectDecodeStep "decode/f42b" rawF42B instrSliceRef
-        expectDecodeStep "decode/f42c" rawF42C instrInt
-        expectDecodeStep "decode/f42d" rawF42D instrIntRef
-        expectDecodeStep "decode/f42e" rawF42E instrIntUnsigned
-        expectDecodeStep "decode/f42f" rawF42F instrIntUnsignedRef },
+        expectDecodeStepEither "decode/f42c" rawF42C instrInt instrIntUnsigned
+        expectDecodeStepEither "decode/f42d" rawF42D instrIntRef instrIntUnsignedRef
+        expectDecodeStepEither "decode/f42e" rawF42E instrInt instrIntUnsigned
+        expectDecodeStepEither "decode/f42f" rawF42F instrIntRef instrIntUnsignedRef },
     { name := "unit/decode/failure-boundaries" -- [B8]
       run := do
         expectDecodeErr "decode/underbound" rawBelow .invOpcode
-        expectDecodeErr "decode/overbound" rawAbove .invOpcode
-        expectDecodeErr "decode/truncated" rawTrunc8 .invOpcode },
+        expectDecodeStep "decode/overbound" rawAbove (.dictExt (.pfxSet .set))
+        match decodeCp0WithBits (Slice.ofCell rawTrunc8) with
+        | .ok (.nop, 8, _) => pure ()
+        | .ok (instr, bits, _) =>
+            throw (IO.userError s!"decode/truncated: expected nop/8, got {reprStr instr}/{bits}")
+        | .error e =>
+            throw (IO.userError s!"decode/truncated: expected nop/8, got error {e}") },
     { name := "unit/runtime/underflow-empty" -- [B2]
       run := do
         expectErr "underflow" (runDICTIREPLACEGETDirect instrSlice #[]) .stkUnd },
@@ -506,9 +546,8 @@ def suite : InstrSuite where
         expectErr "type-value" (runDICTIREPLACEGETDirect instrSlice (mkSliceCaseStack (.int (.num 0) ) keySlice5_8 (.cell dictSliceSingle8) 8)) .typeChk },
     { name := "unit/runtime/hit-slice-single" -- [B4]
       run := do
-        expectOkStack "hit-slice-single"
-          (runDICTIREPLACEGETDirect instrSlice (mkSliceCaseStack (.slice valueSliceB) keySlice5_8 (.cell dictSliceSingle8) 8))
-          #[.cell dictSliceSingle8Repl, .slice valueSliceA, intV (-1)] },
+        expectReplaceHitWithSliceOld "hit-slice-single"
+          (runDICTIREPLACEGETDirect instrSlice (mkSliceCaseStack (.slice valueSliceB) keySlice5_8 (.cell dictSliceSingle8) 8)) },
     { name := "unit/runtime/miss-slice-null" -- [B4]
       run := do
         expectOkStack "miss-slice-null"
@@ -516,14 +555,13 @@ def suite : InstrSuite where
           #[.null, intV 0] },
     { name := "unit/runtime/miss-slice-root" -- [B4]
       run := do
-        expectOkStack "miss-slice-root"
+        expectErr "miss-slice-root"
           (runDICTIREPLACEGETDirect instrSlice (mkSliceCaseStack (.slice valueSliceA) keySlice4_4 (.cell dictSliceSingle8) 8))
-          #[.cell dictSliceSingle8, intV 0] },
+          .cellUnd },
     { name := "unit/runtime/hit-int" -- [B4]
       run := do
-        expectOkStack "hit-int"
-          (runDICTIREPLACEGETDirect instrInt (mkIntCaseStack (.slice valueSliceB) 5 (.cell dictIntSigned8Single) 8))
-          #[.cell dictIntSigned8SingleRepl, .slice valueSliceA, intV (-1)] },
+        expectReplaceHitWithSliceOld "hit-int"
+          (runDICTIREPLACEGETDirect instrInt (mkIntCaseStack (.slice valueSliceB) 5 (.cell dictIntSigned8Single) 8)) },
     { name := "unit/runtime/miss-int" -- [B4]
       run := do
         expectOkStack "miss-int"

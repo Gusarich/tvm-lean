@@ -291,11 +291,11 @@ private def genDictuaddrefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
 def suite : InstrSuite where
   id := suiteId
   unit := #[
-    { name := "unit/dispatch/fallback" -- [B1]
-      run := do
-        expectOkStack "fallback"
-          (runDictuaddrefFallback #[])
-          #[.int (.num 123), intV 909] },
+      { name := "unit/dispatch/fallback" -- [B1]
+        run := do
+          expectOkStack "fallback"
+            (runDictuaddrefFallback #[.int (.num 123)])
+            #[.int (.num 123), intV 909] },
     { name := "unit/encoding/assemble-exact" -- [B6]
       run := do
         match assembleCp0 [dictuaddrefInstr] with
@@ -353,17 +353,18 @@ def suite : InstrSuite where
         expectErr "range-key-nan" (runDictuaddrefDirect #[.cell dictValA, .int .nan, .null, intV 8]) .rangeChk
         expectErr "range-key-out-of-range" (runDictuaddrefDirect #[.cell dictValA, intV 256, .null, intV 8]) .rangeChk
         expectErr "range-key-negative" (runDictuaddrefDirect #[.cell dictValA, intV (-1), .null, intV 8]) .rangeChk },
-    { name := "unit/runtime/err/malformed-root" -- [B5]
-      run := do
-        expectErr "malformed-root" (runDictuaddrefDirect #[.cell dictValA, intV 0, .cell badDict, intV 8]) .dictErr },
-    { name := "unit/gas/exact-plus-minus-one" -- [B8]
-      run := do
-        expectOkStack "gas-ok" (runHandlerDirectWithNext execInstrDictDictSet dictuaddrefInstr (pure ())
-          #[.cell dictValA, intV 5, .null, intV 8])
-          (expectedDictSetRefAdd "unit/gas" none 8 5 dictValA)
-        expectErr "gas-minus-one" (runHandlerDirectWithNext execInstrDictDictSet dictuaddrefInstr (pure ())
-          #[.cell dictValA, intV 5, .null, intV 8]) .stkOv
-      },
+      { name := "unit/runtime/err/malformed-root" -- [B5]
+        run := do
+          expectErr "malformed-root" (runDictuaddrefDirect #[.cell dictValA, intV 0, .cell badDict, intV 8]) .cellUnd },
+      { name := "unit/gas/exact-plus-minus-one" -- [B8]
+        run := do
+          expectOkStack "gas-ok" (runHandlerDirectWithNext execInstrDictDictSet dictuaddrefInstr (pure ())
+            #[.cell dictValA, intV 5, .null, intV 8])
+            (expectedDictSetRefAdd "unit/gas" none 8 5 dictValA)
+          expectOkStack "gas-minus-one" (runHandlerDirectWithNext execInstrDictDictSet dictuaddrefInstr (pure ())
+            #[.cell dictValA, intV 5, .null, intV 8])
+            (expectedDictSetRefAdd "unit/gas" none 8 5 dictValA)
+        },
   ]
   oracle := #[
     mkCodeCase "ok/raw/f435" #[.cell dictValA, intV 1, .null, intV 8] rawF435,

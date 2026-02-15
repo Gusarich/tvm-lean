@@ -347,7 +347,7 @@ def suite : InstrSuite where
           #[.null] },
     { name := "unit/runtime/error/malformed-root" -- [B7]
       run := do
-        expectErr "malformed-root" (runSubdictGetDirect (mkStack 1 (.cell malformedDict) 4 2)) .dictErr },
+        expectErr "malformed-root" (runSubdictGetDirect (mkStack 1 (.cell malformedDict) 4 2)) .cellUnd },
     { name := "unit/assemble/reject" -- [B8]
       run := do
         expectAssembleErr "assemble-inv" instr .invOpcode },

@@ -358,8 +358,8 @@ def suite : InstrSuite where
     { name := "unit/asmdecode/decode"
       run := do
         expectDecodeOk "decode/target" skipDictCode skipDictInstr
-        expectDecodeErr "decode/lower-neighbor" (raw16 0xf400)
-        expectDecodeErr "decode/upper-neighbor" (raw16 0xf402)
+        expectDecodeOk "decode/lower-neighbor" (raw16 0xf400) .stdict
+        expectDecodeOk "decode/upper-neighbor" (raw16 0xf402) (.dictExt (.lddicts false))
         expectDecodeErr "decode/trunc8" (raw8 0xf4)
         expectDecodeErr "decode/trunc15" (raw15 (0xf401 >>> 1))
     },

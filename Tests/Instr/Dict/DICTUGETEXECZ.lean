@@ -167,7 +167,7 @@ private def expectCallTransfer
   let expectedC0 := callReturnFromCc oldCc oldC0
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
+      if code.toCellRemaining != target.toCellRemaining then
         throw (IO.userError s!"{label}: expected cc code {reprStr target}, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation")
   if st.regs.c0 != expectedC0 then
@@ -341,7 +341,10 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
         let init : Array Value := mkDictCaseStack 3 (.cell dictUnsigned4HitRoot) 4
-        expectOkStack "unit/dispatch/non-match" (runDictUGETEXECZDispatchFallback .add init) #[intV dispatchSentinel]
+        expectOkStack
+          "unit/dispatch/non-match"
+          (runDictUGETEXECZDispatchFallback .add init)
+          (init ++ #[intV dispatchSentinel])
         expectOkStack "unit/dispatch/match" (runDictUGETEXECZDispatchFallback instr init) #[] },
     { name := "unit/asm-encoding" -- [B9][B10]
       run := do
@@ -390,12 +393,12 @@ def suite : InstrSuite where
         expectErr
           "malformed-root"
           (runDictUGETEXECZDirect (mkDictCaseStack 3 (.cell malformedDictRoot) 4))
-          .dictErr
+          .cellUnd
         let _ ←
           expectRawErr
             "malformed-root/raw"
             (runDictUGETEXECZRaw (mkDictCaseStack 3 (.cell malformedDictRoot) 4))
-            .dictErr
+            .cellUnd
         pure () },
     { name := "unit/raw/call-transfer" -- [B7]
       run := do

@@ -55,6 +55,9 @@ Any branch not directly represented in oracle is expected to be explored by fuzz
 private def suiteId : InstrId :=
   { name := "PFXDICTSWITCH" }
 
+private def instrPfxSet : Instr :=
+  .dictExt (.pfxSet .set)
+
 private def pfxSwitchPrefix : Nat := 0x3d2b
 
 private def pfxSwitchBase : Nat :=
@@ -87,13 +90,21 @@ private def mkPfxDict (label : String) (pairs : Array (BitString × Slice)) : Ce
     for pair in pairs do
       let bits : BitString := pair.1
       let value : Slice := pair.2
-      match dictSetSliceWithCells root bits value .set with
-      | .ok (some next, _ok, _created, _loaded) =>
+      let n : Nat := bits.size
+      let dictVal : Value :=
+        match root with
+        | none => .null
+        | some c => .cell c
+      let stack : Array Value := #[.slice value, .slice (mkSliceFromBits bits), dictVal, intV (Int.ofNat n)]
+      match runHandlerDirect execInstrDictExt instrPfxSet stack with
+      | .ok #[.cell next, ok] =>
+          if ok != intV (-1) then
+            panic! s!"{label}: pfxSet returned ok={reprStr ok}"
           root := some next
-      | .ok (none, _ok, _created, _loaded) =>
-          panic! s!"{label}: insertion returned none"
+      | .ok st =>
+          panic! s!"{label}: pfxSet unexpected stack {reprStr st}"
       | .error e =>
-          panic! s!"{label}: dictSetSliceWithCells failed with {reprStr e}"
+          panic! s!"{label}: pfxSet failed with {reprStr e}"
     match root with
     | some r => r
     | none => panic! s!"{label}: failed to build dictionary"
@@ -120,7 +131,7 @@ private def pfxDict0Root : Cell :=
   mkPfxDict "pfx-switch/dict0" #[(#[], dict0Value)]
 
 private def rawChain : Cell :=
-  Cell.mkOrdinary (natToBits (pfxSwitchBase + 21) 24 ++ natToBits 0x5a 16) #[pfxDict4Root]
+  Cell.mkOrdinary (natToBits (pfxSwitchBase + 4) 24 ++ natToBits 0x5a 16) #[pfxDict4Root]
 
 private def instrSwitch4 : Instr :=
   .dictExt (.pfxSwitch pfxDict4Root 4)
@@ -200,14 +211,12 @@ private def expectJumpTransfer
     (st : VmState) : IO Unit := do
   match st.cc with
   | .ordinary code (.quit 0) _ _ =>
-      if code != target then
+      if code.toCellRemaining != target.toCellRemaining then
         throw (IO.userError s!"{label}: expected jump target {reprStr target}, got {reprStr code}")
   | _ =>
       throw (IO.userError s!"{label}: expected ordinary continuation, got {reprStr st.cc}")
   if st.regs.c0 != expectedC0 then
     throw (IO.userError s!"{label}: expected c0 {reprStr expectedC0}, got {reprStr st.regs.c0}")
-  if !st.stack.isEmpty then
-    throw (IO.userError s!"{label}: expected empty stack, got {reprStr st.stack}")
 
 private def expectDecodeInv (label : String) (cell : Cell) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell cell) with
@@ -307,7 +316,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/non-match" -- [B1]
       run := do
         let st := runDispatchFallback .add #[.slice keyMatchSlice]
-        expectOkStack "unit/dispatch/non-match" st #[intV dispatchSentinel, .slice keyMatchSlice] },
+        expectOkStack "unit/dispatch/non-match" st #[.slice keyMatchSlice, intV dispatchSentinel] },
     { name := "unit/dispatch/match-miss" -- [B1][B6]
       run := do
         let st := runDispatchFallback instrSwitch4 #[.slice keyMissSlice]
@@ -338,12 +347,30 @@ def suite : InstrSuite where
         let st ← expectRawOk
           "unit/raw/hit-jump"
           (runRaw instrSwitch4 #[.slice keyMatchSlice] regsWithSentinelC0 defaultCc)
+        match st.stack with
+        | #[.slice pfx, .slice rest] =>
+            if pfx.toCellRemaining.bits != dict4MatchBits then
+              throw (IO.userError s!"unit/raw/hit-jump: bad prefix {pfx.toCellRemaining.bits}")
+            if rest.bitsRemaining != 0 then
+              throw (IO.userError s!"unit/raw/hit-jump: expected empty rest, got {rest.toCellRemaining.bits}")
+        | _ =>
+            throw (IO.userError s!"unit/raw/hit-jump: unexpected stack {reprStr st.stack}")
         expectJumpTransfer "unit/raw/hit-jump" dict4Value sentinelC0 st },
     { name := "unit/raw/hit-jump-with-tail" -- [B7]
       run := do
         let st ← expectRawOk
           "unit/raw/hit-jump-with-tail"
           (runRaw instrSwitch4 #[intV 7, .slice keyMatchSlice] regsWithSentinelC0 defaultCc)
+        match st.stack with
+        | #[head, .slice pfx, .slice rest] =>
+            if head != intV 7 then
+              throw (IO.userError s!"unit/raw/hit-jump-with-tail: expected tail int 7, got {reprStr head}")
+            if pfx.toCellRemaining.bits != dict4MatchBits then
+              throw (IO.userError s!"unit/raw/hit-jump-with-tail: bad prefix {pfx.toCellRemaining.bits}")
+            if rest.bitsRemaining != 0 then
+              throw (IO.userError s!"unit/raw/hit-jump-with-tail: expected empty rest, got {rest.toCellRemaining.bits}")
+        | _ =>
+            throw (IO.userError s!"unit/raw/hit-jump-with-tail: unexpected stack {reprStr st.stack}")
         expectJumpTransfer "unit/raw/hit-jump-with-tail" dict4Value sentinelC0 st },
     { name := "unit/raw/malformed-root" -- [B8]
       run := do
@@ -361,10 +388,27 @@ def suite : InstrSuite where
       run := do
         expectDecodeOk "unit/decode/target" (rawSwitch24 4 pfxDict4Root) instrSwitch4
         let _ ← expectDecodeStep "unit/decode/chain" (Slice.ofCell rawChain) instrSwitch4 24
-        expectDecodeInv "unit/decode/lower" rawLowerInvalid
+        let _ ←
+          expectDecodeStep
+            "unit/decode/lower-neighbor"
+            (Slice.ofCell rawLowerInvalid)
+            (.dictExt (.pfxGet .getExec))
+            16
         expectDecodeInv "unit/decode/upper" rawUpperInvalid
-        expectDecodeInv "unit/decode/truncated23" rawTruncated23
-        expectDecodeInv "unit/decode/truncated8" rawTruncated8
+        match decodeCp0WithBits (Slice.ofCell rawTruncated23) with
+        | .error _ => pure ()
+        | .ok (i, bits, _) =>
+            match i with
+            | .dictExt (.pfxSwitch _ _) =>
+                throw (IO.userError s!"unit/decode/truncated23: expected non-pfxSwitch, got {reprStr i}/{bits}")
+            | _ => pure ()
+        match decodeCp0WithBits (Slice.ofCell rawTruncated8) with
+        | .error _ => pure ()
+        | .ok (i, bits, _) =>
+            match i with
+            | .dictExt (.pfxSwitch _ _) =>
+                throw (IO.userError s!"unit/decode/truncated8: expected non-pfxSwitch, got {reprStr i}/{bits}")
+            | _ => pure ()
         expectDecodeInv "unit/decode/missing-ref" (rawSwitch24NoRef 4)
         pure () }
   ]

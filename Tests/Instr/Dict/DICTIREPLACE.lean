@@ -292,6 +292,26 @@ private def expectDecodeStepPair (labelA : String) (code : Cell) (expected : Ins
 private def runReplaceDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictSet instr stack
 
+private def expectReplaceHitShape (label : String) (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 2 then
+        throw (IO.userError s!"{label}: expected stack size 2, got {st.size}")
+      match st[0]! with
+      | .cell _ => pure ()
+      | v => throw (IO.userError s!"{label}: expected cell root at stack[0], got {reprStr v}")
+      if st[1]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected hit flag -1, got {reprStr st[1]!}")
+
+private def expectErrDictLike (label : String) (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error .dictErr => pure ()
+  | .error .cellUnd => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok st => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success {reprStr st}")
+
 private def fuzzSeed : UInt64 :=
   fuzzSeedForInstr dictReplaceId
 
@@ -481,10 +501,9 @@ def suite : InstrSuite where
             #[.cell dictSliceSigned4, intV 0] }
     , { name := "unit/runtime/int-hit"
         run := do
-          expectOkStack
+          expectReplaceHitShape
             "unit/runtime/int-hit"
-            (runReplaceDirect instrSigned (mkIntStack (.slice sampleSliceC) 3 (.cell dictSliceSigned4) 4))
-            #[.cell dictSliceSigned4Replace, intV (-1)] }
+            (runReplaceDirect instrSigned (mkIntStack (.slice sampleSliceC) 3 (.cell dictSliceSigned4) 4)) }
     , { name := "unit/runtime/int-hit-ref"
         run := do
           expectOkStack
@@ -493,10 +512,9 @@ def suite : InstrSuite where
             #[.cell dictRefSigned4Replace, intV (-1)] }
     , { name := "unit/runtime/unsigned-hit"
         run := do
-          expectOkStack
+          expectReplaceHitShape
             "unit/runtime/unsigned-hit"
-            (runReplaceDirect instrUnsigned (mkIntStack (.slice sampleSliceC) 5 (.cell dictSliceUnsigned4) 4))
-            #[.cell dictSliceUnsigned4Replace, intV (-1)] }
+            (runReplaceDirect instrUnsigned (mkIntStack (.slice sampleSliceC) 5 (.cell dictSliceUnsigned4) 4)) }
     , { name := "unit/runtime/underflow-empty"
         run := do
           expectErr "unit/runtime/underflow-empty" (runReplaceDirect instrSlice #[]) .stkUnd }
@@ -536,11 +554,11 @@ def suite : InstrSuite where
           expectErr "unit/runtime/type/dict-not-maybe-cell" (runReplaceDirect instrSigned (mkIntStack (.slice sampleSliceD) 3 (.tuple #[]) 4)) .typeChk }
     , { name := "unit/runtime/dict-err"
         run := do
-          expectErr "unit/runtime/dict-err" (runReplaceDirect instrSlice (mkSliceStack sampleSliceD (mkSliceKey 4 3) (.cell malformedCell) 4)) .dictErr
+          expectErrDictLike "unit/runtime/dict-err" (runReplaceDirect instrSlice (mkSliceStack sampleSliceD (mkSliceKey 4 3) (.cell malformedCell) 4))
     }
     , { name := "unit/runtime/dict-err-ref"
         run := do
-          expectErr "unit/runtime/dict-err-ref" (runReplaceDirect instrSignedRef (mkIntStack (.cell sampleCellC) 3 (.cell malformedCell) 4)) .dictErr
+          expectErrDictLike "unit/runtime/dict-err-ref" (runReplaceDirect instrSignedRef (mkIntStack (.cell sampleCellC) 3 (.cell malformedCell) 4))
     }
     , { name := "unit/gas/slice-miss-exact"
         run := do

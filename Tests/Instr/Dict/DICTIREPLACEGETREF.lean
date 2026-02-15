@@ -48,8 +48,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Truncated 8-bit input must fail to decode.
 
 8. [B8] Assembler behavior.
-   - `.dictExt` in this family is not supported by the current assembler.
-   - `assembleCp0` for `DICTIREPLACEGETREF` must return `.invOpcode`.
+   - `.dictExt` in this family is supported by the assembler.
+   - `assembleCp0` must round-trip via decoder for `instr`.
 
 9. [B9] Gas accounting.
    - Base gas is `computeExactGasBudget instr`.
@@ -235,14 +235,14 @@ private def expectDecodeInvOpcode (label : String) (cell : Cell) : IO Unit := do
   | .error e =>
       throw (IO.userError s!"{label}: expected invOpcode, got {e}")
 
-private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
   match assembleCp0 [i] with
-  | .error .invOpcode =>
-      pure ()
-  | .ok c =>
-      throw (IO.userError s!"{label}: expected invOpcode, got code {c.bits}")
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) i 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
   | .error e =>
-      throw (IO.userError s!"{label}: expected invOpcode, got {e}")
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
 
 private def runDICTIREPLACEGETREFDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.dictGet false false false) (VM.push (.int (.num 909))) stack
@@ -324,7 +324,7 @@ def suite : InstrSuite where
     { name := "unit/decode/f42b" -- [B7]
       run := do
         let s := mkSliceFromBits (natToBits 0xF42B 16)
-        let _ ← expectDecodeStep "decode/f42b" s (.dictExt (.mutGet true false false .replace)) 16 },
+        let _ ← expectDecodeStep "decode/f42b" s (.dictExt (.mutGet false false true .replace)) 16 },
     { name := "unit/decode/f42d" -- [B7]
       run := do
         let s := mkSliceFromBits (natToBits 0xF42D 16)
@@ -337,7 +337,7 @@ def suite : InstrSuite where
       run := do
         let s0 := Slice.ofCell (Cell.mkOrdinary (rawF42a.bits ++ rawF42b.bits ++ rawF42c.bits ++ rawF42d.bits ++ rawF42e.bits ++ rawF42f.bits) #[])
         let s1 ← expectDecodeStep "decode/chain/f42a" s0 (.dictExt (.mutGet false false false .replace)) 16
-        let s2 ← expectDecodeStep "decode/chain/f42b" s1 (.dictExt (.mutGet true false false .replace)) 16
+        let s2 ← expectDecodeStep "decode/chain/f42b" s1 (.dictExt (.mutGet false false true .replace)) 16
         let s3 ← expectDecodeStep "decode/chain/f42c" s2 (.dictExt (.mutGet true false false .replace)) 16
         let s4 ← expectDecodeStep "decode/chain/f42d" s3 instr 16
         let s5 ← expectDecodeStep "decode/chain/f42e" s4 (.dictExt (.mutGet true true false .replace)) 16
@@ -354,9 +354,9 @@ def suite : InstrSuite where
         match decodeCp0WithBits (Slice.ofCell rawTruncated8) with
         | .error _ => pure ()
         | .ok _ => throw (IO.userError "decode/truncated unexpectedly succeeded") },
-    { name := "unit/asm/unsupported" -- [B8]
+    { name := "unit/asm/encodes" -- [B8]
       run := do
-        expectAssembleInvOpcode "asm/unsupported" instr }
+        expectAssembleOk16 "asm/encode" instr }
   ]
   oracle := #[
     -- [B2]

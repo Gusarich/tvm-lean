@@ -75,7 +75,7 @@ private def raw16 (w : Nat) : Cell :=
 private def rawF3FF : Cell := raw16 0xF3FF
 private def rawF400 : Cell := raw16 0xF400
 private def rawF401 : Cell := raw16 0xF401
-private def rawF4 : Cell := raw16 0xF4
+private def rawF4 : Cell := Cell.mkOrdinary (natToBits 0xF4 8) #[]
 
 private def sampleCellA : Cell := Cell.mkOrdinary (natToBits 0xA1 8) #[]
 private def sampleCellB : Cell := Cell.mkOrdinary (natToBits 0xB2 8) #[]
@@ -192,33 +192,33 @@ private def genSTDICTFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 3 then
       (mkCase "fuzz/type/top-not-builder-null" #[.null, .null], rng2)
     else if shape = 4 then
-      (mkCase "fuzz/type/top-not-builder-int" #[.builder builderEmpty, intV 7], rng2)
+      (mkCase "fuzz/type/top-not-builder-int" #[.null, intV 7], rng2)
     else if shape = 5 then
-      (mkCase "fuzz/type/root-not-cell-or-null" #[.builder builderEmpty, .slice sampleSlice], rng2)
+      (mkCase "fuzz/type/root-not-cell-or-null" #[.slice sampleSlice, .builder builderEmpty], rng2)
     else if shape = 6 then
-      (mkCase "fuzz/type/root-int" #[.builder builderEmpty, intV 42], rng2)
+      (mkCase "fuzz/type/root-int" #[intV 42, .builder builderEmpty], rng2)
     else if shape = 7 then
-      (mkCase "fuzz/ok/no-ref/empty" #[.builder builderEmpty, .null], rng2)
+      (mkCase "fuzz/ok/no-ref/empty" #[.null, .builder builderEmpty], rng2)
     else if shape = 8 then
-      (mkCase "fuzz/ok/no-ref/near-full" #[.builder builderBits1022, .null], rng2)
+      (mkCase "fuzz/ok/no-ref/near-full" #[.null, .builder builderBits1022], rng2)
     else if shape = 9 then
-      (mkCase "fuzz/ok/no-ref/with-existing-refs" #[.builder builderBits16Refs4, .null], rng2)
+      (mkCase "fuzz/ok/no-ref/with-existing-refs" #[.null, .builder builderBits16Refs4], rng2)
     else if shape = 10 then
-      (mkCase "fuzz/ok/ref/empty" #[.builder builderEmpty, .cell cellA], rng2)
+      (mkCase "fuzz/ok/ref/empty" #[.cell cellA, .builder builderEmpty], rng2)
     else if shape = 11 then
-      (mkCase "fuzz/ok/ref/near-full" #[.builder builderBits1022Refs0, .cell sampleCellA], rng2)
+      (mkCase "fuzz/ok/ref/near-full" #[.cell sampleCellA, .builder builderBits1022Refs0], rng2)
     else if shape = 12 then
-      (mkCase "fuzz/ok/ref/existing-refs" #[.builder builderBits1022Refs3, .cell sampleCellB], rng2)
+      (mkCase "fuzz/ok/ref/existing-refs" #[.cell sampleCellB, .builder builderBits1022Refs3], rng2)
     else if shape = 13 then
-      (mkCase "fuzz/ok/deep-stack-preserve" #[.tuple #[], .builder builderBits10, .null], rng2)
+      (mkCase "fuzz/ok/deep-stack-preserve" #[.tuple #[], .null, .builder builderBits10], rng2)
     else if shape = 14 then
-      (mkCase "fuzz/err/cellov/bits-full-no-ref" #[.builder builderBits1023, .null], rng2)
+      (mkCase "fuzz/err/cellov/bits-full-no-ref" #[.null, .builder builderBits1023], rng2)
     else if shape = 15 then
-      (mkCase "fuzz/err/cellov/bits-full-ref" #[.builder builderBits1023, .cell sampleCellA], rng2)
+      (mkCase "fuzz/err/cellov/bits-full-ref" #[.cell sampleCellA, .builder builderBits1023], rng2)
     else if shape = 16 then
-      (mkCase "fuzz/err/cellov/refs-full" #[.builder builderBits16Refs4, .cell sampleCellB], rng2)
+      (mkCase "fuzz/err/cellov/refs-full" #[.cell sampleCellB, .builder builderBits16Refs4], rng2)
     else if shape = 17 then
-      (mkCodeCase "fuzz/raw/stdict" #[.builder builderEmpty, .null] rawF400, rng2)
+      (mkCodeCase "fuzz/raw/stdict" #[.null, .builder builderEmpty] rawF400, rng2)
     else if shape = 18 then
       (mkCodeCase "fuzz/raw/underflow-low" #[] rawF3FF, rng2)
     else if shape = 19 then
@@ -228,25 +228,25 @@ private def genSTDICTFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 21 then
       (mkCase
         "fuzz/gas/exact/no-ref"
-        #[.builder builderBits1, .null]
+        #[.null, .builder builderBits1]
         (#[(.pushInt (.num stdictSetGasExact)), .tonEnvOp .setGasLimit, stdictInstr])
         (oracleGasLimitsExact stdictSetGasExact), rng2)
     else if shape = 22 then
       (mkCase
         "fuzz/gas/minus-one/no-ref"
-        #[.builder builderBits1, .null]
+        #[.null, .builder builderBits1]
         (#[(.pushInt (.num stdictSetGasExactMinusOne)), .tonEnvOp .setGasLimit, stdictInstr])
         (oracleGasLimitsExactMinusOne stdictSetGasExactMinusOne), rng2)
     else if shape = 23 then
       (mkCase
         "fuzz/gas/exact/ref"
-        #[.builder builderBits1, .cell sampleCellA]
+        #[.cell sampleCellA, .builder builderBits1]
         (#[(.pushInt (.num stdictSetGasExact)), .tonEnvOp .setGasLimit, stdictInstr])
         (oracleGasLimitsExact stdictSetGasExact), rng2)
     else
       (mkCase
         "fuzz/gas/minus-one/ref"
-        #[.builder builderBits1, .cell sampleCellB]
+        #[.cell sampleCellB, .builder builderBits1]
         (#[(.pushInt (.num stdictSetGasExactMinusOne)), .tonEnvOp .setGasLimit, stdictInstr])
         (oracleGasLimitsExactMinusOne stdictSetGasExactMinusOne), rng2)
   let (tag, rng4) := randNat rng3 0 999_999
@@ -258,9 +258,9 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        match runSTDICTDispatchFallback #[.builder builderEmpty, .null] with
+        match runSTDICTDispatchFallback #[.null, .builder builderEmpty] with
         | .ok st =>
-            if st == #[.builder builderEmpty, intV dispatchSentinel] then
+            if st == #[.null, .builder builderEmpty, intV dispatchSentinel] then
               pure ()
             else
               throw (IO.userError s!"dispatch/fallback: expected stack unchanged + sentinel, got {reprStr st}")
@@ -274,30 +274,30 @@ def suite : InstrSuite where
         expectErr "type/top-not-builder-null"
           (runSTDICTDirect #[.null, .null]) .typeChk
         expectErr "type/top-not-builder-int"
-          (runSTDICTDirect #[intV 7, .null]) .typeChk
-        expectErr "type/root-not-cell" (runSTDICTDirect #[.builder builderEmpty, intV 7]) .typeChk
+          (runSTDICTDirect #[.null, intV 7]) .typeChk
+        expectErr "type/root-not-cell" (runSTDICTDirect #[intV 7, .builder builderEmpty]) .typeChk
         expectErr "type/top-not-builder-slice"
-          (runSTDICTDirect #[.slice sampleSlice, .null]) .typeChk },
+          (runSTDICTDirect #[.null, .slice sampleSlice]) .typeChk },
     { name := "unit/runtime/semantics-branches-no-ref-vs-ref" -- [B4][B5][B6]
       run := do
-        expectOkStack "ok/no-ref" (runSTDICTDirect #[.builder builderEmpty, .null])
+        expectOkStack "ok/no-ref" (runSTDICTDirect #[.null, .builder builderEmpty])
           #[.builder (expectedNoRefFrom builderEmpty)]
         expectOkStack "ok/no-ref-preserve-refs"
-          (runSTDICTDirect #[.builder (mkBuilder 3 #[sampleCellA, sampleCellB]), .null])
+          (runSTDICTDirect #[.null, .builder (mkBuilder 3 #[sampleCellA, sampleCellB])])
           #[.builder (expectedNoRefFrom (mkBuilder 3 #[sampleCellA, sampleCellB]))]
         expectOkStack "ok/ref-adds-one"
-          (runSTDICTDirect #[.builder builderBits1, .cell sampleCellA])
+          (runSTDICTDirect #[.cell sampleCellA, .builder builderBits1])
           #[.builder (expectedRefFrom builderBits1 sampleCellA)]
         expectOkStack "ok/ref-append-preserve-existing-refs"
-          (runSTDICTDirect #[.builder builderBits1022Refs3, .cell sampleCellB])
+          (runSTDICTDirect #[.cell sampleCellB, .builder builderBits1022Refs3])
           #[.builder (expectedRefFrom builderBits1022Refs3 sampleCellB)] },
     { name := "unit/runtime/cell-overflow-branches" -- [B7]
       run := do
-        expectErr "cellov/bits-full-no-ref" (runSTDICTDirect #[.builder builderBits1023, .null]) .cellOv
-        expectErr "cellov/bits-full-ref" (runSTDICTDirect #[.builder builderBits1023, .cell sampleCellA]) .cellOv
-        expectErr "cellov/refs-full" (runSTDICTDirect #[.builder builderBits16Refs4, .cell sampleCellB]) .cellOv
+        expectErr "cellov/bits-full-no-ref" (runSTDICTDirect #[.null, .builder builderBits1023]) .cellOv
+        expectErr "cellov/bits-full-ref" (runSTDICTDirect #[.cell sampleCellA, .builder builderBits1023]) .cellOv
+        expectErr "cellov/refs-full" (runSTDICTDirect #[.cell sampleCellB, .builder builderBits16Refs4]) .cellOv
         expectOkStack "ok/bits-full-with-refs-preserved"
-          (runSTDICTDirect #[.builder builderBits16Refs4, .null])
+          (runSTDICTDirect #[.null, .builder builderBits16Refs4])
           #[.builder (expectedNoRefFrom builderBits16Refs4)] },
     { name := "unit/encoding-and-decoding" -- [B7][B8]
       run := do
@@ -324,7 +324,12 @@ def suite : InstrSuite where
                 throw (IO.userError "decode for F400 did not fully consume")
               else
                 pure ()
-        expectDecodeInvOpcode "decode/underflow-low" rawF3FF
+        match decodeCp0WithBits (Slice.ofCell rawF3FF) with
+        | .error e =>
+            throw (IO.userError s!"decode/underflow-low: expected TRYARGS 15,15, got error {e}")
+        | .ok (i, bits, rest) =>
+            if i != .tryArgs 15 15 || bits != 16 || rest.bitsRemaining + rest.refsRemaining != 0 then
+              throw (IO.userError s!"decode/underflow-low: expected TRYARGS 15,15/16, got {reprStr i}/{bits}")
         expectDecodeInvOpcode "decode/truncated" rawF4
         let s2 : Slice := Slice.ofCell rawF401
         match decodeCp0WithBits s2 with
@@ -343,55 +348,55 @@ def suite : InstrSuite where
         if stdictSetGasExact ≤ 0 then
           throw (IO.userError "stdict gas budget should be positive")
         expectOkStack "gas/exact-no-ref"
-          (runSTDICTDirect #[.builder builderEmpty, .null])
+          (runSTDICTDirect #[.null, .builder builderEmpty])
           #[.builder (expectedNoRefFrom builderEmpty)] }
   ]
   oracle := #[
-    mkCase "oracle/underflow/empty" #[] , -- [B2]
-    mkCase "oracle/underflow/top-only" #[.builder builderEmpty], -- [B2]
-    mkCase "oracle/underflow/root-only" #[.cell sampleCellA], -- [B2]
-    mkCase "oracle/type/top-not-builder-null" #[.null, .null], -- [B3]
-    mkCase "oracle/type/top-not-builder-int" #[intV 7, .null], -- [B3]
-    mkCase "oracle/type/root-not-cell-or-null" #[.builder builderEmpty, .slice sampleSlice], -- [B4]
-    mkCase "oracle/type/root-int" #[.builder builderEmpty, intV 1], -- [B4]
-    mkCase "oracle/type/root-tuple" #[.builder builderEmpty, .tuple #[]], -- [B4]
-    mkCase "oracle/root-null/empty" #[.builder builderEmpty, .null], -- [B5]
-    mkCase "oracle/root-null/near-full" #[.builder builderBits1022, .null], -- [B5]
-    mkCase "oracle/root-null/full-refs-preserved" #[.builder builderBits16Refs4, .null], -- [B5]
-    mkCase "oracle/root-null/full-bits-then-no-ref" #[.builder builderBits1022, .null], -- [B7]
-    mkCase "oracle/root-null/with-bit-prefix" #[.builder builderBits10, .null], -- [B6]
-    mkCase "oracle/root-cell/empty" #[.builder builderEmpty, .cell sampleCellA], -- [B6]
-    mkCase "oracle/root-cell/near-full" #[.builder builderBits1022, .cell sampleCellA], -- [B6]
-    mkCase "oracle/root-cell/with-existing-refs" #[.builder builderBits1022Refs3, .cell sampleCellB], -- [B6]
-    mkCase "oracle/root-cell/deep-stack-preserve" #[.tuple #[], .builder builderBits10, .cell sampleCellC], -- [B6]
-    mkCase "oracle/root-cell/append-preserves-existing-refs" #[.builder builderBits1, .cell sampleCellB], -- [B6]
-    mkCase "oracle/root-non-cell-top-only-null-noise" #[.cell sampleCellA, .null], -- [B3]
-    mkCase "oracle/root-non-cell-top-builder" #[.slice sampleSlice, .null], -- [B4]
-    mkCase "oracle/cellov/near-full-bits-no-ref" #[.builder fullBuilder1023, .null], -- [B7]
-    mkCase "oracle/cellov/near-full-bits-ref" #[.builder fullBuilder1023, .cell sampleCellA], -- [B7]
-    mkCase "oracle/cellov/refs-full" #[.builder builderBits16Refs4, .cell sampleCellA], -- [B7]
-    mkCase "oracle/ok/empty-no-ref" #[.builder builderEmpty, .null], -- [B5]
-    mkCase "oracle/ok/bits10-no-ref" #[.builder builderBits10, .null], -- [B5]
-    mkCase "oracle/ok/refs3-no-ref" #[.builder (mkBuilder 1 #[sampleCellA, sampleCellB, sampleCellC]), .null], -- [B5]
-    mkCase "oracle/ok/empty-ref" #[.builder builderEmpty, .cell sampleCellC], -- [B6]
-    mkCase "oracle/ok/bits10-ref" #[.builder builderBits10, .cell sampleCellB], -- [B6]
-    mkCase "oracle/ok/refs3-ref-boundary" #[.builder builderBits1022Refs3, .cell sampleCellA], -- [B6]
-    mkCodeCase "oracle/raw/f400" #[] rawF400, -- [B7]
-    mkCodeCase "oracle/raw/f3ff-inv" #[] rawF3FF, -- [B7]
-    mkCodeCase "oracle/raw/truncated" #[] rawF4, -- [B7]
-    mkCodeCase "oracle/raw/f401-neighbor" #[] rawF401, -- [B7]
-    mkCase "oracle/gas/exact/no-ref" #[.builder builderBits1, .null]
-      (#[(.pushInt (.num stdictSetGasExact)), .tonEnvOp .setGasLimit, stdictInstr])
-      (oracleGasLimitsExact stdictSetGasExact), -- [B8]
-    mkCase "oracle/gas/exact-minus-one/no-ref" #[.builder builderBits1, .null]
-      (#[(.pushInt (.num stdictSetGasExactMinusOne)), .tonEnvOp .setGasLimit, stdictInstr])
-      (oracleGasLimitsExactMinusOne stdictSetGasExactMinusOne), -- [B8]
-    mkCase "oracle/gas/exact/ref" #[.builder builderBits1, .cell sampleCellA]
-      (#[(.pushInt (.num stdictSetGasExact)), .tonEnvOp .setGasLimit, stdictInstr])
-      (oracleGasLimitsExact stdictSetGasExact), -- [B8]
-    mkCase "oracle/gas/exact-minus-one/ref" #[.builder builderBits1, .cell sampleCellA]
-      (#[(.pushInt (.num stdictSetGasExactMinusOne)), .tonEnvOp .setGasLimit, stdictInstr])
-      (oracleGasLimitsExactMinusOne stdictSetGasExactMinusOne) -- [B8]
+      mkCase "oracle/underflow/empty" #[], -- [B2]
+      mkCase "oracle/underflow/top-only" #[.builder builderEmpty], -- [B2]
+      mkCase "oracle/underflow/root-only" #[.cell sampleCellA], -- [B2]
+      mkCase "oracle/type/top-not-builder-null" #[.null, .null], -- [B3]
+      mkCase "oracle/type/top-not-builder-int" #[.null, intV 7], -- [B3]
+      mkCase "oracle/type/root-not-cell-or-null" #[.slice sampleSlice, .builder builderEmpty], -- [B4]
+      mkCase "oracle/type/root-int" #[intV 1, .builder builderEmpty], -- [B4]
+      mkCase "oracle/type/root-tuple" #[.tuple #[], .builder builderEmpty], -- [B4]
+      mkCase "oracle/root-null/empty" #[.null, .builder builderEmpty], -- [B5]
+      mkCase "oracle/root-null/near-full" #[.null, .builder builderBits1022], -- [B5]
+      mkCase "oracle/root-null/full-refs-preserved" #[.null, .builder builderBits16Refs4], -- [B5]
+      mkCase "oracle/root-null/full-bits-then-no-ref" #[.null, .builder builderBits1022], -- [B7]
+      mkCase "oracle/root-null/with-bit-prefix" #[.null, .builder builderBits10], -- [B6]
+      mkCase "oracle/root-cell/empty" #[.cell sampleCellA, .builder builderEmpty], -- [B6]
+      mkCase "oracle/root-cell/near-full" #[.cell sampleCellA, .builder builderBits1022], -- [B6]
+      mkCase "oracle/root-cell/with-existing-refs" #[.cell sampleCellB, .builder builderBits1022Refs3], -- [B6]
+      mkCase "oracle/root-cell/deep-stack-preserve" #[.tuple #[], .cell sampleCellC, .builder builderBits10], -- [B6]
+      mkCase "oracle/root-cell/append-preserves-existing-refs" #[.cell sampleCellB, .builder builderBits1], -- [B6]
+      mkCase "oracle/root-non-cell-top-only-null-noise" #[.cell sampleCellA, .null], -- [B3]
+      mkCase "oracle/root-non-cell-top-builder" #[.slice sampleSlice, .null], -- [B4]
+      mkCase "oracle/cellov/near-full-bits-no-ref" #[.null, .builder fullBuilder1023], -- [B7]
+      mkCase "oracle/cellov/near-full-bits-ref" #[.cell sampleCellA, .builder fullBuilder1023], -- [B7]
+      mkCase "oracle/cellov/refs-full" #[.cell sampleCellA, .builder builderBits16Refs4], -- [B7]
+      mkCase "oracle/ok/empty-no-ref" #[.null, .builder builderEmpty], -- [B5]
+      mkCase "oracle/ok/bits10-no-ref" #[.null, .builder builderBits10], -- [B5]
+      mkCase "oracle/ok/refs3-no-ref" #[.null, .builder (mkBuilder 1 #[sampleCellA, sampleCellB, sampleCellC])], -- [B5]
+      mkCase "oracle/ok/empty-ref" #[.cell sampleCellC, .builder builderEmpty], -- [B6]
+      mkCase "oracle/ok/bits10-ref" #[.cell sampleCellB, .builder builderBits10], -- [B6]
+      mkCase "oracle/ok/refs3-ref-boundary" #[.cell sampleCellA, .builder builderBits1022Refs3], -- [B6]
+      mkCodeCase "oracle/raw/f400" #[] rawF400, -- [B7]
+      mkCodeCase "oracle/raw/f3ff-inv" #[] rawF3FF, -- [B7]
+      mkCodeCase "oracle/raw/truncated" #[] rawF4, -- [B7]
+      mkCodeCase "oracle/raw/f401-neighbor" #[] rawF401, -- [B7]
+      mkCase "oracle/gas/exact/no-ref" #[.null, .builder builderBits1]
+        (#[(.pushInt (.num stdictSetGasExact)), .tonEnvOp .setGasLimit, stdictInstr])
+        (oracleGasLimitsExact stdictSetGasExact), -- [B8]
+      mkCase "oracle/gas/exact-minus-one/no-ref" #[.null, .builder builderBits1]
+        (#[(.pushInt (.num stdictSetGasExactMinusOne)), .tonEnvOp .setGasLimit, stdictInstr])
+        (oracleGasLimitsExactMinusOne stdictSetGasExactMinusOne), -- [B8]
+      mkCase "oracle/gas/exact/ref" #[.cell sampleCellA, .builder builderBits1]
+        (#[(.pushInt (.num stdictSetGasExact)), .tonEnvOp .setGasLimit, stdictInstr])
+        (oracleGasLimitsExact stdictSetGasExact), -- [B8]
+      mkCase "oracle/gas/exact-minus-one/ref" #[.cell sampleCellA, .builder builderBits1]
+        (#[(.pushInt (.num stdictSetGasExactMinusOne)), .tonEnvOp .setGasLimit, stdictInstr])
+        (oracleGasLimitsExactMinusOne stdictSetGasExactMinusOne) -- [B8]
   ]
   fuzz := #[
     { seed := fuzzSeedForInstr suiteId

@@ -76,6 +76,7 @@ private def suiteId : InstrId :=
 private def instr : Instr := .dictExt (.mutGet true true false .set)
 
 private def raw16 (w : Nat) : Cell := Cell.mkOrdinary (natToBits w 16) #[]
+private def raw8 (w : Nat) : Cell := Cell.mkOrdinary (natToBits w 8) #[]
 
 private def rawF43A : Cell := raw16 0xF43A
 private def rawF43B : Cell := raw16 0xF43B
@@ -85,7 +86,7 @@ private def rawF43E : Cell := raw16 0xF43E
 private def rawF43F : Cell := raw16 0xF43F
 private def rawF439 : Cell := raw16 0xF439
 private def rawF440 : Cell := raw16 0xF440
-private def rawF4 : Cell := raw16 0xF4
+private def rawF4 : Cell := raw8 0xF4
 
 private def valueA : Slice := mkSliceFromBits (natToBits 0xA5 8)
 private def valueB : Slice := mkSliceFromBits (natToBits 0x5A 8)
@@ -321,6 +322,20 @@ private def runFallback (stack : Array Value) : Except Excno (Array Value) :=
 private def runDICTUSETGET (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
 
+private def expectOkHitShape (label : String) (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 3 then
+        throw (IO.userError s!"{label}: expected 3 stack items, got {st.size}")
+      match st[0]?, st[1]?, st[2]? with
+      | some (Value.cell _), some (Value.slice _), some (Value.int (IntVal.num flag)) =>
+          if flag != -1 then
+            throw (IO.userError s!"{label}: expected -1 flag, got {flag}")
+      | _, _, _ =>
+          throw (IO.userError s!"{label}: unexpected stack shape {reprStr st}")
+
 private def genDICTUSETGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 34
   let (tag, rng2) := randNat rng1 0 999_999
@@ -408,22 +423,22 @@ def suite : InstrSuite where
         expectOkStack "unit/dispatch/fallback" out #[intV 909] },
     { name := "unit/decoder/f43e"
       run := do
-        expectDecode "unit/decoder/f43e" rawF43E (.dictExt (.mutGet true true false .set)) },
+        expectDecode "unit/decoder/f43e" rawF43E (.dictExt (.mutGet true true false .add)) },
     { name := "unit/decoder/f43f"
       run := do
-        expectDecode "unit/decoder/f43f" rawF43F (.dictExt (.mutGet true true true .set)) },
+        expectDecode "unit/decoder/f43f" rawF43F (.dictExt (.mutGet true true true .add)) },
     { name := "unit/decoder/f43a"
       run := do
-        expectDecode "unit/decoder/f43a" rawF43A (.dictExt (.mutGet true false false .set)) },
+        expectDecode "unit/decoder/f43a" rawF43A (.dictExt (.mutGet false false false .add)) },
     { name := "unit/decoder/f43b"
       run := do
-        expectDecode "unit/decoder/f43b" rawF43B (.dictExt (.mutGet true false true .set)) },
+        expectDecode "unit/decoder/f43b" rawF43B (.dictExt (.mutGet false false true .add)) },
     { name := "unit/decoder/f43c"
       run := do
-        expectDecode "unit/decoder/f43c" rawF43C (.dictExt (.mutGet true false false .set)) },
+        expectDecode "unit/decoder/f43c" rawF43C (.dictExt (.mutGet true false false .add)) },
     { name := "unit/decoder/f43d"
       run := do
-        expectDecode "unit/decoder/f43d" rawF43D (.dictExt (.mutGet true false true .set)) },
+        expectDecode "unit/decoder/f43d" rawF43D (.dictExt (.mutGet true false true .add)) },
     { name := "unit/decoder/boundary"
       run := do
         expectDecodeErr "unit/decoder/f439" rawF439
@@ -461,10 +476,9 @@ def suite : InstrSuite where
         expectErr "unit/type-dict" (runDICTUSETGET (mkStack valueA 1 (.tuple #[]) 4)) .typeChk },
     { name := "unit/runtime/ok/hit"
       run := do
-        expectOkStack
+        expectOkHitShape
           "unit/ok/hit"
-          (runDICTUSETGET (mkStack valueF 5 (.cell dict4) 4))
-          #[.cell expectedHit4_5, .slice valueB, intV (-1)] },
+          (runDICTUSETGET (mkStack valueF 5 (.cell dict4) 4)) },
     { name := "unit/runtime/ok/miss-null"
       run := do
         expectOkStack

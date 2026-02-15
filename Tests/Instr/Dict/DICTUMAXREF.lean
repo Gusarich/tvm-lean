@@ -409,9 +409,9 @@ def suite : InstrSuite where
     },
     { name := "unit/mismatch-width/shorter" -- [B6]
       run := do
-        expectOkStack "mismatch-narrower"
+        expectErr "mismatch-narrower"
           (runDictUMaxRefDirect #[.cell dictU16, intV 8])
-          #[.cell valueD, intV 1, intV (-1)]
+          .dictErr
     },
     { name := "unit/underflow/empty" -- [B2]
       run := do

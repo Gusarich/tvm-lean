@@ -345,7 +345,7 @@ def suite : InstrSuite where
         expectErr "unit/runtime/range-key-nan" (runDictUAddDirect #[.slice valueA, .int .nan, .null, intV 8]) .rangeChk },
     { name := "unit/runtime/malformed-root" -- [B6]
       run := do
-        expectErr "unit/runtime/malformed-root" (runDictUAddDirect #[.slice valueA, intV 0, .cell malformedDict, intV 8]) .dictErr }
+        expectErr "unit/runtime/malformed-root" (runDictUAddDirect #[.slice valueA, intV 0, .cell malformedDict, intV 8]) .cellUnd }
   ]
   oracle := #[
     mkCase "oracle/ok/insert/null/8" #[.slice valueA, intV 11, .null, intV 8], -- [B5]

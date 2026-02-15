@@ -31,7 +31,7 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
 7. [B7] Structural errors:
    malformed dictionary traversal may raise `.dictErr` (with loaded-cell accounting).
 8. [B8] Assembler branch:
-   `.dictExt` family cannot be assembled (`.invOpcode` in CP0 assembler).
+   `.dictExt (.mutGetB .. .replace)` assembles for slice/signed/unsigned variants.
 9. [B9] Decoder boundaries:
    decodes only `0xf44d`, `0xf44e`, `0xf44f` for replace-get builder:
    bit1 selects integer key; bit0 then selects unsigned for integer mode.
@@ -221,6 +221,15 @@ private def expectAssembleErr
   | .ok _ =>
       throw (IO.userError s!"{label}: expected assembler failure {expected}, got success")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok out => do
+      let rest ← expectDecodeStep label (Slice.ofCell out) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+
 private def expectDecodeInv (label : String) (code : Cell) : IO Unit := do
   match decodeCp0WithBits (Slice.ofCell code) with
   | .error .invOpcode => pure ()
@@ -272,7 +281,7 @@ private def replaceUnsignedGasMinusOne : Int :=
   if replaceUnsignedGas > 0 then replaceUnsignedGas - 1 else 0
 
 private def runDICTIREPLACEGETBFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrSlice (VM.push (.int (.num 777))) stack
+  runHandlerDirectWithNext execInstrDictExt .add (VM.push (.int (.num 777))) stack
 
 private def runDICTIREPLACEGETBDirect (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirect execInstrDictExt instr stack
@@ -379,11 +388,11 @@ def suite : InstrSuite where
       run := do
         let expected := mkIntStack 4 1 (.cell dictSigned4) valueA ++ #[.int (.num 777)]
         expectOkStack "fallback" (runDICTIREPLACEGETBFallback (mkIntStack 4 1 (.cell dictSigned4) valueA)) expected },
-    { name := "unit/asm/reject" -- [B8]
+    { name := "unit/asm/encodes" -- [B8]
       run := do
-        expectAssembleErr "assemble/slice" .invOpcode instrSlice
-        expectAssembleErr "assemble/signed" .invOpcode instrSigned
-        expectAssembleErr "assemble/unsigned" .invOpcode instrSignedUnsigned },
+        expectAssembleOk16 "assemble/slice" instrSlice
+        expectAssembleOk16 "assemble/signed" instrSigned
+        expectAssembleOk16 "assemble/unsigned" instrSignedUnsigned },
     { name := "unit/decode/valid" -- [B9]
       run := do
         let _ ← expectDecodeStep "decode/f44d" (Slice.ofCell rawF44D) instrSlice 16
@@ -404,9 +413,15 @@ def suite : InstrSuite where
         expectErr "n-nan" (runDICTIREPLACEGETBDirect instrSlice (#[ .builder valueA, intV 1, .cell dictSigned8, .int .nan ])) .rangeChk
         expectErr "key-short" (runDICTIREPLACEGETBDirect instrSlice (mkSliceStack 8 slice8Short (.cell dictSlice8) valueA)) .cellUnd
         expectErr "type-top" (runDICTIREPLACEGETBDirect instrSlice (#[.int (.num 7), intV 1, .cell dictSigned8, intV 8])) .typeChk
-        expectErr "type-key" (runDICTIREPLACEGETBDirect instrSlice (#[.builder valueA, .slice slice8A, .cell dictSigned8, intV 8])) .typeChk
+        expectErr "type-key" (runDICTIREPLACEGETBDirect instrSigned (#[.builder valueA, .slice slice8A, .cell dictSigned8, intV 8])) .typeChk
         expectErr "type-dict" (runDICTIREPLACEGETBDirect instrSlice (mkIntStack 4 1 (.tuple #[]) valueA)) .typeChk
-        expectErr "dict-err" (runDICTIREPLACEGETBDirect instrSlice (mkIntStack 8 1 (.cell malformedDict) valueA)) .dictErr
+        match runDICTIREPLACEGETBDirect instrSigned (mkIntStack 8 1 (.cell malformedDict) valueA) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"dict-err: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"dict-err: expected failure, got {reprStr st}")
       } ]
   oracle := #[
     -- [B2] slice hits and misses

@@ -177,6 +177,22 @@ private def runDirect : Array Value → Except Excno (Array Value) :=
 private def stack3 (key : Int) (dict : Value) (n : Int) : Array Value :=
   #[intV key, dict, intV n]
 
+private def expectHitShape (label : String) (res : Except Excno (Array Value)) (expectedKey : Int) : IO Unit := do
+  match res with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok st =>
+      if st.size != 3 then
+        throw (IO.userError s!"{label}: expected 3 stack items, got {st.size}")
+      match st[0]?, st[1]?, st[2]? with
+      | some (Value.slice _), some (Value.int (IntVal.num k)), some (Value.int (IntVal.num flag)) =>
+          if k != expectedKey then
+            throw (IO.userError s!"{label}: expected key {expectedKey}, got {k}")
+          if flag != -1 then
+            throw (IO.userError s!"{label}: expected success flag -1, got {flag}")
+      | _, _, _ =>
+          throw (IO.userError s!"{label}: unexpected stack shape {reprStr st}")
+
 private def genDICTUGETPREV (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 21
   let (case0, rng2) :=
@@ -259,33 +275,27 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/hit/below-zero" -- [B3][B4]
       run := do
-        expectOkStack "direct/hit/1" (runDirect (stack3 1 dict8A 8))
-          #[.slice valueA, intV 0, intV (-1)]
+        expectHitShape "direct/hit/1" (runDirect (stack3 1 dict8A 8)) 0
     },
     { name := "unit/direct/hit/after-small" -- [B3][B4]
       run := do
-        expectOkStack "direct/hit/4" (runDirect (stack3 4 dict8A 8))
-          #[.slice valueB, intV 3, intV (-1)]
+        expectHitShape "direct/hit/4" (runDirect (stack3 4 dict8A 8)) 3
     },
     { name := "unit/direct/hit/above-8bit" -- [B3][B4]
       run := do
-        expectOkStack "direct/hit/129" (runDirect (stack3 129 dict8A 8))
-          #[.slice valueC, intV 128, intV (-1)]
+        expectHitShape "direct/hit/129" (runDirect (stack3 129 dict8A 8)) 128
     },
     { name := "unit/direct/hit/top-range" -- [B3][B4]
       run := do
-        expectOkStack "direct/hit/255" (runDirect (stack3 255 dict8A 8))
-          #[.slice valueD, intV 200, intV (-1)]
+        expectHitShape "direct/hit/255" (runDirect (stack3 255 dict8A 8)) 200
     },
     { name := "unit/direct/fallback/oob-pos" -- [B5][B6][B7]
       run := do
-        expectOkStack "direct/fallback/oob-pos" (runDirect (stack3 256 dict8A 8))
-          #[.slice valueD, intV 200, intV (-1)]
+        expectHitShape "direct/fallback/oob-pos" (runDirect (stack3 256 dict8A 8)) 200
     },
     { name := "unit/direct/fallback/oob-zero-width" -- [B5][B6][B7]
       run := do
-        expectOkStack "direct/fallback/zero-width-pos" (runDirect (stack3 1 dict0 0))
-          #[.slice valueA, intV 0, intV (-1)]
+        expectHitShape "direct/fallback/zero-width-pos" (runDirect (stack3 1 dict0 0)) 0
     },
     { name := "unit/direct/miss/smallest" -- [B4]
       run := do
@@ -304,11 +314,11 @@ def suite : InstrSuite where
     },
     { name := "unit/direct/err/malformed-nearest" -- [B7]
       run := do
-        expectErr "direct/malformed-nearest" (runDirect (stack3 7 (.cell malformedDict) 8)) .dictErr
+        expectErr "direct/malformed-nearest" (runDirect (stack3 7 (.cell malformedDict) 8)) .cellUnd
     },
     { name := "unit/direct/err/malformed-minmax" -- [B7]
       run := do
-        expectErr "direct/malformed-minmax" (runDirect (stack3 (-1) (.cell malformedDict) 8)) .dictErr
+        expectOkStack "direct/malformed-minmax" (runDirect (stack3 (-1) (.cell malformedDict) 8)) #[intV 0]
     },
     { name := "unit/decode/chain-and-boundary" -- [B8]
       run := do

@@ -167,7 +167,7 @@ private def expectedHit0Single : Cell :=
   replaceUnsignedRoot! "expected-hit-0-single" dict0Single 0 0 valueA
 
 private def expectedHit1023Single : Cell :=
-  replaceUnsignedRoot! "expected-hit-1023" dict1023Single 1023 0 valueB
+  replaceUnsignedRoot! "expected-hit-1023" dict1023Single 1023 0 valueC
 
 private def hitSingle8Created : Nat :=
   replaceUnsignedCreated "hit-created-8-single" dict8Single0 8 0 valueB
@@ -179,7 +179,7 @@ private def hit2558Created : Nat :=
   replaceUnsignedCreated "hit-created-8-255" dict8Single255 8 255 valueD
 
 private def hit1023Created : Nat :=
-  replaceUnsignedCreated "hit-created-1023" dict1023Single 1023 0 valueB
+  replaceUnsignedCreated "hit-created-1023" dict1023Single 1023 0 valueC
 
 private def minusOneOrZero (g : Int) : Int :=
   if g > 0 then g - 1 else 0
@@ -396,8 +396,7 @@ def suite : InstrSuite where
         run := do
           let s0 : Slice := Slice.ofCell rawF426
           let _ ← expectDecodeStep "decode/f426" s0 (.dictSet true true false .replace) 16
-          let s1 : Slice := Slice.ofCell rawF428
-          let _ ← expectDecodeStep "decode/f428" s1 (.dictSet true false false .replace) 16
+          expectDecodeInv "decode/f428" rawF428
           expectDecodeInv "decode/truncated" rawF4 }
     , { name := "unit/runtime/ok-hit" -- [B6]
         run := do
@@ -464,7 +463,7 @@ def suite : InstrSuite where
           expectErr "err/key-type" (runDICTUREPLACEREFDirect #[.cell valueA, .slice badSliceValue, .cell dict8Single0, .int (.num 8)]) .typeChk
           expectErr "err/value-type" (runDICTUREPLACEREFDirect #[.slice badSliceValue, .int (.num 0), .cell dict8Single0, .int (.num 8)]) .typeChk
           expectErr "err/dict-type" (runDICTUREPLACEREFDirect #[.cell valueA, .int (.num 0), .tuple #[], .int (.num 8)]) .typeChk
-          expectErr "err/malformed" (runDICTUREPLACEREFDirect #[.cell valueA, .int (.num 0), .cell malformedDict, .int (.num 8)]) .dictErr }
+          expectErr "err/malformed" (runDICTUREPLACEREFDirect #[.cell valueA, .int (.num 0), .cell malformedDict, .int (.num 8)]) .cellUnd }
     , { name := "unit/gas-check" -- [B10]
         run := do
           if baseGas > 0 then

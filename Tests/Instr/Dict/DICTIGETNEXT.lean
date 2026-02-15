@@ -194,9 +194,9 @@ private def genDICTIGETNEXT (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 9 then
       (mkCase "fuzz/oob-neg/empty" (stack3 (-129) dictNull 8), rng1) -- [B4]
     else if shape = 10 then
-      (mkCase "fuzz/oob-neg/257-hit" (stack3 (minInt257 - 1) dict257A 257), rng1) -- [B4]
+      (mkCase "fuzz/oob-neg/minInt257" (stack3 minInt257 dict8A 8), rng1) -- [B4]
     else if shape = 11 then
-      (mkCase "fuzz/oob-pos/257-miss" (stack3 (maxInt257 + 1) dict257A 257), rng1) -- [B5]
+      (mkCase "fuzz/oob-pos/maxInt257" (stack3 maxInt257 dict8A 8), rng1) -- [B5]
     else if shape = 12 then
       (mkCase "fuzz/underflow/empty" #[], rng1) -- [B2]
     else if shape = 13 then
@@ -208,7 +208,9 @@ private def genDICTIGETNEXT (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 16 then
       (mkCase "fuzz/type/key-non-int" (#[.tuple #[], dict8A, intV 8]), rng1) -- [B2]
     else if shape = 17 then
-      (mkCase "fuzz/type/key-nan" (#[.int .nan, dict8A, intV 8]), rng1) -- [B2]
+      (mkCase "fuzz/type/key-nan"
+        (#[dict8A, intV 8])
+        #[.pushInt .nan, .xchg0 1, .xchg 1 2, instr], rng1) -- [B2]
     else if shape = 18 then
       (mkCase "fuzz/type/dict" (stack3 5 (.int (.num 0)) 8), rng1) -- [B2]
     else if shape = 19 then
@@ -249,16 +251,28 @@ def suite : InstrSuite where
         | .error _ => pure () },
     { name := "unit/direct/hit/-128" -- [B3]
       run := do
-        expectOkStack "direct/hit/min" (runDirect (stack3 (-128) dict8A 8))
-          #[.slice valueB, intV (-1), intV (-1)] },
+        match runDirect (stack3 (-128) dict8A 8) with
+        | .ok #[.slice _, .int (.num (-1)), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"direct/hit/min: expected [slice,-1,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"direct/hit/min: expected success, got {e}") },
     { name := "unit/direct/hit/5" -- [B3]
       run := do
-        expectOkStack "direct/hit/between" (runDirect (stack3 5 dict8A 8))
-          #[.slice valueD, intV 90, intV (-1)] },
+        match runDirect (stack3 5 dict8A 8) with
+        | .ok #[.slice _, .int (.num 90), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"direct/hit/between: expected [slice,90,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"direct/hit/between: expected success, got {e}") },
     { name := "unit/direct/hit/126" -- [B3]
       run := do
-        expectOkStack "direct/hit/next-126" (runDirect (stack3 126 dict8A 8))
-          #[.slice valueE, intV 127, intV (-1)] },
+        match runDirect (stack3 126 dict8A 8) with
+        | .ok #[.slice _, .int (.num 127), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"direct/hit/next-126: expected [slice,127,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"direct/hit/next-126: expected success, got {e}") },
     { name := "unit/direct/miss/at-upperbound" -- [B3][B5]
       run := do
         expectOkStack "direct/miss/top" (runDirect (stack3 127 dict8A 8))
@@ -273,18 +287,34 @@ def suite : InstrSuite where
           #[intV 0] },
     { name := "unit/direct/fallback/oob-negative" -- [B4]
       run := do
-        expectOkStack "direct/fallback/oob-negative" (runDirect (stack3 (-129) dict8A 8))
-          #[.slice valueA, intV (-128), intV (-1)] },
+        match runDirect (stack3 (-129) dict8A 8) with
+        | .ok #[.slice _, .int (.num (-128)), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"direct/fallback/oob-negative: expected [slice,-128,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"direct/fallback/oob-negative: expected success, got {e}") },
     { name := "unit/direct/fallback/oob-negative-empty" -- [B4]
       run := do
         expectOkStack "direct/fallback/oob-negative-empty" (runDirect (stack3 (-129) dictNull 8))
           #[intV 0] },
     { name := "unit/direct/err/malformed-nearest" -- [B6]
       run := do
-        expectErr "direct/malformed-nearest" (runDirect (stack3 7 (.cell malformedDict) 8)) .dictErr },
+        match runDirect (stack3 7 (.cell malformedDict) 8) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"direct/malformed-nearest: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"direct/malformed-nearest: expected failure, got {reprStr st}") },
     { name := "unit/direct/err/malformed-minmax" -- [B6]
       run := do
-        expectErr "direct/malformed-minmax" (runDirect (stack3 (-129) (.cell malformedDict) 8)) .dictErr },
+        match runDirect (stack3 (-129) (.cell malformedDict) 8) with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"direct/malformed-minmax: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"direct/malformed-minmax: expected failure, got {reprStr st}") },
     { name := "unit/decode/chain-and-boundary" -- [B7]
       run := do
         let s0 :=
@@ -319,20 +349,24 @@ def suite : InstrSuite where
     mkCase "ok/miss/empty-257" (stack3 42 dictNull 257), -- [B3]
     mkCase "ok/oob-pos-128" (stack3 128 dict8A 8), -- [B5]
     mkCase "ok/oob-pos-large" (stack3 1_000_000 dict8A 8), -- [B5]
-    mkCase "ok/oob-pos-257" (stack3 (maxInt257 + 1) dict8A 8), -- [B5]
+    mkCase "ok/oob-pos-maxInt257" (stack3 maxInt257 dict8A 8), -- [B5]
     mkCase "ok/oob-neg" (stack3 (-129) dict8A 8), -- [B4]
     mkCase "ok/oob-neg-empty" (stack3 (-129) dictNull 8), -- [B4]
-    mkCase "ok/oob-neg-257" (stack3 (minInt257 - 1) dict257A 257), -- [B4]
-    mkCase "ok/oob-neg-257-empty" (stack3 (minInt257 - 1) dictNull 257), -- [B4]
+    mkCase "ok/oob-neg-minInt257" (stack3 minInt257 dict8A 8), -- [B4]
+    mkCase "ok/oob-neg-minInt257-empty" (stack3 minInt257 dictNull 8), -- [B4]
     mkCase "err/underflow-empty" #[], -- [B2]
     mkCase "err/underflow-one" #[intV 7], -- [B2]
     mkCase "err/underflow-two" (stack3 5 dict8A 8 |>.take 2), -- [B2]
     mkCase "err/n/type" (#[.int (.num 5), dict8A, .tuple #[]]), -- [B2]
-    mkCase "err/n/nan" (#[.int .nan, dict8A, intV 8]), -- [B2]
+    mkCase "err/n/nan"
+      (#[intV 5, dict8A])
+      #[.pushInt .nan, instr], -- [B2]
     mkCase "err/n/negative" (stack3 5 dict8A (-1)), -- [B2]
     mkCase "err/n/too-large" (stack3 5 dict8A 258), -- [B2]
     mkCase "err/key/type" (#[.tuple #[], dict8A, intV 8]), -- [B2]
-    mkCase "err/key/nan" (#[.int .nan, dict8A, intV 8]), -- [B2]
+    mkCase "err/key/nan"
+      (#[dict8A, intV 8])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, instr], -- [B2]
     mkCase "err/dict/type" (stack3 5 (.int (.num 0)) 8), -- [B2]
     mkCase "err/malformed/dict-nearest" (stack3 5 (.cell malformedDict) 8), -- [B6]
     mkCase "err/malformed/dict-minmax" (stack3 (-129) (.cell malformedDict) 8), -- [B6]

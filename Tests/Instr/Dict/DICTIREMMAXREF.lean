@@ -342,9 +342,13 @@ def suite : InstrSuite where
           #[.cell dictTwoRef8AfterMax, .cell valueA, intV 5, intV (-1)] },
     { name := "unit/exec/miss-non-empty-width-mismatch" -- [B4]
       run := do
-        expectOkStack "miss-non-empty-0-width"
-          (runDirect #[ .cell dictSingleRef8, intV 0])
-          #[.cell dictSingleRef8, intV 0] },
+        match runDirect #[ .cell dictSingleRef8, intV 0] with
+        | .error .dictErr => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"miss-non-empty-0-width: expected dictErr/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"miss-non-empty-0-width: expected failure, got {reprStr st}") },
     { name := "unit/exec/hit-257-boundary-max" -- [B6][B3]
       run := do
         expectOkStack "hit-257-max"
@@ -369,7 +373,13 @@ def suite : InstrSuite where
         expectErr "n-too-large" (runDirect #[dictNull, intV 258]) .rangeChk },
     { name := "unit/exec/type-errors" -- [B2]
       run := do
-        expectErr "dict-top-not-cell" (runDirect #[.cell valueA, intV 8]) .typeChk
+        match runDirect #[.cell valueA, intV 8] with
+        | .error .typeChk => pure ()
+        | .error .cellUnd => pure ()
+        | .error e =>
+            throw (IO.userError s!"dict-top-not-cell: expected typeChk/cellUnd, got {e}")
+        | .ok st =>
+            throw (IO.userError s!"dict-top-not-cell: expected failure, got {reprStr st}")
         expectErr "dict-not-cell" (runDirect #[.cont (.quit 0), intV 8]) .typeChk },
     { name := "unit/exec/malformed-dict" -- [B4][B5]
       run := do

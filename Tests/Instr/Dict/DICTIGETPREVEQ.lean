@@ -196,7 +196,7 @@ def suite : InstrSuite where
         let _ ← expectDecodeStep "decode/asm" (Slice.ofCell c0) dictGetPreveqInstr 16
         let rawLower : Slice := Slice.ofCell (Cell.mkOrdinary (natToBits 0xF474 16) #[])
         let rawUpper : Slice := Slice.ofCell (Cell.mkOrdinary (natToBits 0xF47F 16) #[])
-        let _ ← expectDecodeStep "decode/raw-lower" rawLower (.dictGetNear 0) 16
+        let _ ← expectDecodeStep "decode/raw-lower" rawLower (.dictGetNear 4) 16
         let _ ← expectDecodeStep "decode/raw-upper" rawUpper (.dictGetNear 15) 16
         let rawInvalid : Slice := Slice.ofCell (Cell.mkOrdinary (natToBits 0xF480 16) #[])
         match decodeCp0WithBits rawInvalid with

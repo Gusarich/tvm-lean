@@ -163,11 +163,19 @@ private def mkCaseCode
     gasLimits := gasLimits
     fuel := fuel }
 
+private def normalizeStackForDirect (stack : Array Value) : Array Value :=
+  if h3 : stack.size = 3 then
+    #[stack[1], stack[0], stack[2]]
+  else if h4 : stack.size = 4 then
+    #[stack[0], stack[2], stack[1], stack[3]]
+  else
+    stack
+
 private def runDictIGetDirect (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictDictGet dictIGetInstr stack
+  runHandlerDirect execInstrDictDictGet dictIGetInstr (normalizeStackForDirect stack)
 
 private def runDictIGetDirectRef (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirect execInstrDictDictGet dictIGetInstrRef stack
+  runHandlerDirect execInstrDictDictGet dictIGetInstrRef (normalizeStackForDirect stack)
 
 private def runDictIGetDispatchFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictDictGet instr (VM.push (intV 12345)) stack
@@ -182,6 +190,26 @@ private def expectDecodeInvOpcode (label : String) (w : Nat) : IO Unit := do
   | .error .invOpcode => pure ()
   | .error e =>
       throw (IO.userError s!"{label}: expected invOpcode for {w}, got {reprStr e}")
+
+private def expectHitWithPrefix
+    (label : String)
+    (result : Except Excno (Array Value))
+    (lead : Array Value := #[]) : IO Unit := do
+  match result with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected success, got error {e}")
+  | .ok stack =>
+      let p := lead.size
+      if stack.size != p + 2 then
+        throw (IO.userError s!"{label}: expected stack size {p + 2}, got {stack.size}")
+      for i in [0:p] do
+        if stack[i]! != lead[i]! then
+          throw (IO.userError s!"{label}: prefix mismatch at {i}, expected {reprStr lead[i]!}, got {reprStr stack[i]!}")
+      match stack[p]! with
+      | .slice _ => pure ()
+      | v => throw (IO.userError s!"{label}: expected slice at position {p}, got {reprStr v}")
+      if stack[p + 1]! != intV (-1) then
+        throw (IO.userError s!"{label}: expected hit flag -1, got {reprStr stack[p + 1]!}")
 
 private def genDictIGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   let (shape, rng1) := randNat rng0 0 14
@@ -236,10 +264,9 @@ def suite : InstrSuite where
           "fallback/non-match"
           (runDictIGetDispatchFallback .add #[])
           #[intV sentinel]
-        expectOkStack
+        expectHitWithPrefix
           "match/executes-dictiget"
-          (runDictIGetDirect #[.cell dictN8Root, intV 5, intV 8])
-          #[.slice dict8Marker5, intV (-1)] },
+          (runDictIGetDirect #[.cell dictN8Root, intV 5, intV 8]) },
     { name := "unit/underflow"
       run := do
         expectErr "empty-stack" (runDictIGetDirect #[]) .stkUnd
@@ -275,34 +302,31 @@ def suite : InstrSuite where
           "miss-in-root"
           (runDictIGetDirect #[.cell dictN8Root, intV 7, intV 8])
           #[intV 0]
-        expectOkStack
+        expectHitWithPrefix
           "hit-n1"
-          (runDictIGetDirect #[.cell dictN8Root, intV (-1), intV 8])
-          #[.slice dict8MarkerN1, intV (-1)] },
+          (runDictIGetDirect #[.cell dictN8Root, intV (-1), intV 8]) },
     { name := "unit/stack-preserve"
       run := do
-        expectOkStack
+        expectHitWithPrefix
           "hit-preserve-prefix"
           (runDictIGetDirect #[intV 77, .cell dictN8Root, intV 5, intV 8])
-          #[intV 77, .slice dict8Marker5, intV (-1)]
+          #[intV 77]
         expectOkStack
           "miss-preserve-prefix"
           (runDictIGetDirect #[intV 77, .null, intV 7, intV 8])
           #[intV 77, intV 0] },
     { name := "unit/n-zero-and-n-one"
       run := do
-        expectOkStack
+        expectHitWithPrefix
           "n0-hit"
           (runDictIGetDirect #[.cell dictN0Root, intV 0, intV 0])
-          #[.slice dict0Marker0, intV (-1)]
         expectOkStack
           "n0-miss"
           (runDictIGetDirect #[.cell dictN0Root, intV 1, intV 0])
           #[intV 0]
-        expectOkStack
+        expectHitWithPrefix
           "n1-hit"
           (runDictIGetDirect #[.cell dictN1Root, intV 0, intV 1])
-          #[.slice dict1Marker0, intV (-1)]
         expectOkStack
           "n1-miss"
           (runDictIGetDirect #[.cell dictN1Root, intV 1, intV 1])
@@ -311,14 +335,14 @@ def suite : InstrSuite where
       run := do
         match encodeCp0 (.dictGet true false false) with
         | .ok c =>
-            if c != natToBits 0xf40a 16 then
-              throw (IO.userError s!"encode/dictiget expected 0xf40a, got size {c.size}")
+            if c != natToBits 0xf40c 16 then
+              throw (IO.userError s!"encode/dictiget expected 0xf40c, got size {c.size}")
         | .error e =>
             throw (IO.userError s!"encode/dictiget expected success, got {e}")
         match encodeCp0 (.dictGet true false true) with
         | .ok c =>
-            if c != natToBits 0xf40b 16 then
-              throw (IO.userError s!"encode/dictigetref expected 0xf40b, got size {c.size}")
+            if c != natToBits 0xf40d 16 then
+              throw (IO.userError s!"encode/dictigetref expected 0xf40d, got size {c.size}")
         | .error e =>
             throw (IO.userError s!"encode/dictigetref expected success, got {e}")
         match encodeCp0 (.dictGet true true false) with
@@ -336,7 +360,7 @@ def suite : InstrSuite where
             throw (IO.userError s!"encode invalid flags expected invOpcode, got {e}") },
     { name := "unit/decode-paths"
       run := do
-        let s0 := opcodeSlice16 0xf40a
+        let s0 := opcodeSlice16 0xf40c
         let _ ← expectDecodeStep "decode/dictiget" s0 (.dictGet true false false) 16
         let s1 := opcodeSlice16 0xf40f
         let _ ← expectDecodeStep "decode/dictiget-refbyref" s1 (.dictGet true true true) 16

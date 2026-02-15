@@ -38,11 +38,11 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
 5. [B5: Structural dictionary errors] Malformed dictionary roots should raise `dictErr`.
 
 6. [B6: Assembler encoding] `.dictSet true unsigned byRef .add` has defined encodings:
-   - 0xf432 / 0xf433 for signed, by-ref clear/set.
+   - 0xf434 / 0xf435 for signed, by-ref clear/set.
    - 0xf436 / 0xf437 for unsigned, by-ref clear/set.
    - Non-int-key combinations (e.g., `.dictSet false true false .add`) are unsupported and must encode as `.invOpcode`.
 
-7. [B7: Decoder boundaries] `Codepage` decode maps 0xf432..0xf437 to `.dictSet true unsigned byRef .add`.
+7. [B7: Decoder boundaries] `Codepage` decode maps 0xf434..0xf437 to `.dictSet true unsigned byRef .add`.
    - Adjacent opcodes below/above the range must decode as `.invOpcode`.
 
 8. [B8: Gas accounting] Base instruction gas is validated with exact/minus-one execution budgets.
@@ -293,7 +293,7 @@ def suite : InstrSuite where
       run := do
         match assembleCp0 [mkInstr false false] with
         | .ok c =>
-            if c == Cell.mkOrdinary (natToBits 0xf432 16) #[] then
+            if c == Cell.mkOrdinary (natToBits 0xf434 16) #[] then
               pure ()
             else
               throw (IO.userError "unit/asm/encode/signed-reffalse: unexpected opcode")
@@ -305,7 +305,7 @@ def suite : InstrSuite where
       run := do
         match assembleCp0 [mkInstr false true] with
         | .ok c =>
-            if c == Cell.mkOrdinary (natToBits 0xf433 16) #[] then
+            if c == Cell.mkOrdinary (natToBits 0xf435 16) #[] then
               pure ()
             else
               throw (IO.userError "unit/asm/encode/signed-reftrue: unexpected opcode")
@@ -339,15 +339,15 @@ def suite : InstrSuite where
     ,
     { name := "unit/asm/encode/invalid-non-int-key"
       run := do
-        expectAssembleInvOpcode "unit/asm/encode/invalid-non-int-key" (.dictSet false false false .add)
+        expectAssembleInvOpcode "unit/asm/encode/invalid-non-int-key" (.dictSet false true false .add)
     }
     ,
     { name := "unit/decoder/valid-range"
       run := do
-        let s432 : Slice := mkSliceFromBits (natToBits 0xf432 16)
-        let _ ← expectDecodeStep "unit/decoder/f432" s432 (mkInstr false false) 16
-        let s433 : Slice := mkSliceFromBits (natToBits 0xf433 16)
-        let _ ← expectDecodeStep "unit/decoder/f433" s433 (mkInstr false true) 16
+        let s434 : Slice := mkSliceFromBits (natToBits 0xf434 16)
+        let _ ← expectDecodeStep "unit/decoder/f434" s434 (mkInstr false false) 16
+        let s435 : Slice := mkSliceFromBits (natToBits 0xf435 16)
+        let _ ← expectDecodeStep "unit/decoder/f435" s435 (mkInstr false true) 16
         let s436 : Slice := mkSliceFromBits (natToBits 0xf436 16)
         let _ ← expectDecodeStep "unit/decoder/f436" s436 (mkInstr true false) 16
         let s437 : Slice := mkSliceFromBits (natToBits 0xf437 16)
@@ -408,7 +408,9 @@ def suite : InstrSuite where
     -- [B4] argument range/type: n too large.
     , caseDictIAdd "oracle/err/n-too-large" false false (mkCaseStack false false (0) .null 1024)
     -- [B4] argument range/type: n is NaN.
-    , caseDictIAdd "oracle/err/n-nan" false false (mkCaseStackWithNVal false false (0) .null .nan)
+    , caseDictIAdd "oracle/err/n-nan" false false
+        #[.slice mkValidSliceValue, intV 0, .null]
+        #[.pushInt .nan, mkInstr false false]
     -- [B4] type check: dict root is not maybe-cell.
     , caseDictIAdd "oracle/err/dict-type" false false (mkCaseStack false false (1) (.tuple #[]) 4)
     -- [B4] type check: key is not int.
@@ -451,7 +453,9 @@ def suite : InstrSuite where
     , caseDictIAdd "oracle/fuzz/shapes/unsigned/hit-alt" true true (mkCaseStack true true 13 (.cell dictUnsignedHitRef) 4)
     , caseDictIAdd "oracle/fuzz/shapes/key-out-of-range-unsigned" true false (mkCaseStack true false 16 .null 4)
     , caseDictIAdd "oracle/fuzz/shapes/key-out-of-range-signed" false false (mkCaseStack false false (-9) .null 4)
-    , caseDictIAdd "oracle/fuzz/shapes/nan-key" false false #[.slice mkValidSliceValue, .int .nan, .null, intV 4]
+    , caseDictIAdd "oracle/fuzz/shapes/nan-key" false false
+        #[.slice mkValidSliceValue, .null, intV 4]
+        #[.pushInt .nan, .xchg0 1, .xchg 1 2, mkInstr false false]
   ]
   fuzz := #[
     { seed := 2026021401

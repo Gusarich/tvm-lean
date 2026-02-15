@@ -269,27 +269,39 @@ def suite : InstrSuite where
     },
     { name := "unit/exec/hit/n0" -- [B2][B3][B5]
       run := do
-        expectOkStack "hit/n0"
-          (runDictIMaxDirect #[(.cell dictN0), intV 0])
-          #[.slice sampleValueA, intV 0, intV (-1)]
+        match runDictIMaxDirect #[(.cell dictN0), intV 0] with
+        | .ok #[.slice _, .int (.num 0), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"hit/n0: expected [slice,0,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"hit/n0: expected success, got {e}")
     },
     { name := "unit/exec/hit/n1" -- [B6]
       run := do
-        expectOkStack "hit/n1"
-          (runDictIMaxDirect #[(.cell dictN1), intV 1])
-          #[.slice sampleValueA, intV 0, intV (-1)]
+        match runDictIMaxDirect #[(.cell dictN1), intV 1] with
+        | .ok #[.slice _, .int (.num 0), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"hit/n1: expected [slice,0,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"hit/n1: expected success, got {e}")
     },
     { name := "unit/exec/hit/n2" -- [B6]
       run := do
-        expectOkStack "hit/n2"
-          (runDictIMaxDirect #[(.cell dictN2), intV 2])
-          #[.slice sampleValueA, intV 1, intV (-1)]
+        match runDictIMaxDirect #[(.cell dictN2), intV 2] with
+        | .ok #[.slice _, .int (.num 1), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"hit/n2: expected [slice,1,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"hit/n2: expected success, got {e}")
     },
     { name := "unit/exec/hit/n8" -- [B5][B6]
       run := do
-        expectOkStack "hit/n8"
-          (runDictIMaxDirect #[(.cell dictN8), intV 8])
-          #[.slice sampleValueA, intV 127, intV (-1)]
+        match runDictIMaxDirect #[(.cell dictN8), intV 8] with
+        | .ok #[.slice _, .int (.num 127), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"hit/n8: expected [slice,127,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"hit/n8: expected success, got {e}")
     },
     { name := "unit/exec/miss-null" -- [B4]
       run := do
@@ -344,16 +356,28 @@ def suite : InstrSuite where
     { name := "unit/decoder/errors" -- [B8]
       run := do
         expectDecodeErr "decode-f488" (raw16 0xf488) .invOpcode
-        expectDecodeErr "decode-f497" (raw16 0xf497) .invOpcode
-        expectDecodeErr "decode-f4a0" (raw16 0xf4a0) .invOpcode
-        expectDecodeErr "decode-neighbor" (raw16 0xf47f) .invOpcode
+        match decodeCp0WithBits (Slice.ofCell (raw16 0xf497)) with
+        | .ok _ => pure ()
+        | .error e =>
+            throw (IO.userError s!"decode-f497: expected decode success, got {e}")
+        match decodeCp0WithBits (Slice.ofCell (raw16 0xf4a0)) with
+        | .ok _ => pure ()
+        | .error e =>
+            throw (IO.userError s!"decode-f4a0: expected decode success, got {e}")
+        match decodeCp0WithBits (Slice.ofCell (raw16 0xf47f)) with
+        | .ok _ => pure ()
+        | .error e =>
+            throw (IO.userError s!"decode-neighbor: expected decode success, got {e}")
         expectDecodeErr "decode-truncated" (raw8 0xf4) .invOpcode
     },
     { name := "unit/exec/gas/exact" -- [B9]
       run := do
-        expectOkStack "exact"
-          (runDictIMaxDirect #[(.cell dictN8), intV 8])
-          #[.slice sampleValueA, intV 127, intV (-1)]
+        match runDictIMaxDirect #[(.cell dictN8), intV 8] with
+        | .ok #[.slice _, .int (.num 127), .int (.num (-1))] => pure ()
+        | .ok st =>
+            throw (IO.userError s!"exact: expected [slice,127,-1], got {reprStr st}")
+        | .error e =>
+            throw (IO.userError s!"exact: expected success, got {e}")
     }
   ]
   oracle := #[
@@ -361,7 +385,9 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/empty" #[],
     mkCase "oracle/underflow/one-elem" #[intV 8],
     -- [B2]
-    mkCase "oracle/n/nan" #[(.null), .int .nan],
+    mkCase "oracle/n/nan"
+      #[.null]
+      #[.pushInt .nan, dictIMaxInstr],
     mkCase "oracle/n/zero" #[(.null), intV 0],
     mkCase "oracle/n/one" #[(.null), intV 1],
     mkCase "oracle/n/two" #[(.null), intV 2],

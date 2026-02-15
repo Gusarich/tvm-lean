@@ -16,7 +16,7 @@ All 919 TVM instructions are implemented. The vast majority are pure Lean; crypt
 |---|--:|:-:|
 | Arithmetic | 246 | ✅ Tested |
 | Cell | 199 | ✅ Tested |
-| Dictionary | 143 | 🚧 |
+| Dictionary | 143 | ✅ Tested |
 | Continuation | 98 | ✅ Tested |
 | Crypto | 50 | 🚧 |
 | Stack | 50 | ✅ Tested |

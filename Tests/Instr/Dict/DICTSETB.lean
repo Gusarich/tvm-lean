@@ -51,7 +51,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - `.dictSetB false false .set` encodes as `0xf441`.
    - `.dictSetB true false .set` encodes as `0xf442`.
    - `.dictSetB true true .set` encodes as `0xf443`.
-   - Non-set modes for `.dictSetB` and `.dictSetB false true` reject with `.invOpcode`.
+   - `.dictSetB false false .add`, `.dictSetB true false .add`, `.dictSetB true true .add` encode as `0xf451..0xf453`.
+   - Non-set modes for `.dictSetB` (e.g. `.replace`) and `.dictSetB false true` reject with `.invOpcode`.
 
 9. [B9] Decoder behavior.
    - `0xf441`, `0xf442`, `0xf443` decode to the three set variants.
@@ -85,8 +86,8 @@ private def valueE : Builder := mkBuilderValue 0xe5
 
 private def dictNull : Value := .null
 
-private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictDictSetB instrSetSlice (VM.push (intV 909)) stack
+private def runDispatchFallback (instr : Instr) (stack : Array Value) : Except Excno (Array Value) :=
+  runHandlerDirectWithNext execInstrDictDictSetB instr (VM.push (intV 909)) stack
 
 private def runDirect (instr : Instr) : Array Value → Except Excno (Array Value) :=
   runHandlerDirect execInstrDictDictSetB instr
@@ -367,7 +368,7 @@ def suite : InstrSuite where
   unit := #[
     { name := "unit/dispatch/fallback" -- [B1]
       run := do
-        match runDispatchFallback #[] with
+        match runDispatchFallback .add #[] with
         | .ok st =>
             if st == #[intV 909] then
               pure ()
@@ -379,14 +380,15 @@ def suite : InstrSuite where
       run := do
         expectAssemble16 "asm/f441" instrSetSlice 0xf441
         expectAssemble16 "asm/f442" instrSetInt 0xf442
-        expectAssemble16 "asm/f443" instrSetUInt 0xf443 },
+        expectAssemble16 "asm/f443" instrSetUInt 0xf443
+        expectAssemble16 "asm/f451" (.dictSetB false false .add) 0xf451
+        expectAssemble16 "asm/f452" (.dictSetB true false .add) 0xf452
+        expectAssemble16 "asm/f453" (.dictSetB true true .add) 0xf453 },
     { name := "unit/asm/reject" -- [B8]
       run := do
         expectAssembleErr "asm/reject-unsigned-slice" (.dictSetB false true .set) .invOpcode
         expectAssembleErr "asm/reject-set-replace" (.dictSetB false false .replace) .invOpcode
-        expectAssembleErr "asm/reject-slice-add" (.dictSetB false false .add) .invOpcode
-        expectAssembleErr "asm/reject-int-add" (.dictSetB true false .add) .invOpcode
-        expectAssembleErr "asm/reject-u-int-add" (.dictSetB true true .add) .invOpcode },
+        pure () },
     { name := "unit/decode/valid" -- [B9]
       run := do
         expectDecode "decode/f441" rawF441 instrSetSlice
@@ -445,7 +447,7 @@ def suite : InstrSuite where
         expectErr "type-dict" (runDirect instrSetSlice (mkSliceStack (.int (.num 7)) 8 (natToBits 5 8) valueA)) .typeChk
         expectErr "type-key" (runDirect instrSetInt #[.builder valueA, .slice (mkSliceFromBits (natToBits 5 8)), .cell dictSigned8, intV 8]) .typeChk
         expectErr "type-value" (runDirect instrSetSlice (#[.int (.num 7), .slice (mkSliceFromBits (natToBits 5 8)), .cell dictSlice8, intV 8])) .typeChk
-        expectErr "bad-root" (runDirect instrSetSlice (mkSliceStack (.cell dictMalformed) 8 (natToBits 5 8) valueA)) .dictErr },
+        expectErr "bad-root" (runDirect instrSetSlice (mkSliceStack (.cell dictMalformed) 8 (natToBits 5 8) valueA)) .cellUnd },
     { name := "unit/gas/exact-and-minus-one" -- [B10][B11]
       run := do
         expectOkStack "gas-exact-insert" (runDirect instrSetSlice (mkSliceStack dictNull 8 (natToBits 55 8) valueA))

@@ -70,7 +70,10 @@ private def suiteId : InstrId :=
   { name := "DICTUREPLACEGETB" }
 
 private def instrUnsigned : Instr := .dictExt (.mutGetB true true .replace)
+private def instrIntSigned : Instr := .dictExt (.mutGetB true false .replace)
+private def instrSliceSigned : Instr := .dictExt (.mutGetB false false .replace)
 
+private def rawF44C : Cell := Cell.mkOrdinary (natToBits 0xF44C 16) #[]
 private def rawF44D : Cell := Cell.mkOrdinary (natToBits 0xF44D 16) #[]
 private def rawF44E : Cell := Cell.mkOrdinary (natToBits 0xF44E 16) #[]
 private def rawF44F : Cell := Cell.mkOrdinary (natToBits 0xF44F 16) #[]
@@ -328,11 +331,12 @@ def suite : InstrSuite where
         expectAssembleInvOpcode "assemble/unsigned" instrUnsigned },
     { name := "unit/decode/valid" -- [B8]
       run := do
+        let _ ← expectDecodeStep "decode/f44d" (Slice.ofCell rawF44D) instrSliceSigned 16
+        let _ ← expectDecodeStep "decode/f44e" (Slice.ofCell rawF44E) instrIntSigned 16
         let _ ← expectDecodeStep "decode/f44f" (Slice.ofCell rawF44F) instrUnsigned 16 },
     { name := "unit/decode/invalid-boundaries" -- [B8]
       run := do
-        expectDecodeInv "decode/f44d" rawF44D
-        expectDecodeInv "decode/f44e" rawF44E
+        expectDecodeInv "decode/f44c" rawF44C
         expectDecodeInv "decode/f450" rawF450
         expectDecodeInv "decode/truncated" rawTruncated8 },
     { name := "unit/runtime/underflow-empty" -- [B2]
@@ -356,7 +360,7 @@ def suite : InstrSuite where
         expectErr "dict-not-cell" (runDICTUREPLACEGETBDirect instrUnsigned (mkIntStack 4 (.tuple #[]) valueA 4)) .typeChk },
     { name := "unit/runtime/malformed-root" -- [B6]
       run := do
-        expectErr "malformed-root" (runDICTUREPLACEGETBDirect instrUnsigned (mkIntStack 7 (.cell malformedDict) valueA 4)) .dictErr },
+        expectErr "malformed-root" (runDICTUREPLACEGETBDirect instrUnsigned (mkIntStack 7 (.cell malformedDict) valueA 4)) .cellUnd },
     { name := "unit/runtime/builder-overflow" -- [B6]
       run := do
         expectErr "builder-overflow" (runDICTUREPLACEGETBDirect instrUnsigned (mkIntStack 7 (.cell dictUnsigned4) valueHuge 4)) .cellOv },
@@ -367,8 +371,24 @@ def suite : InstrSuite where
           match replaceResultRoot dictUnsigned4 4 15 valueC with
           | some root => root
           | none => dictUnsigned4
-        let expected := #[.cell expectedRoot, .slice valueDSlice, intV (-1)]
-        expectOkStack "replace-hit" got expected },
+        match got with
+        | .error e =>
+            throw (IO.userError s!"replace-hit: expected success, got error {reprStr e}")
+        | .ok st =>
+            if st.size != 3 then
+              throw (IO.userError s!"replace-hit: expected stack size 3, got {st.size}")
+            if st[0]! != .cell expectedRoot then
+              throw (IO.userError s!"replace-hit: expected newRoot, got {reprStr st[0]!}")
+            if st[2]! != intV (-1) then
+              throw (IO.userError s!"replace-hit: expected flag=-1, got {reprStr st[2]!}")
+            match st[1]! with
+            | .slice gotOld =>
+                if gotOld.toCellRemaining != valueDSlice.toCellRemaining then
+                  throw
+                    (IO.userError
+                      s!"replace-hit: expected oldValue={reprStr valueDSlice.toCellRemaining}, got {reprStr gotOld.toCellRemaining}")
+            | v =>
+                throw (IO.userError s!"replace-hit: expected oldValue slice, got {reprStr v}") },
     { name := "unit/runtime/replace-miss" -- [B5]
       run := do
         let got := runDICTUREPLACEGETBDirect instrUnsigned (mkIntStack 6 (.cell dictUnsigned4) valueA 4)

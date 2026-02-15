@@ -381,8 +381,8 @@ def suite : InstrSuite where
       run := do
         expectDecodeOk "decode-lddicts" lddictsCode (.dictExt (.lddicts false))
         expectDecodeOk "decode-ppldicts" plddictsCode (.dictExt (.lddicts true))
-        expectDecodeErr "decode-lower-boundary" skipdictCode
-        expectDecodeErr "decode-upper-boundary" lddictCode
+        expectDecodeOk "decode-lower-boundary" skipdictCode .skipdict
+        expectDecodeOk "decode-upper-boundary" lddictCode (.lddict false false)
         expectDecodeErr "decode-truncated-8" malformed8
         expectDecodeErr "decode-truncated-15" malformed15 },
     { name := "unit/assemble/rejects" -- [B9]

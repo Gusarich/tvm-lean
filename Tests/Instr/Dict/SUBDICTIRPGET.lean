@@ -141,12 +141,12 @@ private def malformedDictCell : Cell := Cell.mkOrdinary (natToBits 0b10 2) #[]
 private def expectedK0 : Array Value := #[(.cell dictSigned4Root)]
 private def expectedK0Null : Array Value := #[.null]
 private def expectedK2Hit : Array Value :=
-  match dictExtractPrefixSubdictWithCells (some dictSigned4Root) 4 (requireBits "expectedK2Hit" 1 4) 2 true with
+  match dictExtractPrefixSubdictWithCells (some dictSigned4Root) 4 (requireBits "expectedK2Hit" 1 2) 2 true with
   | .ok (some c, _, _, _) => #[.cell c]
   | .ok (none, _, _, _) => #[.null]
   | .error e => panic! s!"expectedK2Hit: {reprStr e}"
 private def expectedK2HitMinus1 : Array Value :=
-  match dictExtractPrefixSubdictWithCells (some dictSigned4Root) 4 (requireBits "expectedK2HitMinus1" (-1) 4) 2 true with
+  match dictExtractPrefixSubdictWithCells (some dictSigned4Root) 4 (requireBits "expectedK2HitMinus1" (-1) 2) 2 true with
   | .ok (some c, _, _, _) => #[.cell c]
   | .ok (none, _, _, _) => #[.null]
   | .error e => panic! s!"expectedK2HitMinus1: {reprStr e}"
@@ -177,7 +177,7 @@ private def runSubdictIRPGETFallback (stack : Array Value) : Except Excno (Array
   runHandlerDirectWithNext execInstrDictExt (.dictGet false false false) (VM.push (intV dispatchSentinel)) stack
 
 private def mkStack (key : Int) (dict : Value) (k : Int) (n : Int) : Array Value :=
-  #[intV key, dict, intV k, intV n]
+  #[intV key, intV k, dict, intV n]
 
 private def mkCase
     (name : String)
@@ -218,9 +218,9 @@ private def genSUBDICTIRPGET (rng0 : StdGen) : OracleCase × StdGen :=
   let (tag, _) := randNat rng1 0 999_999
   let (case0, rng3) :=
     if shape = 0 then
-      (mkCase "ok/k0-root" (mkStack 1 (.cell dictSigned4Root) 0 4), rng1)
+      (mkCase "ok/k0-root" (mkStack 0 (.cell dictSigned4Root) 0 4), rng1)
     else if shape = 1 then
-      (mkCase "ok/k0-null" (mkStack 1 .null 0 4), rng1)
+      (mkCase "ok/k0-null" (mkStack 0 .null 0 4), rng1)
     else if shape = 2 then
       (mkCase "ok/k2-hit-1" (mkStack 1 (.cell dictSigned4Root) 2 4), rng1)
     else if shape = 3 then
@@ -239,30 +239,30 @@ private def genSUBDICTIRPGET (rng0 : StdGen) : OracleCase × StdGen :=
       (mkCase "err/underflow-2" (#[intV 1, .cell dictSigned4Root]), rng1)
     else if shape = 10 then
       (mkCase "err/underflow-3" (#[intV 1, .cell dictSigned4Root, intV 2]), rng1)
-    else if shape = 11 then
-      (mkCase "err/n-type" (#[intV 1, .cell dictSigned4Root, intV 1, .tuple #[]]), rng1)
+      else if shape = 11 then
+        (mkCase "err/n-type" (#[intV 1, intV 1, .cell dictSigned4Root, .tuple #[]]), rng1)
     else if shape = 12 then
       (mkCase "err/n-negative" (mkStack 1 (.cell dictSigned4Root) 1 (-1)), rng1)
     else if shape = 13 then
       (mkCase "err/n-too-large" (mkStack 1 (.cell dictSigned4Root) 1 1024), rng1)
-    else if shape = 14 then
-      (mkCase "err/n-nan" (#[intV 1, .cell dictSigned4Root, intV 1, .int .nan]), rng1)
+      else if shape = 14 then
+        (mkCase "err/n-nan" (#[intV 1, intV 1, .cell dictSigned4Root, .int .nan]), rng1)
     else if shape = 15 then
       (mkCase "err/dict-builder" (mkStack 1 (.builder Builder.empty) 1 4), rng1)
-    else if shape = 16 then
-      (mkCase "err/dict-tuple" (#[intV 1, .tuple #[], intV 1, intV 4]), rng1)
-    else if shape = 17 then
-      (mkCase "err/k-type" (#[intV 1, .cell dictSigned4Root, .slice (mkSliceFromBits #[]), intV 4]), rng1)
+      else if shape = 16 then
+        (mkCase "err/dict-tuple" (#[intV 1, intV 1, .tuple #[], intV 4]), rng1)
+      else if shape = 17 then
+        (mkCase "err/k-type" (#[intV 1, .slice (mkSliceFromBits #[]), .cell dictSigned4Root, intV 4]), rng1)
     else if shape = 18 then
       (mkCase "err/k-negative" (mkStack 1 (.cell dictSigned4Root) (-1) 4), rng1)
     else if shape = 19 then
       (mkCase "err/k-over-n" (mkStack 1 (.cell dictSigned4Root) 5 4), rng1)
-    else if shape = 20 then
-      (mkCase "err/key-slice" (#[.slice (mkSliceFromBits #[]), .cell dictSigned4Root, intV 1, intV 4]), rng1)
-    else if shape = 21 then
-      (mkCase "err/key-cell" (#[.cell (Cell.empty), .cell dictSigned4Root, intV 1, intV 4]), rng1)
-    else if shape = 22 then
-      (mkCase "err/key-nan" (#[.int .nan, .cell dictSigned4Root, intV 1, intV 4]), rng1)
+      else if shape = 20 then
+        (mkCase "err/key-slice" (#[.slice (mkSliceFromBits #[]), intV 1, .cell dictSigned4Root, intV 4]), rng1)
+      else if shape = 21 then
+        (mkCase "err/key-cell" (#[.cell (Cell.empty), intV 1, .cell dictSigned4Root, intV 4]), rng1)
+      else if shape = 22 then
+        (mkCase "err/key-nan" (#[.int .nan, intV 1, .cell dictSigned4Root, intV 4]), rng1)
     else if shape = 23 then
       (mkCase "err/key-out-of-range-pos" (mkStack 8 (.cell dictSigned4Root) 4 4), rng1)
     else if shape = 24 then
@@ -310,35 +310,35 @@ def suite : InstrSuite where
         expectErr "underflow-3" (runSubdictIRPGET (#[intV 1, .cell dictSigned4Root, intV 2])) .stkUnd },
     { name := "unit/validation/n" -- [B3]
       run := do
-        expectErr "n-type" (runSubdictIRPGET (#[intV 1, .cell dictSigned4Root, intV 1, .tuple #[]])) .typeChk
+        expectErr "n-type" (runSubdictIRPGET (#[intV 1, intV 1, .cell dictSigned4Root, .tuple #[]])) .typeChk
         expectErr "n-negative" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 1 (-1))) .rangeChk
         expectErr "n-too-large" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 1 1024)) .rangeChk
-        expectErr "n-nan" (runSubdictIRPGET (#[intV 1, .cell dictSigned4Root, intV 1, .int .nan])) .rangeChk },
+        expectErr "n-nan" (runSubdictIRPGET (#[intV 1, intV 1, .cell dictSigned4Root, .int .nan])) .rangeChk },
     { name := "unit/validation/dict" -- [B4]
       run := do
         expectErr "dict-builder" (runSubdictIRPGET (mkStack 1 (.builder Builder.empty) 1 4)) .typeChk
         expectErr "dict-tuple" (runSubdictIRPGET (mkStack 1 (.tuple #[]) 1 4)) .typeChk },
     { name := "unit/validation/k" -- [B5]
       run := do
-        expectErr "k-type" (runSubdictIRPGET (#[intV 1, .cell dictSigned4Root, .slice (mkSliceFromBits #[]), intV 4])) .typeChk
+        expectErr "k-type" (runSubdictIRPGET (#[intV 1, .slice (mkSliceFromBits #[]), .cell dictSigned4Root, intV 4])) .typeChk
         expectErr "k-negative" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) (-1) 4)) .rangeChk
         expectErr "k-over-n" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 5 4)) .rangeChk },
     { name := "unit/validation/key" -- [B6][B7]
       run := do
-        expectErr "key-type" (runSubdictIRPGET (#[.slice (mkSliceFromBits #[]), .cell dictSigned4Root, intV 1, intV 4])) .typeChk
-        expectErr "key-nan" (runSubdictIRPGET (#[.int .nan, .cell dictSigned4Root, intV 1, intV 4])) .intOv
-        expectErr "key-out-of-range-pos" (runSubdictIRPGET (mkStack 8 (.cell dictSigned4Root) 4 4)) .dictErr
-        expectErr "key-out-of-range-neg" (runSubdictIRPGET (mkStack (-9) (.cell dictSigned4Root) 4 4)) .dictErr
-        expectErr "key-out-of-range-k0" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 0 4)) .dictErr },
+        expectErr "key-type" (runSubdictIRPGET (#[.slice (mkSliceFromBits #[]), intV 1, .cell dictSigned4Root, intV 4])) .typeChk
+        expectErr "key-nan" (runSubdictIRPGET (#[.int .nan, intV 1, .cell dictSigned4Root, intV 4])) .intOv
+        expectErr "key-out-of-range-pos" (runSubdictIRPGET (mkStack 8 (.cell dictSigned4Root) 4 4)) .cellUnd
+        expectErr "key-out-of-range-neg" (runSubdictIRPGET (mkStack (-9) (.cell dictSigned4Root) 4 4)) .cellUnd
+        expectErr "key-out-of-range-k0" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 0 4)) .cellUnd },
     { name := "unit/semantics/success" -- [B8][B9]
       run := do
-        expectOkStack "k0-root" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 0 4)) expectedK0
-        expectOkStack "k0-null" (runSubdictIRPGET (mkStack 1 .null 0 4)) expectedK0Null
+        expectOkStack "k0-root" (runSubdictIRPGET (mkStack 0 (.cell dictSigned4Root) 0 4)) expectedK0
+        expectOkStack "k0-null" (runSubdictIRPGET (mkStack 0 .null 0 4)) expectedK0Null
         expectOkStack "k0-n0" (runSubdictIRPGET (mkStack 0 (.cell dictSigned0Root) 0 0)) #[(.cell dictSigned0Root)]
         expectOkStack "k2-hit" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 2 4)) expectedK2Hit
         expectOkStack "k2-hit-neg1" (runSubdictIRPGET (mkStack (-1) (.cell dictSigned4Root) 2 4)) expectedK2HitMinus1
         expectOkStack "k4-hit" (runSubdictIRPGET (mkStack 1 (.cell dictSigned4Root) 4 4)) expectedK4Hit
-        expectOkStack "k2-miss" (runSubdictIRPGET (mkStack 4 (.cell dictSigned4Root) 2 4)) expectedMiss },
+        expectOkStack "k2-miss" (runSubdictIRPGET (mkStack (-2) (.cell dictSigned4Root) 2 4)) expectedMiss },
     { name := "unit/semantics/malformed" -- [B10][B7]
       run := do
         expectErr "malformed" (runSubdictIRPGET (mkStack 1 (.cell malformedDictCell) 4 4)) .dictErr },
@@ -355,30 +355,33 @@ def suite : InstrSuite where
         let _ ← expectDecodeStep "decode/f4b7" (opcodeSlice16 0xf4b7) (.dictExt (.subdictGet true true true)) 16
         expectDecodeInvOpcode "decode/f4b4" 0xf4b4
         expectDecodeInvOpcode "decode/f4b8" 0xf4b8
-        expectDecodeInvOpcode "decode/f4" 0xf4 }
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .error .invOpcode => pure ()
+        | .error e => throw (IO.userError s!"decode/f4: expected invOpcode, got {e}")
+        | .ok (i, bits, _) => throw (IO.userError s!"decode/f4: expected invOpcode, got {reprStr i}/{bits}") }
     ]
   oracle := #[
     mkCase "or/underflow-0" #[], -- [B2]
     mkCase "or/underflow-1" #[intV 4], -- [B2]
     mkCase "or/underflow-2" (#[intV 1, .cell dictSigned4Root]), -- [B2]
     mkCase "or/underflow-3" (#[intV 1, .cell dictSigned4Root, intV 2]), -- [B2]
-    mkCase "or/n-type" (#[intV 1, .cell dictSigned4Root, intV 1, .tuple #[]]), -- [B3]
+    mkCase "or/n-type" (#[intV 1, intV 1, .cell dictSigned4Root, .tuple #[]]), -- [B3]
     mkCase "or/n-neg" (mkStack 1 (.cell dictSigned4Root) 1 (-1)), -- [B3]
     mkCase "or/n-too-large" (mkStack 1 (.cell dictSigned4Root) 1 1024), -- [B3]
-    mkCase "or/n-nan" (#[intV 1, .cell dictSigned4Root, intV 1, .int .nan]), -- [B3]
+    mkCase "or/n-nan" (#[intV 1, intV 1, .cell dictSigned4Root, .int .nan]), -- [B3]
     mkCase "or/dict-builder" (mkStack 1 (.builder Builder.empty) 1 4), -- [B4]
-    mkCase "or/dict-tuple" (#[intV 1, .tuple #[], intV 1, intV 4]), -- [B4]
-    mkCase "or/k-type" (#[intV 1, .cell dictSigned4Root, .slice (mkSliceFromBits #[]), intV 4]), -- [B5]
+    mkCase "or/dict-tuple" (#[intV 1, intV 1, .tuple #[], intV 4]), -- [B4]
+    mkCase "or/k-type" (#[intV 1, .slice (mkSliceFromBits #[]), .cell dictSigned4Root, intV 4]), -- [B5]
     mkCase "or/k-neg" (mkStack 1 (.cell dictSigned4Root) (-1) 4), -- [B5]
     mkCase "or/k-over-n" (mkStack 1 (.cell dictSigned4Root) 5 4), -- [B5]
-    mkCase "or/key-slice" (#[.slice (mkSliceFromBits #[]), .cell dictSigned4Root, intV 1, intV 4]), -- [B6]
-    mkCase "or/key-cell" (#[.cell (Cell.empty), .cell dictSigned4Root, intV 1, intV 4]), -- [B6]
-    mkCase "or/key-nan" (#[.int .nan, .cell dictSigned4Root, intV 1, intV 4]), -- [B6]
+    mkCase "or/key-slice" (#[.slice (mkSliceFromBits #[]), intV 1, .cell dictSigned4Root, intV 4]), -- [B6]
+    mkCase "or/key-cell" (#[.cell (Cell.empty), intV 1, .cell dictSigned4Root, intV 4]), -- [B6]
+    mkCase "or/key-nan" (#[.int .nan, intV 1, .cell dictSigned4Root, intV 4]), -- [B6]
     mkCase "or/key-oob-pos" (mkStack 8 (.cell dictSigned4Root) 4 4), -- [B7]
     mkCase "or/key-oob-neg" (mkStack (-9) (.cell dictSigned4Root) 4 4), -- [B7]
     mkCase "or/key-oob-k0" (mkStack 1 (.cell dictSigned4Root) 0 4), -- [B7]
-    mkCase "or/success-k0-root" (mkStack 1 (.cell dictSigned4Root) 0 4), -- [B8][B9]
-    mkCase "or/success-k0-null" (mkStack 1 .null 0 4), -- [B8][B9]
+    mkCase "or/success-k0-root" (mkStack 0 (.cell dictSigned4Root) 0 4), -- [B8][B9]
+    mkCase "or/success-k0-null" (mkStack 0 .null 0 4), -- [B8][B9]
     mkCase "or/success-k2-hit-1" (mkStack 1 (.cell dictSigned4Root) 2 4), -- [B8][B9]
     mkCase "or/success-k2-hit--1" (mkStack (-1) (.cell dictSigned4Root) 2 4), -- [B8][B9]
     mkCase "or/success-k4-hit" (mkStack 1 (.cell dictSigned4Root) 4 4), -- [B8][B9]

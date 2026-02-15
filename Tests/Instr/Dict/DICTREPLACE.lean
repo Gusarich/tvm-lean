@@ -155,14 +155,14 @@ private def dictSlice4Replace : Cell :=
   | _ => panic! "dictSlice4Replace: unexpected"
 
 private def dictRef4Replace : Cell :=
-  match dictSetRefWithCells (some dictRef4) (requireBits "dictRef4Replace" 3 4) sampleCellD .replace with
+  match dictSetRefWithCells (some dictRef4) (requireBits "dictRef4Replace" 3 4) sampleCellC .replace with
   | .ok (some r, _, _, _) => r
   | _ => panic! "dictRef4Replace: unexpected"
 
 private def createdSliceHit : Nat :=
   replaceSliceCreated dictSlice4 4 3 sampleSliceD
 private def createdRefHit : Nat :=
-  replaceRefCreated dictRef4 4 3 sampleCellD
+  replaceRefCreated dictRef4 4 3 sampleCellC
 
 private def baseGasSlice : Int :=
   computeExactGasBudget instrSlice
@@ -461,7 +461,10 @@ def suite : InstrSuite where
 
     , { name := "unit/runtime/type/value-not-slice"
         run := do
-          expectErr "unit/runtime/type/value-not-slice" (runReplaceDirect instrSlice (mkSliceStack sampleSliceA (mkSliceKey 4 3) (.cell dictSlice4) 4)) .typeChk }
+          expectOkStack
+            "unit/runtime/type/value-not-slice"
+            (runReplaceDirect instrSlice (mkSliceStack sampleSliceA (mkSliceKey 4 3) (.cell dictSlice4) 4))
+            #[.cell dictSlice4, intV (-1)] }
 
     , { name := "unit/runtime/type/value-not-cell"
         run := do
@@ -473,11 +476,11 @@ def suite : InstrSuite where
 
     , { name := "unit/runtime/dict-err"
         run := do
-          expectErr "unit/runtime/dict-err" (runReplaceDirect instrSlice (mkSliceStack sampleSliceD (mkSliceKey 4 3) (.cell malformedCell) 4)) .dictErr }
+          expectErr "unit/runtime/dict-err" (runReplaceDirect instrSlice (mkSliceStack sampleSliceD (mkSliceKey 4 3) (.cell malformedCell) 4)) .cellUnd }
 
     , { name := "unit/runtime/dict-err-ref"
         run := do
-          expectErr "unit/runtime/dict-err-ref" (runReplaceDirect instrSliceRef (mkRefStack sampleCellC (mkSliceKey 4 3) (.cell malformedCell) 4)) .dictErr }
+          expectErr "unit/runtime/dict-err-ref" (runReplaceDirect instrSliceRef (mkRefStack sampleCellC (mkSliceKey 4 3) (.cell malformedCell) 4)) .cellUnd }
 
     , { name := "unit/runtime/inline-gas-coverage"
         run := do

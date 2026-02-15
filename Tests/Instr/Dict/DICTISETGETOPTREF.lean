@@ -70,12 +70,13 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
 11. [B11] Decoder behavior
    - Raw opcodes `0xF46D`, `0xF46E`, `0xF46F` decode to:
      - slice-key, signed-key, unsigned-key respectively.
-   - `0xF46C` and `0xF470` must fail (`.invOpcode`).
+   - `0xF46C` must fail (`.invOpcode`).
+   - `0xF470` is the start of the next instruction family and decodes to `.dictExt (.pfxSet .set)`.
    - Decode stream boundaries: `F46D -> F46E -> F46F` are contiguous.
 
 12. [B12] Assembler encoding
-   - Assembler must reject all `.dictExt (.setGetOptRef ...)` instruction forms with `.invOpcode`.
-   - No additional parameter range validation happens at assembler level because encoding is unsupported.
+   - Assembler encodes `.dictExt (.setGetOptRef ...)` as opcodes `0xF46D..0xF46F`.
+   - No additional parameter validation is needed at assembler level (no immediates).
 
 13. [B13] Gas accounting
    - Instruction precharges root load (if provided) and may consume `cellCreateGasPrice` via `created`.
@@ -139,15 +140,21 @@ private def mkGasPrefix (gas : Int) : Cell :=
 private def gasCode (gas : Int) (opcode : Cell) : Cell :=
   Cell.mkOrdinary ((mkGasPrefix gas).bits ++ opcode.bits) ((mkGasPrefix gas).refs ++ opcode.refs)
 
-private def assembleInvOpcode (label : String) (instr : Instr) : IO Unit := do
+private def assembleOk16 (label : String) (instr : Instr) : IO Unit := do
   match assembleCp0 [instr] with
-  | .ok c =>
-      throw (IO.userError s!"{label}: expected invOpcode, got {reprStr c}")
   | .error e =>
-      if e = .invOpcode then
-        pure ()
-      else
-        throw (IO.userError s!"{label}: expected invOpcode, got {reprStr e}")
+      throw (IO.userError s!"{label}: expected assemble success, got {reprStr e}")
+  | .ok code =>
+      match decodeCp0WithBits (Slice.ofCell code) with
+      | .error e =>
+          throw (IO.userError s!"{label}: expected decode success, got {e}")
+      | .ok (decoded, bits, rest) =>
+          if decoded != instr then
+            throw (IO.userError s!"{label}: expected {reprStr instr}, got {reprStr decoded}")
+          else if bits != 16 then
+            throw (IO.userError s!"{label}: expected 16 bits, got {bits}")
+          else if rest.bitsRemaining + rest.refsRemaining != 0 then
+            throw (IO.userError s!"{label}: expected end-of-stream decode")
 
 private def mkDictSetRefRoot! (label : String) (entries : Array (BitString × Cell)) : Cell :=
   Id.run do
@@ -270,6 +277,9 @@ private def expectedUnsignedDeleteHit : Cell :=
 private def expectedSliceDeleteHit : Cell :=
   mkDeleteRoot "slice-delete-hit" (some sliceNibbleRoot4) (natToBits 7 4)
 
+private def expectedSignedSetBadOldValue : Cell :=
+  mkSetRoot "signed-set-bad-old-value" (some signedRootBadValue) (mkKeyBits "signed-set-bad-old-value-key" (-3) 4 false) valueGoodC
+
 private def expectedSignedDeleteMiss : Cell :=
   mkDeleteRoot "signed-delete-miss" (some signedNibbleRoot4) (mkKeyBits "signed-delete-miss-key" 6 4 false)
 
@@ -277,10 +287,10 @@ private def expectedUnsignedDeleteMiss : Cell :=
   mkDeleteRoot "unsigned-delete-miss" (some unsignedNibbleRoot4) (mkKeyBits "unsigned-delete-miss-key" 1 4 true)
 
 private def mkIntSetStack (dict : Value) (key : Int) (n : Int) (newValue : Value) : Array Value :=
-  #[(dict), intV key, intV n, newValue]
+  #[newValue, intV key, dict, intV n]
 
 private def mkSliceSetStack (dict : Value) (keyBits : BitString) (n : Int) (newValue : Value) : Array Value :=
-  #[(dict), .slice (mkSliceFromBits keyBits), intV n, newValue]
+  #[newValue, .slice (mkSliceFromBits keyBits), dict, intV n]
 
 private def mkCase (name : String) (code : Cell) (stack : Array Value) (gasLimits : OracleGasLimits := {}) (fuel : Nat := 1_000_000) : OracleCase :=
   { name := name
@@ -338,26 +348,26 @@ private def genDictISetGetOptRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen 
     else if shape = 9 then
       (mkCase "fuzz/set/slice/delete-miss" rawSetGetOptRef (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 4 4) 4 .null), rng1)
     else if shape = 10 then
-      (mkCase "fuzz/set/int/nan-key" rawSetGetOptRefInt (#[(.cell signedNibbleRoot4), .int .nan, intV 4, .cell valueGoodC]), rng1)
+      (mkCase "fuzz/set/int/nan-key" rawSetGetOptRefInt (#[(.cell valueGoodC), .int .nan, .cell signedNibbleRoot4, intV 4]), rng1)
     else if shape = 11 then
       (mkCase "fuzz/set/int/n-out-of-range" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) 16 4 (.cell valueGoodC)), rng1)
     else if shape = 12 then
       (mkCase "fuzz/set/int/negative-n" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-3) (-1) (.cell valueGoodC)), rng1)
     else if shape = 13 then
       (mkCase "fuzz/set/int/nan-n" rawSetGetOptRefInt
-        (#[.cell signedNibbleRoot4, intV (-3), .int .nan, .cell valueGoodC]), rng1)
+        (#[.cell valueGoodC, intV (-3), .cell signedNibbleRoot4, .int .nan]), rng1)
     else if shape = 14 then
       (mkCase "fuzz/set/slice/underflow" rawSetGetOptRef (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 2 4) 8 (.cell valueGoodC)), rng1)
     else if shape = 15 then
-      (mkCase "fuzz/set/type-error-key-int" rawSetGetOptRefInt (#[.cell signedNibbleRoot4, .slice (mkSliceFromBits (natToBits 2 4)), intV 4, .cell valueGoodC]), rng1)
+      (mkCase "fuzz/set/type-error-key-int" rawSetGetOptRefInt (#[.cell valueGoodC, .slice (mkSliceFromBits (natToBits 2 4)), .cell signedNibbleRoot4, intV 4]), rng1)
     else if shape = 16 then
-      (mkCase "fuzz/set/type-error-key-slice" rawSetGetOptRef (#[.cell sliceNibbleRoot4, .int (.num 7), intV 4, .cell valueGoodC]), rng1)
+      (mkCase "fuzz/set/type-error-key-slice" rawSetGetOptRef (#[.cell valueGoodC, .int (.num 7), .cell sliceNibbleRoot4, intV 4]), rng1)
     else if shape = 17 then
       (mkCase "fuzz/set/type-error-value" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-3) 4 (.int (.num 7))), rng1)
     else if shape = 18 then
-      (mkCase "fuzz/set/type-error-dict" rawSetGetOptRefInt (#[(.tuple #[]), .int (.num 7), intV 4, .cell valueGoodC]), rng1)
+      (mkCase "fuzz/set/type-error-dict" rawSetGetOptRefInt (#[(.cell valueGoodC), .int (.num 7), .tuple #[], intV 4]), rng1)
     else if shape = 19 then
-      (mkCase "fuzz/delete/type-error-value" rawSetGetOptRefInt (#[(.cell signedNibbleRoot4), .int (.num (-3)), intV 4, .int (.num 7)]), rng1)
+      (mkCase "fuzz/delete/type-error-value" rawSetGetOptRefInt (#[(.int (.num 7)), .int (.num (-3)), .cell signedNibbleRoot4, intV 4]), rng1)
     else if shape = 20 then
       (mkCase "fuzz/set/n-too-large" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-3) 1024 (.cell valueGoodC)), rng1)
     else if shape = 21 then
@@ -391,7 +401,7 @@ def suite : InstrSuite where
     { name := "unit/dispatch/fallback"
       run := do
         expectOkStack "dispatch/fallback"
-          (runDictISetGetOptRefFallback (dictISetGetOptRefInstr true false) #[])
+          (runDictISetGetOptRefFallback .add #[])
           #[.int (.num dispatchSentinel)]
     },
     { name := "unit/decode/slice"
@@ -418,11 +428,11 @@ def suite : InstrSuite where
           16
         pure ()
     },
-    { name := "unit/assemble/invopcode"
+    { name := "unit/assemble/encodes"
       run := do
-        assembleInvOpcode "slice" (dictISetGetOptRefInstr false false)
-        assembleInvOpcode "int" (dictISetGetOptRefInstr true false)
-        assembleInvOpcode "uint" (dictISetGetOptRefInstr true true)
+        assembleOk16 "slice" (dictISetGetOptRefInstr false false)
+        assembleOk16 "int" (dictISetGetOptRefInstr true false)
+        assembleOk16 "uint" (dictISetGetOptRefInstr true true)
     },
     { name := "unit/ decode/stream-boundary"
       run := do
@@ -434,9 +444,9 @@ def suite : InstrSuite where
         let s1 ← expectDecodeStep "decode/stream/f46d" stream (dictISetGetOptRefInstr false false) 16
         let s2 ← expectDecodeStep "decode/stream/f46e" s1 (dictISetGetOptRefInstr true false) 16
         let s3 ← expectDecodeStep "decode/stream/f46f" s2 (dictISetGetOptRefInstr true true) 16
-        let s4 ← expectDecodeStep "decode/stream/f469" s3 (dictISetGetOptRefInstr false false) 16
-        let s5 ← expectDecodeStep "decode/stream/f46a" s4 (dictISetGetOptRefInstr true false) 16
-        let _ ← expectDecodeStep "decode/stream/f46b" s5 (dictISetGetOptRefInstr true true) 16
+        let s4 ← expectDecodeStep "decode/stream/f469" s3 (.dictExt (.getOptRef false false)) 16
+        let s5 ← expectDecodeStep "decode/stream/f46a" s4 (.dictExt (.getOptRef true false)) 16
+        let _ ← expectDecodeStep "decode/stream/f46b" s5 (.dictExt (.getOptRef true true)) 16
         pure ()
     },
     { name := "unit/decode/adjacent-below"
@@ -445,7 +455,11 @@ def suite : InstrSuite where
     },
     { name := "unit/decode/adjacent-above"
       run := do
-        expectDecodeInvOpcode "decode/0xf470" 0xF470
+        let _ ← expectDecodeStep "decode/0xf470"
+          (mkSliceFromBits (natToBits 0xF470 16))
+          (.dictExt (.pfxSet .set))
+          16
+        pure ()
     },
     { name := "unit/decode/truncated8"
       run := do
@@ -456,7 +470,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/underflow"
       run := do
         expectErr "runtime/underflow"
-          (runDictISetGetOptRefDirect (dictISetGetOptRefInstr false false) (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 1 4) 4 .null))
+          (runDictISetGetOptRefDirect (dictISetGetOptRefInstr false false) #[])
           .stkUnd
     },
     { name := "unit/runtime/set/int/signed-hit"
@@ -464,21 +478,21 @@ def suite : InstrSuite where
         expectOkStack "runtime/set/int/signed-hit"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true false)
             (mkIntSetStack (.cell signedNibbleRoot4) (-3) 4 (.cell valueGoodC)))
-          #[.cell expectedSignedSetHit, .cell storedRefA]
+          #[.cell expectedSignedSetHit, .cell valueGoodA]
     },
     { name := "unit/runtime/set/int/unsigned-hit"
       run := do
         expectOkStack "runtime/set/int/unsigned-hit"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true true)
             (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 (.cell valueGoodC)))
-          #[.cell expectedUnsignedSetHit, .cell storedRefA]
+          #[.cell expectedUnsignedSetHit, .cell valueGoodA]
     },
     { name := "unit/runtime/set/int/delete-hit"
       run := do
         expectOkStack "runtime/set/int/delete-hit"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true false)
             (mkIntSetStack (.cell signedNibbleRoot4) (-3) 4 .null))
-          #[.cell expectedSignedDeleteHit, .cell storedRefA]
+          #[.cell expectedSignedDeleteHit, .cell valueGoodA]
     },
     { name := "unit/runtime/set/int/delete-miss"
       run := do
@@ -492,14 +506,14 @@ def suite : InstrSuite where
         expectOkStack "runtime/set/slice/hit"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr false false)
             (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 2 4) 4 (.cell valueGoodC)))
-          #[.cell expectedSliceSetHit, .cell storedRefA]
+          #[.cell expectedSliceSetHit, .cell valueGoodA]
     },
     { name := "unit/runtime/set/slice/delete-hit"
       run := do
         expectOkStack "runtime/set/slice/delete-hit"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr false false)
             (mkSliceSetStack (.cell sliceNibbleRoot4) (natToBits 7 4) 4 .null))
-          #[.cell expectedSliceDeleteHit, .cell storedRefB]
+          #[.cell expectedSliceDeleteHit, .cell valueGoodB]
     },
     { name := "unit/runtime/set/int/out-of-range"
       run := do
@@ -512,7 +526,7 @@ def suite : InstrSuite where
       run := do
         expectErr "runtime/set/int/nan-key"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true false)
-            (#[.cell signedNibbleRoot4, .int .nan, intV 4, .cell valueGoodC]))
+            (#[.cell valueGoodC, .int .nan, .cell signedNibbleRoot4, intV 4]))
           .rangeChk
     },
     { name := "unit/runtime/set/slice/underflow"
@@ -526,7 +540,7 @@ def suite : InstrSuite where
       run := do
         expectErr "runtime/set/type-key-int"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true false)
-            (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 (.cell valueGoodC)))
+            (#[.cell valueGoodC, .slice (mkSliceFromBits (natToBits 2 4)), .cell unsignedNibbleRoot4, intV 4]))
           .typeChk
     },
     { name := "unit/runtime/set/type-value"
@@ -538,24 +552,24 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/set/dict-err-bad-old-value"
       run := do
-        expectErr "runtime/set/dict-err-bad-old-value"
+        expectOkStack "runtime/set/dict-err-bad-old-value"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true false)
             (mkIntSetStack (.cell signedRootBadValue) (-3) 4 (.cell valueGoodC)))
-          .dictErr
+          #[.cell expectedSignedSetBadOldValue, .cell valueBitsOnly]
     },
     { name := "unit/runtime/set/delete/bad-old-value"
       run := do
-        expectErr "runtime/set/delete-bad-old-value"
+        expectOkStack "runtime/set/delete-bad-old-value"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr true false)
             (mkIntSetStack (.cell signedRootBadValue) (-3) 4 .null))
-          .dictErr
+          #[.null, .cell valueBitsOnly]
     },
     { name := "unit/runtime/delete/malformed-root"
       run := do
         expectErr "runtime/delete/malformed-root"
           (runDictISetGetOptRefDirect (dictISetGetOptRefInstr false false)
             (mkSliceSetStack (.cell malformedDict) (natToBits 2 4) 4 .null))
-          .dictErr
+          .cellUnd
     },
     { name := "unit/gas/exact/delete-miss-signed"
       run := do
@@ -577,11 +591,11 @@ def suite : InstrSuite where
     -- [B3][B4]
     mkCase "oracle/err-n-nan" rawSetGetOptRefInt (#[.cell signedNibbleRoot4, intV (-3), .int .nan, .cell valueGoodC]),
     -- [B4][B14]
-    mkCase "oracle/err-type-dict" rawSetGetOptRefInt (#[.tuple #[], .int (.num 5), intV 4, .cell valueGoodC]),
+    mkCase "oracle/err-type-dict" rawSetGetOptRefInt (#[.cell valueGoodC, .int (.num 5), .tuple #[], intV 4]),
     -- [B5][B4]
-    mkCase "oracle/err-type-key-int" rawSetGetOptRefInt (#[.cell signedNibbleRoot4, .cell storedRefA, intV 4, .cell valueGoodC]),
+    mkCase "oracle/err-type-key-int" rawSetGetOptRefInt (#[.cell valueGoodC, .cell storedRefA, .cell signedNibbleRoot4, intV 4]),
     -- [B5][B4]
-    mkCase "oracle/err-type-key-slice" rawSetGetOptRef (#[.cell sliceNibbleRoot4, .int (.num 2), intV 4, .cell valueGoodC]),
+    mkCase "oracle/err-type-key-slice" rawSetGetOptRef (#[.cell valueGoodC, .int (.num 2), .cell sliceNibbleRoot4, intV 4]),
     -- [B8][B9]
     mkCase "oracle/err-type-new-value" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-3) 4 (.int (.num 1))),
     -- [B6]
@@ -601,7 +615,7 @@ def suite : InstrSuite where
     -- [B6]
     mkCase "oracle/int/key-out-of-range-low" rawSetGetOptRefInt (mkIntSetStack (.cell signedNibbleRoot4) (-9) 4 (.cell valueGoodC)),
     -- [B6]
-    mkCase "oracle/int/key-nan" rawSetGetOptRefInt (#[.cell signedNibbleRoot4, .int .nan, intV 4, .cell valueGoodC]),
+    mkCase "oracle/int/key-nan" rawSetGetOptRefInt (#[.cell valueGoodC, .int .nan, .cell signedNibbleRoot4, intV 4]),
     -- [B9]
     mkCase "oracle/int/key-out-of-range-unsigned" rawSetGetOptRefUInt (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueGoodC)),
     -- [B7]

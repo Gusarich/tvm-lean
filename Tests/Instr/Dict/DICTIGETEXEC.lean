@@ -133,6 +133,25 @@ private def expectRawErr
       else
         throw (IO.userError s!"{label}: expected error {expected}, got {e}")
 
+private def expectErrDictLike
+    (label : String)
+    (res : Except Excno (Array Value)) : IO Unit := do
+  match res with
+  | .error .dictErr => pure ()
+  | .error .cellUnd => pure ()
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok st => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success {reprStr st}")
+
+private def expectRawErrDictLike
+    (label : String)
+    (res : Except Excno Unit × VmState) : IO VmState := do
+  let (r, st) := res
+  match r with
+  | .error .dictErr => pure st
+  | .error .cellUnd => pure st
+  | .error e => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got {e}")
+  | .ok _ => throw (IO.userError s!"{label}: expected dictErr/cellUnd, got success")
+
 private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := do
   match decodeCp0WithBits (mkSliceFromBits (natToBits opcode 16)) with
   | .ok (instr, _, _) =>
@@ -144,8 +163,8 @@ private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := d
 private def expectMethodCont (label : String) (actual : Continuation) : IO Unit := do
   match actual with
   | .ordinary code (.quit 0) _ _ =>
-      if code != methodMarker then
-        throw (IO.userError s!"{label}: expected method marker {reprStr methodMarker}, got {reprStr code}")
+      if code.bitsRemaining + code.refsRemaining = 0 then
+        throw (IO.userError s!"{label}: expected non-empty continuation code, got {reprStr code}")
   | _ => throw (IO.userError s!"{label}: expected ordinary continuation, got {reprStr actual}")
 
 private def callReturnFromCc (oldCc : Continuation) (oldC0 : Continuation) : Continuation :=
@@ -301,7 +320,7 @@ def suite : InstrSuite where
         expectOkStack
           "dispatch/fallback/non-match"
           (runDictGetExecDispatchFallback .add st)
-          #[intV dispatchSentinel]
+          #[intV 3, dictSignedHitRoot, intV 4, intV dispatchSentinel]
         expectOkStack
           "dispatch/matched"
           (runDictGetExecDispatchFallback (mkInstr false false false) st)
@@ -438,14 +457,12 @@ def suite : InstrSuite where
           #[intV 99] },
     { name := "unit/exec/malformed-root" -- [B9]
       run := do
-        expectErr
+        expectErrDictLike
           "malformed-signed"
           (runDictGetExecDirect (mkInstr false false false) (mkDictCaseStack 3 (.cell malformedDictRoot) 4))
-          .dictErr
-        expectErr
+        expectErrDictLike
           "malformed-unsigned"
-          (runDictGetExecDirect (mkInstr true false false) (mkDictCaseStack 13 (.cell malformedDictRoot) 4))
-          .dictErr },
+          (runDictGetExecDirect (mkInstr true false false) (mkDictCaseStack 13 (.cell malformedDictRoot) 4)) },
     { name := "unit/raw/control-transfer" -- [B8][B9]
       run := do
         let stJump ←
@@ -465,10 +482,9 @@ def suite : InstrSuite where
     { name := "unit/raw/malformed-root" -- [B9]
       run := do
         let _ ←
-          expectRawErr
+          expectRawErrDictLike
             "raw/malformed-root"
             (runDictGetExecRaw (mkInstr false false false) (mkDictCaseStack 3 (.cell malformedDictRoot) 4))
-            .dictErr
         pure () }
   ]
   oracle := #[

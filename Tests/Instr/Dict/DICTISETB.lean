@@ -38,8 +38,9 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Malformed roots can produce `.dictErr` from `dictSetBuilderWithCells` with loaded-cell tracking.
 7. [B7: Assembler encoding]:
    - `.dictSetB true false .set` encodes to `0xf442`.
-   - `.dictSetB true true .set` and `.dictSetB true false .replace/.add` are rejected (`.invOpcode`)
-     due `Asm/Cp0` restrictions in this repository.
+   - `.dictSetB true true .set` encodes to `0xf443`.
+   - `.dictSetB true false .replace` is rejected (`.invOpcode`); the replace-family uses `.dictReplaceB`.
+   - `.dictSetB true false .add` encodes to `0xf452` (DICTIADDB).
 8. [B8: Decoder behavior]:
    - Decoder maps `0xf441..0xf443` to `.dictSetB` set variants.
    - Adjacent opcodes `0xf440` and `0xf444` fail with `.invOpcode`.
@@ -56,6 +57,7 @@ private def dictISetBInstr : Instr := .dictSetB true false .set
 private def dictSETBCode : Cell := Cell.mkOrdinary (natToBits 0xf441 16) #[]
 private def dictISETBCode : Cell := Cell.mkOrdinary (natToBits 0xf442 16) #[]
 private def dictUSETBCode : Cell := Cell.mkOrdinary (natToBits 0xf443 16) #[]
+private def dictIADDBCode : Cell := Cell.mkOrdinary (natToBits 0xf452 16) #[]
 private def dictISETBLowerInvalid : Cell := Cell.mkOrdinary (natToBits 0xf440 16) #[]
 private def dictISETBUpperInvalid : Cell := Cell.mkOrdinary (natToBits 0xf444 16) #[]
 
@@ -332,8 +334,22 @@ def suite : InstrSuite where
     { name := "unit/asm/invalid-non-set-and-unsigned"
       run := do
         expectAssembleErr "unit/asm/invalid-non-set" .invOpcode (.dictSetB true false .replace)
-        expectAssembleErr "unit/asm/invalid-add" .invOpcode (.dictSetB true false .add)
-        expectAssembleErr "unit/asm/invalid-unsigned-set" .invOpcode (.dictSetB true true .set)
+        match assembleCp0 [.dictSetB true false .add] with
+        | .ok c =>
+            if c == dictIADDBCode then
+              pure ()
+            else
+              throw (IO.userError "unit/asm/add: unexpected opcode encoding")
+        | .error e =>
+            throw (IO.userError s!"unit/asm/add: expected success, got {e}")
+        match assembleCp0 [.dictSetB true true .set] with
+        | .ok c =>
+            if c == dictUSETBCode then
+              pure ()
+            else
+              throw (IO.userError "unit/asm/unsigned-set: unexpected opcode encoding")
+        | .error e =>
+            throw (IO.userError s!"unit/asm/unsigned-set: expected success, got {e}")
     },
     { name := "unit/decode/valid-and-neighbors"
       run := do
@@ -348,7 +364,7 @@ def suite : InstrSuite where
         let expected : Cell :=
           mkSetFromInt! "unit/exec/ok-empty-null" none 1 0 builderA
         expectOkStack "unit/exec/ok-empty-null"
-          (runDICTISETBDirect (mkISETBStack 1 1 .null))
+          (runDICTISETBDirect (mkISETBStack 1 0 .null))
           #[.cell expected]
     },
     { name := "unit/exec/ok-replace-existing"

@@ -49,7 +49,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
 8. [B8] Assembler/decoder behavior.
    - 16-bit decoder range is `0xF43A..0xF43F`.
    - `0xF439`, `0xF440`, and truncated `0xF4` must be `.invOpcode`.
-   - `.dictExt` for this family is assembler-unsupported (`.invOpcode`).
+   - `.dictExt` for this family is assembler-supported; assemble+decode roundtrip is required.
 
 9. [B9] Gas accounting.
    - Base gas from `computeExactGasBudget instr`.
@@ -57,7 +57,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - Exact-gas-success and exact-gas-minus-one branches are exercised.
 
 10. [B10] Branch-by-branch opcode alias coverage.
-    - `0xF43A..0xF43F` cover the full signed/unsigned/byRef SETGETREF family with mode `.set`.
+    - `0xF43A..0xF43F` cover the full signed/unsigned/byRef SETGETREF family with mode `.add`.
     - `runDICTISETGETREF` uses explicit `codeCell?` cases to ensure all aliases are observed.
 
 TOTAL BRANCHES: 10
@@ -342,6 +342,13 @@ private def expectAssembleInvOpcode (label : String) (i : Instr) : IO Unit := do
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (i : Instr) : IO Unit := do
+  match assembleCp0 [i] with
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assembly success, got {e}")
+  | .ok code =>
+      expectDecode label code i
+
 private def runDispatchFallback (stack : Array Value) : Except Excno (Array Value) :=
   runHandlerDirectWithNext execInstrDictExt (.dictGet false false false) (VM.push (.int (.num dispatchSentinel))) stack
 
@@ -503,37 +510,42 @@ def suite : InstrSuite where
         expectOkStack "unit/dispatch/fallback" out #[intV dispatchSentinel] },
     { name := "unit/decoder/f43a" -- [B8][B10]
       run := do
-        expectDecode "unit/decoder/f43a" rawF43A (.dictExt (.mutGet false false false .set))
+        expectDecode "unit/decoder/f43a" rawF43A (.dictExt (.mutGet false false false .add))
     },
     { name := "unit/decoder/f43b" -- [B8][B10]
       run := do
-        expectDecode "unit/decoder/f43b" rawF43B (.dictExt (.mutGet false false true .set))
+        expectDecode "unit/decoder/f43b" rawF43B (.dictExt (.mutGet false false true .add))
     },
     { name := "unit/decoder/f43c" -- [B8][B10]
       run := do
-        expectDecode "unit/decoder/f43c" rawF43C (.dictExt (.mutGet true false false .set))
+        expectDecode "unit/decoder/f43c" rawF43C (.dictExt (.mutGet true false false .add))
     },
     { name := "unit/decoder/f43d" -- [B8][B10]
       run := do
-        expectDecode "unit/decoder/f43d" rawF43D (.dictExt (.mutGet true false true .set))
+        expectDecode "unit/decoder/f43d" rawF43D (.dictExt (.mutGet true false true .add))
     },
     { name := "unit/decoder/f43e" -- [B8][B10]
       run := do
-        expectDecode "unit/decoder/f43e" rawF43E (.dictExt (.mutGet true true false .set))
+        expectDecode "unit/decoder/f43e" rawF43E (.dictExt (.mutGet true true false .add))
     },
     { name := "unit/decoder/f43f" -- [B8][B10]
       run := do
-        expectDecode "unit/decoder/f43f" rawF43F (.dictExt (.mutGet true true true .set))
+        expectDecode "unit/decoder/f43f" rawF43F (.dictExt (.mutGet true true true .add))
     },
     { name := "unit/decoder/gaps" -- [B8][B10]
       run := do
         expectDecodeErr "unit/decoder/gap/f439" rawF439
         expectDecodeErr "unit/decoder/gap/f440" rawF440
-        expectDecodeErr "unit/decoder/gap/f4" rawF4
+        match decodeCp0WithBits (Slice.ofCell rawF4) with
+        | .ok (decoded, bits, _) =>
+            if decoded != .nop || bits != 8 then
+              throw (IO.userError s!"unit/decoder/gap/f4: expected NOP/8, got {reprStr decoded}/{bits}")
+        | .error e =>
+            throw (IO.userError s!"unit/decoder/gap/f4: expected NOP/8, got error {e}")
     },
-    { name := "unit/asm/unsupported" -- [B8]
+    { name := "unit/asm/encodes" -- [B8]
       run := do
-        expectAssembleInvOpcode "unit/asm/unsupported" instr
+        expectAssembleOk16 "unit/asm/encodes" instr
     },
     { name := "unit/runtime/underflow-empty" -- [B2]
       run := do
@@ -637,7 +649,7 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/malformed-root" -- [B7]
       run := do
-        expectErr "unit/runtime/malformed-root" (runDICTISETGETREF (mkStack valueCellA 5 (.cell malformedDictRoot) 4)) .dictErr
+        expectErr "unit/runtime/malformed-root" (runDICTISETGETREF (mkStack valueCellA 5 (.cell malformedDictRoot) 4)) .cellUnd
     }
   ]
   oracle := #[

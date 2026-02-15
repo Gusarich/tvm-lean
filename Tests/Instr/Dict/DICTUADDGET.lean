@@ -323,7 +323,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/decoder/decode/truncated8"
       run := do
-        expectDecodeInvOpcode "unit/decoder/decode/truncated8" 0xf4
+        expectDecode "unit/decoder/decode/truncated8" 0xf4 .nop
     }
     ,
     { name := "unit/asm/encode/not-supported"

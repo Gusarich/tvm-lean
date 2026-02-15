@@ -182,7 +182,9 @@ private def genDICTIGETPREV (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 10 then
       (mkCase "fuzz/err/underflow-one" (#[intV 7]), rng1)
     else if shape = 11 then
-      (mkCase "fuzz/err/key-nan" (#[(.int .nan), (.cell dict8A), intV 8]), rng1)
+      (mkCase "fuzz/err/key-nan"
+        (#[.cell dict8A, intV 8])
+        #[.pushInt .nan, .xchg0 1, .xchg 1 2, instr], rng1)
     else if shape = 12 then
       (mkCase "fuzz/err/type-key" (#[(.slice valueB), (.cell dict8A), intV 8]), rng1)
     else if shape = 13 then
@@ -252,7 +254,7 @@ def suite : InstrSuite where
       run := do
         let s0 := Slice.ofCell (Cell.mkOrdinary (rawOpcodeF47A.bits ++ rawOpcodeF474.bits ++ rawOpcodeF47F.bits) #[])
         let s1 ← expectDecodeStep "decode/self" s0 (.dictGetNear 10) 16
-        let s2 ← expectDecodeStep "decode/prev" s1 (.dictGetNear 0) 16
+        let s2 ← expectDecodeStep "decode/prev" s1 (.dictGetNear 4) 16
         let s3 ← expectDecodeStep "decode/next" s2 (.dictGetNear 15) 16
         if s3.bitsRemaining + s3.refsRemaining != 0 then
           throw (IO.userError "decode did not consume full stream") },
@@ -291,7 +293,9 @@ def suite : InstrSuite where
     mkCase "err/underflow-empty" #[], -- [B2]
     mkCase "err/underflow-one" (#[intV 7]), -- [B2]
     mkCase "err/type-key-non-int" (#[(.slice valueA), (.cell dict8A), intV 8]), -- [B5]
-    mkCase "err/key-nan" (#[(.int .nan), (.cell dict8A), intV 8]), -- [B5]
+    mkCase "err/key-nan"
+      (#[.cell dict8A, intV 8])
+      #[.pushInt .nan, .xchg0 1, .xchg 1 2, instr], -- [B5]
     mkCase "err/type-dict" (stack3 (-10) (.int (.num 0)) 8), -- [B2][B3]
     mkCase "err/type-n" #[intV (-10), .cell dict8A, .null], -- [B2]
     mkCase "err/n-negative" (stack3 (-10) (.cell dict8A) (-1)), -- [B2][B3]

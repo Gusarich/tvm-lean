@@ -39,8 +39,8 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
    - lower/upper gaps around the range must fail to decode as `DICTIADDGET`.
 
 6. [B6] Assembler encoding:
-   - `Asm/Cp0.lean` currently falls through `.dictExt _` to `invOpcode`, so no `.dictExt` encoding path exists.
-   - This is intentionally a negative category: any attempt to assemble `DICTIADDGET` must fail.
+   - `Asm/Cp0.lean` supports `.dictExt` encoding for this opcode family.
+   - Assembly should round-trip via decoder for all flag combinations.
 
 7. [B7] Gas accounting:
    - Base `instrGas` follows fixed 16-bit cost accounting (`gasPerInstr + 16` for this class).
@@ -161,6 +161,15 @@ private def expectDecodeInvOpcode (label : String) (opcode : Nat) : IO Unit := d
   | .error e =>
       throw (IO.userError s!"{label}: expected .invOpcode, got {e}")
 
+private def expectAssembleOk16 (label : String) (instr : Instr) : IO Unit := do
+  match assembleCp0 [instr] with
+  | .ok c => do
+      let rest ← expectDecodeStep label (Slice.ofCell c) instr 16
+      if rest.bitsRemaining + rest.refsRemaining != 0 then
+        throw (IO.userError s!"{label}: expected no trailing bits")
+  | .error e =>
+      throw (IO.userError s!"{label}: expected assemble success, got {e}")
+
 private def dictIAddGetExactGas : Int :=
   computeExactGasBudget (mkInstr true false)
 
@@ -257,7 +266,7 @@ def suite : InstrSuite where
     { name := "unit/decoder/decode/f43a"
       run := do
         let s : Slice := mkSliceFromBits (natToBits 0xf43a 16)
-        let _ ← expectDecodeStep "decode/f43a" s (mkInstr true false) 16
+        let _ ← expectDecodeStep "decode/f43a" s (.dictExt (.mutGet false false false .add)) 16
     }
     ,
     { name := "unit/decoder/decode/f43c-unsigned-false"
@@ -269,7 +278,7 @@ def suite : InstrSuite where
     { name := "unit/decoder/decode/f43b"
       run := do
         let s : Slice := mkSliceFromBits (natToBits 0xf43b 16)
-        let _ ← expectDecodeStep "decode/f43b" s (mkInstr true true) 16
+        let _ ← expectDecodeStep "decode/f43b" s (.dictExt (.mutGet false false true .add)) 16
     }
     ,
     { name := "unit/decoder/decode/f43f"
@@ -288,16 +297,12 @@ def suite : InstrSuite where
         expectDecodeInvOpcode "decode/f440" 0xf440
     }
     ,
-    { name := "unit/asm/encode/not-supported"
+    { name := "unit/asm/encode/roundtrip"
       run := do
-        match assembleCp0 [mkInstr true false] with
-        | .ok _ =>
-            throw (IO.userError "asm/encode/not-supported: expected invOpcode, got success")
-        | .error e =>
-            if e = .invOpcode then
-              pure ()
-            else
-              throw (IO.userError s!"asm/encode/not-supported: expected invOpcode, got {e}")
+        expectAssembleOk16 "asm/signed-notref" (mkInstr false false)
+        expectAssembleOk16 "asm/signed-byref" (mkInstr false true)
+        expectAssembleOk16 "asm/unsigned-notref" (mkInstr true false)
+        expectAssembleOk16 "asm/unsigned-byref" (mkInstr true true)
     }
   ]
   oracle := #[

@@ -241,7 +241,7 @@ private def runDictAddGetBDirect (instr : Instr) (stack : Array Value) : Except 
   runHandlerDirect execInstrDictExt instr stack
 
 private def runDictAddGetBFallback (stack : Array Value) : Except Excno (Array Value) :=
-  runHandlerDirectWithNext execInstrDictExt instrSlice (VM.push (.int (.num 777))) stack
+  runHandlerDirectWithNext execInstrDictExt .add (VM.push (.int (.num 777))) stack
 
 private def dictKeyBits! (label : String) (n : Nat) (unsigned : Bool) (key : Int) : BitString :=
   match dictKeyBits? key n unsigned with
@@ -416,8 +416,8 @@ def suite : InstrSuite where
     { name := "unit/dispatch/next"
       run := do
         expectOkStack "dispatch/next"
-          (runDictAddGetBFallback (mkDictCaseIntStack valueA 1 (.cell dictSigned4) 4))
-          (mkDictCaseIntStack valueA 1 (.cell dictSigned4) 4 ++ #[.int (.num 777)])
+          (runDictAddGetBFallback (mkDictCaseSliceStack valueA keySlice4A (.cell dictSlice4Single) 4))
+          (mkDictCaseSliceStack valueA keySlice4A (.cell dictSlice4Single) 4 ++ #[.int (.num 777)])
     },
     { name := "unit/decoder/decode/f455"
       run := do
@@ -457,7 +457,7 @@ def suite : InstrSuite where
         expectErr "dict-type" (runDictAddGetBDirect instrSlice (mkDictCaseSliceStack valueA keySlice4A (.int (.num 0)) 4)) .typeChk
         expectErr "value-type" (runDictAddGetBDirect instrSlice (#[.int (.num 5), .slice keySlice4A, .cell dictSlice4Single, intV 4])) .typeChk
         expectErr "int-range" (runDictAddGetBDirect instrSigned (mkDictCaseIntStack valueA 8 (.cell dictSigned4) 4)) .rangeChk
-        expectErr "dict-err" (runDictAddGetBDirect instrSlice (mkDictCaseSliceStack valueA keySlice4A (.cell malformedDictRoot) 4)) .dictErr
+        expectErr "dict-err" (runDictAddGetBDirect instrSlice (mkDictCaseSliceStack valueA keySlice4A (.cell malformedDictRoot) 4)) .cellUnd
         expectErr "int-nan" (runDictAddGetBDirect instrSigned (#[.builder valueA, .int (.num 1), .cell dictSigned4, .int .nan])) .rangeChk
       }
   ]

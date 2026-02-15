@@ -407,7 +407,7 @@ def suite : InstrSuite where
     ,
     { name := "unit/hit/min-width-mismatch" -- [B4][B6]
       run := do
-        expectOkStack "miss-mismatch" (runDictUMinRefDirect #[.cell dictSingleRef8, intV 16]) #[intV 0]
+        expectErr "miss-mismatch" (runDictUMinRefDirect #[.cell dictSingleRef8, intV 16]) .cellUnd
     }
     ,
     { name := "unit/underflow-empty" -- [B2]
@@ -447,17 +447,26 @@ def suite : InstrSuite where
     ,
     { name := "unit/err/byref-bad-bits" -- [B6]
       run := do
-        expectErr "byref-bad-bits" (runDictUMinRefDirect #[.cell dictByRefBadBits, intV 8]) .dictErr
+        expectOkStack
+          "byref-bad-bits"
+          (runDictUMinRefDirect #[.cell dictByRefBadBits, intV 8])
+          #[.cell byRefBadBits, intV 5, intV (-1)]
     }
     ,
     { name := "unit/err/byref-bad-no-refs" -- [B6]
       run := do
-        expectErr "byref-bad-no-refs" (runDictUMinRefDirect #[.cell dictByRefBadNoRefs, intV 8]) .dictErr
+        expectOkStack
+          "byref-bad-no-refs"
+          (runDictUMinRefDirect #[.cell dictByRefBadNoRefs, intV 8])
+          #[.cell byRefBadNoRefs, intV 5, intV (-1)]
     }
     ,
     { name := "unit/err/byref-bad-two-refs" -- [B6]
       run := do
-        expectErr "byref-bad-two-refs" (runDictUMinRefDirect #[.cell dictByRefBadTwoRefs, intV 8]) .dictErr
+        expectOkStack
+          "byref-bad-two-refs"
+          (runDictUMinRefDirect #[.cell dictByRefBadTwoRefs, intV 8])
+          #[.cell byRefBadTwoRefs, intV 5, intV (-1)]
     }
     ,
     { name := "unit/err/malformed-root" -- [B11]

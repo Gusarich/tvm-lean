@@ -156,14 +156,14 @@ private def mkStack
     (root : Value)
     (keyBits : BitString)
     (n : Value) : Array Value :=
-  #[root, .slice (mkSliceFromBits keyBits), n]
+  #[.slice (mkSliceFromBits keyBits), root, n]
 
 private def mkStackWithTail
     (tail : Value)
     (root : Value)
     (keyBits : BitString)
     (n : Value) : Array Value :=
-  #[tail, root, .slice (mkSliceFromBits keyBits), n]
+  #[tail, .slice (mkSliceFromBits keyBits), root, n]
 
 private def mkCase
     (name : String)
@@ -281,9 +281,9 @@ private def genDICTUDELFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 9 then
       mkCase "fuzz/n-too-large" (mkStack (.cell dictRoot4Single2) key4_2 (intV 1024))
     else if shape = 10 then
-      mkCase "fuzz/key-type" (#[.cell dictRoot4Single2, intV 4, intV 4])
+      mkCase "fuzz/key-type" (#[intV 4, .cell dictRoot4Single2, intV 4])
     else if shape = 11 then
-      mkCase "fuzz/dict-type" (#[.tuple #[], .slice (mkSliceFromBits key4_2), intV 4])
+      mkCase "fuzz/dict-type" (#[.slice (mkSliceFromBits key4_2), .tuple #[], intV 4])
     else if shape = 12 then
       mkCaseCode "fuzz/decode-below" #[] (raw16 0xf458)
     else if shape = 13 then
@@ -339,7 +339,7 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/range/type"
       run := do
-        expectErr "n-non-int" (runDictDelDirect (#[(.cell dictRoot4Single2), .slice (mkSliceFromBits key4_2), .tuple #[]]) ) .typeChk
+        expectErr "n-non-int" (runDictDelDirect (#[(.slice (mkSliceFromBits key4_2)), .cell dictRoot4Single2, .tuple #[]]) ) .typeChk
     },
     { name := "unit/runtime/range/nan"
       run := do
@@ -355,15 +355,15 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/type/key-not-slice"
       run := do
-        expectErr "type-key-not-slice" (runDictDelDirect #[.cell dictRoot4Single2, intV 4, intV 4]) .typeChk
+        expectErr "type-key-not-slice" (runDictDelDirect #[intV 4, .cell dictRoot4Single2, intV 4]) .typeChk
     },
     { name := "unit/runtime/type/dict-not-cell"
       run := do
-        expectErr "type-dict-not-cell" (runDictDelDirect #[.tuple #[], .slice (mkSliceFromBits key4_2), intV 4]) .typeChk
+        expectErr "type-dict-not-cell" (runDictDelDirect #[.slice (mkSliceFromBits key4_2), .tuple #[], intV 4]) .typeChk
     },
     { name := "unit/runtime/key-underflow"
       run := do
-        expectErr "key-underflow" (runDictDelDirect (mkStack (.cell dictRoot8Single) key8_0x7f (intV 7))) .cellUnd
+        expectErr "key-underflow" (runDictDelDirect (mkStack (.cell dictRoot8Single) key8_0x7f (intV 7))) .dictErr
     },
     { name := "unit/runtime/hit/single"
       run := do
@@ -390,7 +390,7 @@ def suite : InstrSuite where
     { name := "unit/runtime/miss/n-zero"
       run := do
         expectOkStack "miss-n-zero" (runDictDelDirect (mkStack (.cell dictRoot4Single2) key4_0 (intV 0)))
-          #[.cell dictRoot4Single2, intV 0]
+          #[.null, intV (-1)]
     },
     { name := "unit/runtime/hit/tail"
       run := do
@@ -414,7 +414,7 @@ def suite : InstrSuite where
     },
     { name := "unit/runtime/malformed-root"
       run := do
-        expectErr "malformed-root" (runDictDelDirect (mkStack (.cell malformedRoot) key4_2 (intV 4))) .dictErr
+        expectErr "malformed-root" (runDictDelDirect (mkStack (.cell malformedRoot) key4_2 (intV 4))) .cellUnd
     },
     { name := "unit/decode/target"
       run := do
@@ -449,7 +449,8 @@ def suite : InstrSuite where
     mkCase "oracle/type/n-max" (mkStack (.cell dictRoot4Single2) key4_2 (intV 1023)),
     -- [B4]
     mkCase "oracle/type/key-not-slice" (#[.cell dictRoot4Single2, intV 4, intV 4]),
-    mkCase "oracle/type/dict-not-cell" (#[.tuple #[], .slice (mkSliceFromBits key4_2), intV 4]),
+    mkCase "oracle/type/key-not-slice" (#[intV 4, .cell dictRoot4Single2, intV 4]),
+    mkCase "oracle/type/dict-not-cell" (#[.slice (mkSliceFromBits key4_2), .tuple #[], intV 4]),
     -- [B5]
     mkCase "oracle/key-underflow" (mkStack (.cell dictRoot8Single) key8_0x7f (intV 7)),
     mkCase "oracle/key-0" (mkStack (.cell dictRoot4Single0) key4_0 (intV 0)),
