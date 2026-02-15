@@ -1314,7 +1314,8 @@ def runOracleBatch (cases : Array (Cell × List String)) : IO (Array OracleOut) 
       catch _ =>
         pure ()
 
-def runOracle (code : Cell) (stackArgs : List String) (libraries : Array Cell := #[]) : IO OracleOut := do
+def runOracle (code : Cell) (stackArgs : List String) (libraries : Array Cell := #[]) (gasLimit : Int := 1_000_000) :
+    IO OracleOut := do
   let tonFift := (← IO.getEnv "TON_FIFT_BIN").getD "/Users/daniil/Coding/ton/build/crypto/fift"
   let tonLib := (← IO.getEnv "TON_FIFT_LIB").getD "/Users/daniil/Coding/ton/crypto/fift/lib"
   let oracleScript := (← IO.getEnv "TVMLEANTON_ORACLE_FIF").getD "oracle/fif/ton_oracle_runvm.fif"
@@ -1328,7 +1329,9 @@ def runOracle (code : Cell) (stackArgs : List String) (libraries : Array Cell :=
       s!"-I{tonLib}",
       "-s",
       oracleScript,
-      codeHex
+      codeHex,
+      "GAS",
+      toString gasLimit
     ]
   if !libraries.isEmpty then
     if libraries.size > 1 then

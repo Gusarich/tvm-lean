@@ -129,9 +129,10 @@ def runOracleCase (c : OracleCase) : IO OracleRunResult := do
     | .error e =>
         return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
 
+  let oracleGas : Int := c.gasLimits.gasLimit + c.gasLimits.gasCredit
   let oracleRes : Except String TvmLeanOracleValidate.OracleOut ←
     try
-      pure (Except.ok (← TvmLeanOracleValidate.runOracle codeCell stackTokens c.initLibraries))
+      pure (Except.ok (← TvmLeanOracleValidate.runOracle codeCell stackTokens c.initLibraries oracleGas))
     catch e =>
       pure (Except.error s!"oracle run failed: {e.toString}")
   let oracleOut ←
