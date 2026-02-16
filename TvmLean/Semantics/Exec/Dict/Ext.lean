@@ -289,13 +289,17 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           let keyBits? : Option BitString ←
             if mode == .del then
               if intKey then
-                let idxVal ← VM.popInt
-                match idxVal with
-                | .nan => throw .rangeChk
-                | .num idx =>
-                    match dictKeyBits? idx n unsigned with
-                    | some bs => pure (some bs)
-                    | none => throw .rangeChk
+                let idx ←
+                  if byRef then
+                    VM.popIntFinite
+                  else
+                    let idxVal ← VM.popInt
+                    match idxVal with
+                    | .nan => throw .rangeChk
+                    | .num idx => pure idx
+                match dictKeyBits? idx n unsigned with
+                | some bs => pure (some bs)
+                | none => throw .rangeChk
               else
                 let keySlice ← VM.popSlice
                 if keySlice.haveBits n then
