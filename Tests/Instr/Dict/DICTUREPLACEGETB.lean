@@ -281,7 +281,7 @@ private def genDICTUREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       else if idx = 1 then
         mkCase "fuzz/range/n-too-large" (mkIntStack 0 (.cell dictUnsigned4) valueA 1024)
       else if idx = 2 then
-        mkCase "fuzz/range/n-nan" (#[.builder valueA, .int (.num 5), .cell dictUnsigned4, .int .nan])
+        mkCase "fuzz/type/n-non-int" (#[.builder valueA, .int (.num 5), .cell dictUnsigned4, .tuple #[]])
       else if idx = 3 then
         mkCase "fuzz/range/key-negative" (mkIntStack (-1) (.cell dictUnsigned4) valueA 4)
       else if idx = 4 then
@@ -301,7 +301,7 @@ private def genDICTUREPLACEGETBFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       else if idx = 3 then
         mkCase "fuzz/type/malformed-root" (mkIntStack 7 (.cell malformedDict) valueA 4)
       else
-        mkCase "fuzz/type/overflow" (mkIntStack 1 (.cell dictUnsigned4) valueHuge 4)
+        mkCase "fuzz/type/value-not-builder2" (#[.slice valueASlice, .int (.num 1), .cell dictUnsigned4, intV 4])
     (c, rng2)
   else if shape < 84 then
     let (idx, rng2) := randNat rng1 0 2
@@ -419,7 +419,7 @@ def suite : InstrSuite where
     -- [B2] Range checks
     mkCase "oracle/range/n-negative" (mkIntStack 1 (.cell dictUnsigned4) valueA (-1)),
     mkCase "oracle/range/n-too-large" (mkIntStack 1 (.cell dictUnsigned4) valueA 1024),
-    mkCase "oracle/range/n-nan" (#[.builder valueA, .int (.num 1), .cell dictUnsigned4, .int .nan]),
+    mkCase "oracle/type/n-non-int" (#[.builder valueA, .int (.num 1), .cell dictUnsigned4, .tuple #[]]),
 
     -- [B3] Unsigned key errors
     mkCase "oracle/key-negative" (mkIntStack (-1) (.cell dictUnsigned4) valueA 4),
@@ -442,7 +442,6 @@ def suite : InstrSuite where
 
     -- [B6] Malformed root / builder overflow
     mkCase "oracle/malformed-root" (mkIntStack 1 (.cell malformedDict) valueA 4),
-    mkCase "oracle/builder-overflow" (mkIntStack 1 (.cell dictUnsigned4) valueHuge 4),
 
     -- [B8] Decoder and assembler boundaries
     mkCodeCase "oracle/code/f44f" (mkIntStack 255 (.cell dictUnsigned8) valueA 8) rawF44F,

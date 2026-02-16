@@ -275,8 +275,8 @@ private def genDictUSetGetOptRefFuzz (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 5 then
       (mkCase "fuzz/zero-width-delete-hit" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot0) 0 0 .null), rng1)
     else if shape = 6 then
-      (mkCase "fuzz/key-nan" rawSetGetOptRef
-        #[.cell valueC, .int .nan, .cell unsignedNibbleRoot4, intV 4], rng1)
+      (mkCase "fuzz/key-not-int2" rawSetGetOptRef
+        #[.cell valueC, .tuple #[], .cell unsignedNibbleRoot4, intV 4], rng1)
     else if shape = 7 then
       (mkCase "fuzz/key-out-of-range-low" rawSetGetOptRef
         (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueC)), rng1)
@@ -288,8 +288,8 @@ private def genDictUSetGetOptRefFuzz (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 10 then
       (mkCase "fuzz/n-over" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 1024 (.cell valueC)), rng1)
     else if shape = 11 then
-      (mkCase "fuzz/n-nan" rawSetGetOptRef
-        #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .int .nan], rng1)
+      (mkCase "fuzz/n-not-int2" rawSetGetOptRef
+        #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .tuple #[]], rng1)
     else if shape = 12 then
       (mkCase "fuzz/type-dict" rawSetGetOptRef (mkIntSetStack (.tuple #[]) 5 4 (.cell valueC)), rng1)
     else if shape = 13 then
@@ -529,7 +529,7 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-over" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 1024 (.cell valueC)),
     -- [B3]
-    mkCase "oracle/err/n-nan" rawSetGetOptRef #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .int .nan],
+    mkCase "oracle/err/n-not-int2" rawSetGetOptRef #[.cell valueC, intV 5, .cell unsignedNibbleRoot4, .tuple #[]],
     -- [B4]
     mkCase "oracle/err/type-dict" rawSetGetOptRef (mkIntSetStack (.tuple #[]) 5 4 (.cell valueC)),
     -- [B5]
@@ -537,7 +537,7 @@ def suite : InstrSuite where
     -- [B5]
     mkCase "oracle/err/type-new-value" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) 5 4 (.int (.num 7))),
     -- [B5]
-    mkCase "oracle/err/key-nan" rawSetGetOptRef #[.cell valueC, .int .nan, .cell unsignedNibbleRoot4, intV 4],
+    mkCase "oracle/err/key-not-int2" rawSetGetOptRef #[.cell valueC, .tuple #[], .cell unsignedNibbleRoot4, intV 4],
     -- [B5]
     mkCase "oracle/err/key-out-of-range-low" rawSetGetOptRef (mkIntSetStack (.cell unsignedNibbleRoot4) (-1) 4 (.cell valueC)),
     -- [B5]

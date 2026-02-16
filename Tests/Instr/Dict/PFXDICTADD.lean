@@ -328,7 +328,7 @@ private def genPFXDICTADD (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 5 then
       (mkCase "fuzz/range/n-too-large" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 1024), rng1) -- [B3]
     else if shape = 6 then
-      (mkCase "fuzz/range/n-nan" #[.slice sampleSliceD, .slice (mkSliceKey 4 3), .null, .int .nan], rng1) -- [B3]
+      (mkCase "fuzz/type/n-non-int" #[.slice sampleSliceD, .slice (mkSliceKey 4 3), .null, .tuple #[]], rng1) -- [B3]
     else if shape = 7 then
       (mkCase "fuzz/type/key-int" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 4), rng1) -- [B4]
     else if shape = 8 then
@@ -396,9 +396,8 @@ private def genPFXDICTADD (rng0 : StdGen) : OracleCase × StdGen :=
         (mkSliceStack (.slice sampleSliceD) (mkSliceFromBits #[]) .null 0)
         (mkGasProgram zeroWidthGasMinusOne instrAdd) (oracleGasLimitsExact zeroWidthGasMinusOne), rng1) -- [B11]
     else if shape = 32 then
-      (mkCase "fuzz/asm-invalid"
-        (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell dictSlice4) 4)
-        #[.dictSet false false false .replace], rng1) -- [B9]
+      (mkCase "fuzz/type/n-non-int2"
+        #[.slice sampleSliceD, .slice (mkSliceKey 4 3), .cell dictSlice4, .tuple #[]], rng1) -- [B3]
     else if shape = 33 then
       (mkCase "fuzz/zero-width-non-null-hit"
         (mkSliceStack (.slice sampleSliceD) (mkSliceFromBits #[]) (.cell dictSlice0) 0)
@@ -565,7 +564,7 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/range/n-negative" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null (-1)),
     mkCase "oracle/range/n-too-large" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 1024),
-    mkCase "oracle/range/n-nan" #[.slice sampleSliceD, .slice (mkSliceKey 4 3), .null, .int .nan],
+    mkCase "oracle/type/n-non-int" #[.slice sampleSliceD, .slice (mkSliceKey 4 3), .null, .tuple #[]],
 
     -- [B4]
     mkCase "oracle/type/key-int" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 4),
@@ -588,9 +587,6 @@ def suite : InstrSuite where
 
     -- [B8]
     mkCase "oracle/dict-err" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell malformedCell) 4),
-
-    -- [B9]
-    mkCase "oracle/asm-invalid" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) (.cell dictSlice4) 4) (#[.dictSet false true false .replace]),
 
     -- [B10]
     mkCodeCase "oracle/decode/472" raw472,

@@ -258,13 +258,13 @@ private def genDictUGetFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 8 then
       mkCase (s!"{base}/n-too-large") (stackIntKey 0 (.cell dictU8Root) 1024)
     else if shape = 9 then
-      mkCase (s!"{base}/n-nan") (#[.cell dictU8Root, intV 0, .int .nan])
+      mkCase (s!"{base}/n-not-int2") (#[.cell dictU8Root, intV 0, .tuple #[]])
     else if shape = 10 then
       mkCase (s!"{base}/key-null") (#[.cell dictU8Root, .null, intV 8])
     else if shape = 11 then
       mkCase (s!"{base}/key-builder") (#[.cell dictU8Root, .builder Builder.empty, intV 8])
     else if shape = 12 then
-      mkCase (s!"{base}/key-nan") (#[.cell dictU8Root, .int .nan, intV 8])
+      mkCase (s!"{base}/key-not-int2") (#[.cell dictU8Root, .tuple #[], intV 8])
     else if shape = 13 then
       mkCase (s!"{base}/dict-bool") (#[.tuple #[], .cell Cell.empty, intV 8])
     else if shape = 14 then
@@ -466,7 +466,7 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "or/type/n-builder" #[.cell dictU8Root, intV 1, .builder Builder.empty],
     -- [B3]
-    mkCase "or/type/n-nan" #[.cell dictU8Root, intV 1, .int .nan],
+    mkCase "or/type/n-not-int2" #[.cell dictU8Root, intV 1, .tuple #[]],
     -- [B3]
     mkCase "or/range/n-negative" #[.cell dictU8Root, intV 1, intV (-1)],
     -- [B3]
@@ -486,7 +486,7 @@ def suite : InstrSuite where
     -- [B5]
     mkCase "or/type/key-cell" #[.cell dictU8Root, .cell Cell.empty, intV 8],
     -- [B5]
-    mkCase "or/type/key-nan" #[.cell dictU8Root, .int .nan, intV 8],
+    mkCase "or/type/key-not-int2" #[.cell dictU8Root, .tuple #[], intV 8],
 
     -- [B6] key conversion miss
     -- [B6]

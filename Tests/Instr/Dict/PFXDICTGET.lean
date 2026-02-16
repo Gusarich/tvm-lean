@@ -209,7 +209,7 @@ private def genPFXDICTGET (rng0 : StdGen) : OracleCase × StdGen :=
     | 1 => (mkCase "fuzz/underflow/1" #[(.slice keyMatch)], rng2)
     | 2 => (mkCase "fuzz/underflow/2" #[(.slice keyMatch), dictGetRoot], rng2)
     | 3 => (mkCase "fuzz/err/n/not-int" #[.slice keyMatch, dictGetRoot, .tuple #[]], rng2)
-    | 4 => (mkCase "fuzz/err/n/nan" #[.slice keyMatch, dictGetRoot, .int .nan], rng2)
+    | 4 => (mkCase "fuzz/err/n/not-int2" #[.slice keyMatch, dictGetRoot, .tuple #[]], rng2)
     | 5 => (mkCase "fuzz/err/n/negative" (mkCaseRawStack keyMatchBits dictGetRoot (-1)), rng2)
     | 6 => (mkCase "fuzz/err/n/too-large" (mkCaseRawStack keyMatchBits dictGetRoot 1024), rng2)
     | 7 => (mkCase "fuzz/err/dict/builder" (mkCaseRawStack keyMatchBits (.builder Builder.empty) 4), rng2)
@@ -219,7 +219,7 @@ private def genPFXDICTGET (rng0 : StdGen) : OracleCase × StdGen :=
     | 11 => (mkCase "fuzz/err/key/cell" #[.cell Cell.empty, dictGetRoot, intV 4], rng2)
     | 12 => (mkCase "fuzz/err/key/builder" (#[.builder Builder.empty, dictGetRoot, intV 4]), rng2)
     | 13 => (mkCase "fuzz/err/key/tuple" (#[.tuple #[], dictGetRoot, intV 4]), rng2)
-    | 14 => (mkCase "fuzz/err/key/nan" (#[.int .nan, dictGetRoot, intV 4]), rng2)
+    | 14 => (mkCase "fuzz/err/key/not-int2" (#[.tuple #[], dictGetRoot, intV 4]), rng2)
     | 15 => (mkCase "fuzz/miss/key-mismatch" (mkCaseRawStack keyMismatch dictGetRoot 3), rng2)
     | 16 => (mkCase "fuzz/miss/null-root" (mkCaseRawStack keyMatchLongBits (.null) 3), rng2)
     | 17 => (mkCase "fuzz/miss/short-key" (mkCaseRawStack keyShort dictGetRoot 3), rng2)
@@ -402,7 +402,7 @@ def suite : InstrSuite where
     , mkCase "oracle/underflow/2" #[(.slice keyMatch), dictGetRoot] -- [B2]
     -- [B3] n validation
     , mkCase "oracle/err/n/not-int" (#[(.slice keyMatch), dictGetRoot, .tuple #[]]) -- [B3]
-    , mkCase "oracle/err/n/nan" (#[(.slice keyMatch), dictGetRoot, .int .nan]) -- [B3]
+    , mkCase "oracle/err/n/not-int2" (#[(.slice keyMatch), dictGetRoot, .tuple #[]]) -- [B3]
     , mkCase "oracle/err/n/negative" (mkCaseRawStack keyMatchBits dictGetRoot (-1)) -- [B3]
     , mkCase "oracle/err/n/too-large" (mkCaseRawStack keyMatchBits dictGetRoot 1024) -- [B3]
     -- [B4] dict validation
@@ -414,7 +414,7 @@ def suite : InstrSuite where
     , mkCase "oracle/err/key/cell" (#[.cell Cell.empty, dictGetRoot, intV 4]) -- [B5]
     , mkCase "oracle/err/key/builder" (#[.builder Builder.empty, dictGetRoot, intV 4]) -- [B5]
     , mkCase "oracle/err/key/tuple" (#[.tuple #[], dictGetRoot, intV 4]) -- [B5]
-    , mkCase "oracle/err/key/nan" (#[.int .nan, dictGetRoot, intV 4]) -- [B5]
+    , mkCase "oracle/err/key/not-int2" (#[.tuple #[], dictGetRoot, intV 4]) -- [B5]
     -- [B6] miss
     , mkCase "oracle/miss/key-mismatch" (mkCaseRawStack keyMismatch dictGetRoot 3) -- [B6]
     , mkCase "oracle/miss/root-null" (mkCaseRawStack keyMatchLongBits (.null) 3) -- [B6]

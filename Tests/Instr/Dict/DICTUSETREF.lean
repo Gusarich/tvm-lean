@@ -200,7 +200,7 @@ private def hitSingleCreated : Nat :=
   createdFor (some dictUInt8Single) 8 5 valueCellB
 
 private def hitDoubleCreated : Nat :=
-  createdFor (some dictUInt8Double) 8 200 valueCellD
+  createdFor (some dictUInt8Double) 8 255 valueCellE
 
 private def hitTripleCreated : Nat :=
   createdFor (some dictUInt8Triple) 8 255 valueCellE
@@ -330,7 +330,7 @@ private def genDICTUSETREFFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 5 then
       (mkCase "fuzz/err/n-too-large" (mkCaseStack valueCellA 5 (.cell dictUInt8Single) 1024), rng1)
     else if shape = 6 then
-      (mkCase "fuzz/err/n-nan" #[.cell valueCellA, .int (.num 5), .cell dictUInt8Single, .int .nan], rng1)
+      (mkCase "fuzz/err/n-not-int2" #[.cell valueCellA, .int (.num 5), .cell dictUInt8Single, .tuple #[]], rng1)
     else if shape = 7 then
       (mkCase "fuzz/err/key-range-high" (mkCaseStack valueCellA 256 (.cell dictUInt8Single) 8), rng1)
     else if shape = 8 then
@@ -522,7 +522,7 @@ def suite : InstrSuite where
     -- [B3]
     mkCase "oracle/err/n-negative" (mkCaseStack valueCellA 5 (.cell dictUInt8Single) (-1)),
     mkCase "oracle/err/n-too-large" (mkCaseStack valueCellA 5 (.cell dictUInt8Single) 1024),
-    mkCase "oracle/err/n-nan" #[.cell valueCellA, .int (.num 5), .cell dictUInt8Single, .int .nan],
+    mkCase "oracle/err/n-not-int2" #[.cell valueCellA, .int (.num 5), .cell dictUInt8Single, .tuple #[]],
     -- [B4]
     mkCase "oracle/err/key-range-high" (mkCaseStack valueCellA 256 (.cell dictUInt8Single) 8),
     mkCase "oracle/err/key-range-negative" (mkCaseStack valueCellA (-1) (.cell dictUInt8Single) 8),

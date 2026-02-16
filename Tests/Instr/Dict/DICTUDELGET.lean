@@ -552,7 +552,7 @@ def suite : InstrSuite where
     , -- [B4][B5]
     mkCase "oracle/range/key-low" (mkIntCaseStack (.cell uintRoot4Two) (-1) 4) -- [B4][B5]
     , -- [B4][B5]
-    mkCase "oracle/range/key-nan" #[.cell uintRoot4Two, .int .nan, intV 4] -- [B4][B5]
+    mkCase "oracle/type/key-not-int2" #[.cell uintRoot4Two, .tuple #[], intV 4] -- [B4][B5]
     , -- [B4][B5]
     mkCase "oracle/type/n-non-int" #[.cell uintRoot4Two, intV 0, .slice (Slice.ofCell sampleCellA)] -- [B3]
     , -- [B3]

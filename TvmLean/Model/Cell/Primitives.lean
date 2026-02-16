@@ -777,6 +777,7 @@ partial def dictDeleteAuxWithCells (cell : Cell) (key : BitString) (pos remainin
           let survivorBit : Bool := !swBit
           let survivor : Cell := if swBit then left0 else right0
           let lbl2 ← parseDictLabel survivor (rem0 - 1)
+          let _ ← dictValidateNodeExt lbl2 (rem0 - 1)
           let childLabelBits := dictLabelBits lbl2
           let combinedLabelBits : BitString := dictLabelBits lbl ++ #[survivorBit] ++ childLabelBits
           let combinedLen : Nat := lbl.len + 1 + lbl2.len

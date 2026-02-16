@@ -729,15 +729,17 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
 
       | .pfxSwitch dictCell keyLen =>
           let cs0 ← VM.popSlice
+          -- Precharge root load; keep it out of `loaded` to avoid double-charging.
           VM.registerCellLoad dictCell
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
           match DictExt.pfxLookupPrefixWithCells (some dictCell) keyBits keyBits.size keyLen with
           | .error e => throw e
-          | .ok (none, _pos, loaded) =>
+          | .ok (none, _pos, loaded0) =>
+              let loaded := DictExt.loadedWithoutRoot (some dictCell) loaded0
               DictExt.registerLoaded loaded
               VM.push (.slice cs0)
           | .ok (some valueSlice, pfxLen, loaded0) =>
-              let loaded := loaded0
+              let loaded := DictExt.loadedWithoutRoot (some dictCell) loaded0
               DictExt.registerLoaded loaded
               let (pfxSlice, cs1) ←
                 match DictExt.slicePrefix cs0 pfxLen 0 with

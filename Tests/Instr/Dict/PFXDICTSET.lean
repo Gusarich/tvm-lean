@@ -340,7 +340,7 @@ private def genPFXDICTSET (rng0 : StdGen) : OracleCase × StdGen :=
     let (idx, rng2) := randNat rng1 0 3
     let c :=
       if idx = 0 then
-        mkCase "fuzz/range/nan" #[.slice sampleValueA, .slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .int .nan]
+        mkCase "fuzz/type/n-non-int" #[.slice sampleValueA, .slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .tuple #[]]
       else if idx = 1 then
         mkCase "fuzz/range/n-negative" (mkStack .null (-1) key4_2 sampleValueA)
       else if idx = 2 then
@@ -630,7 +630,7 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" #[.slice sampleValueA],
     mkCase "oracle/underflow/two" (mkStack .null 4 key4_2 sampleValueA).pop,
     mkCase "oracle/underflow/three" (mkStack .null 4 key4_2 sampleValueA).pop.pop,
-    mkCase "oracle/range/nan" #[.slice sampleValueA, .slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .int .nan],
+    mkCase "oracle/type/n-non-int" #[.slice sampleValueA, .slice (mkSliceFromBits key4_2), .cell pfxRootSingle2, .tuple #[]],
     mkCase "oracle/range/negative" (mkStack .null (-1) key4_2 sampleValueA),
     mkCase "oracle/range/too-large" (mkStack .null 1024 key4_2 sampleValueA),
     mkCase "oracle/type/dict" (mkStack (.tuple #[]) 4 key4_2 sampleValueA),

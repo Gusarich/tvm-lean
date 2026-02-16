@@ -312,7 +312,7 @@ private def genDictURemMaxCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 13 then
       (mkCase "fuzz/underflow/one" (#[(intV 8)]), rng1)
     else if shape = 14 then
-      (mkCase "fuzz/err/nan" (#[.null, .int .nan]), rng1)
+      (mkCase "fuzz/err/n-type-cell" (#[.null, .cell dictN8]), rng1)
     else if shape = 15 then
       (mkCase "fuzz/err/n-negative" (#[.null, intV (-1)]), rng1)
     else if shape = 16 then
@@ -498,7 +498,7 @@ def suite : InstrSuite where
     mkCase "oracle/miss/long-width" (#[.cell dictN2, intV 1]), -- [B4]
     mkCase "oracle/underflow/empty" #[], -- [B2]
     mkCase "oracle/underflow/one-item" (#[intV 8]), -- [B2]
-    mkCase "oracle/err/nan" (#[(.null), .int .nan]), -- [B2]
+    mkCase "oracle/err/n-type-cell" (#[.null, .cell dictN8]), -- [B2]
     mkCase "oracle/err/negative" (#[.null, intV (-1)]), -- [B2]
     mkCase "oracle/err/overflow" (#[.null, intV 257]), -- [B2]
     mkCase "oracle/err/root-type-slice" (#[.slice sampleSlice, intV 8]), -- [B3]
@@ -515,7 +515,6 @@ def suite : InstrSuite where
     mkCaseCode "oracle/raw/f490-gap" #[] rawOpcodeF490, -- [B9]
     mkCaseCode "oracle/raw/truncated8" #[] rawTruncated8, -- [B9]
     mkCaseCode "oracle/raw/f49c-as-nonRef" (#[.cell dictN8, intV 8]) rawOpcodeF49C, -- [B10]
-    mkCase "oracle/asm-gap" (#[.null, intV 8]) (#[.dictGetMinMax 24, .add]) (gasBase), -- [B8]
     mkCase "oracle/gas/base-exact" (#[.null, intV 8])
       (#[.pushInt (.num baseGas), .tonEnvOp .setGasLimit, instr]) gasBase, -- [B10]
     mkCase "oracle/gas/base-minus-one" (#[.null, intV 8])

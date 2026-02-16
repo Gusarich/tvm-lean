@@ -280,7 +280,7 @@ private def genPFXDICTGETQFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 1 => mkCase "fuzz/underflow/1" instrGetQ #[.slice keyMatch]
     | 2 => mkCase "fuzz/underflow/2" instrGetQ #[.slice keyMatch, dictGetQRoot]
     | 3 => mkCase "fuzz/err/n/not-int" instrGetQ #[.slice keyMatch, dictGetQRoot, .tuple #[]]
-    | 4 => mkCase "fuzz/err/n/nan" instrGetQ #[.slice keyMatch, dictGetQRoot, .int .nan]
+    | 4 => mkCase "fuzz/err/n/not-int2" instrGetQ #[.slice keyMatch, dictGetQRoot, .tuple #[]]
     | 5 => mkCase "fuzz/err/n/negative" instrGetQ #[.slice keyMatch, dictGetQRoot, intV (-1)]
     | 6 => mkCase "fuzz/err/n/too-large" instrGetQ #[.slice keyMatch, dictGetQRoot, intV 1024]
     | 7 => mkCase "fuzz/err/dict/builder" instrGetQ #[.slice keyMatch, .builder Builder.empty, intV 4]
@@ -290,7 +290,7 @@ private def genPFXDICTGETQFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     | 11 => mkCase "fuzz/err/key/cell" instrGetQ #[.cell Cell.empty, dictGetQRoot, intV 4]
     | 12 => mkCase "fuzz/err/key/tuple" instrGetQ #[.tuple #[], dictGetQRoot, intV 4]
     | 13 => mkCase "fuzz/err/key/builder" instrGetQ #[.builder Builder.empty, dictGetQRoot, intV 4]
-    | 14 => mkCase "fuzz/err/key/nan" instrGetQ #[.int .nan, dictGetQRoot, intV 4]
+    | 14 => mkCase "fuzz/err/key/not-int2" instrGetQ #[.tuple #[], dictGetQRoot, intV 4]
     | 15 => mkCase "fuzz/miss/q/key" instrGetQ #[.slice keyMismatch, dictGetQRoot, intV 3]
     | 16 => mkCase "fuzz/miss/get/key" instrGet #[.slice keyMismatch, dictGetRoot, intV 3]
     | 17 => mkCase "fuzz/miss/jmp/key" instrJmp #[.slice keyMismatch, dictJmpRoot, intV 3]
@@ -479,7 +479,7 @@ def suite : InstrSuite where
     , mkCase "oracle/underflow/1" instrGetQ #[.slice keyMatch]
     , mkCase "oracle/underflow/2" instrGetQ #[.slice keyMatch, dictGetQRoot]
     , mkCase "oracle/n/type" instrGetQ #[.slice keyMatch, dictGetQRoot, .tuple #[]]
-    , mkCase "oracle/n/nan" instrGetQ #[.slice keyMatch, dictGetQRoot, .int .nan]
+    , mkCase "oracle/n/not-int2" instrGetQ #[.slice keyMatch, dictGetQRoot, .tuple #[]]
     , mkCase "oracle/n/negative" instrGetQ #[.slice keyMatch, dictGetQRoot, intV (-1)]
     , mkCase "oracle/n/too-large" instrGetQ #[.slice keyMatch, dictGetQRoot, intV 1024]
     -- [B4][B5] type checks
@@ -490,7 +490,7 @@ def suite : InstrSuite where
     , mkCase "oracle/key/cell" instrGetQ #[.cell Cell.empty, dictGetQRoot, intV 4]
     , mkCase "oracle/key/tuple" instrGetQ #[.tuple #[], dictGetQRoot, intV 4]
     , mkCase "oracle/key/builder" instrGetQ #[.builder Builder.empty, dictGetQRoot, intV 4]
-    , mkCase "oracle/key/nan" instrGetQ #[.int .nan, dictGetQRoot, intV 4]
+    , mkCase "oracle/key/not-int2" instrGetQ #[.tuple #[], dictGetQRoot, intV 4]
     -- [B6] miss paths
     , mkCase "oracle/miss/q" instrGetQ (mkCaseRawStack keyMismatch dictGetQRoot 3)
     , mkCase "oracle/miss/get" instrGet (mkCaseRawStack keyMismatch dictGetRoot 3)

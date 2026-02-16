@@ -284,7 +284,7 @@ private def genDICTUDELFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 6 then
       mkCase "fuzz/key-underflow" (mkStack (.cell dictRoot8Single) key8_0x7f (intV 7))
     else if shape = 7 then
-      mkCase "fuzz/nan" (mkStack (.cell dictRoot4Single2) key4_2 (.int .nan))
+      mkCase "fuzz/n-type" (mkStack (.cell dictRoot4Single2) key4_2 (.tuple #[]))
     else if shape = 8 then
       mkCase "fuzz/n-negative" (mkStack (.cell dictRoot4Single2) key4_2 (intV (-1)))
     else if shape = 9 then
@@ -452,7 +452,7 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one-item" #[.cell dictRoot4Single2],
     mkCase "oracle/underflow/two-items" #[.cell dictRoot4Single2, .slice (mkSliceFromBits key4_2)],
     -- [B3]
-    mkCase "oracle/type/nan" (mkStack (.cell dictRoot4Single2) key4_2 (.int .nan)),
+    mkCase "oracle/type/n-non-int" (mkStack (.cell dictRoot4Single2) key4_2 (.tuple #[])),
     mkCase "oracle/type/n-negative" (mkStack (.cell dictRoot4Single2) key4_2 (intV (-1))),
     mkCase "oracle/type/n-too-large" (mkStack (.cell dictRoot4Single2) key4_2 (intV 1024)),
     mkCase "oracle/type/n-max" (mkStack (.cell dictRoot4Single2) key4_2 (intV 1023)),

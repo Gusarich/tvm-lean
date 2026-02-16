@@ -208,7 +208,7 @@ private def genDictUAddFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 6 then
       (mkCase "fuzz/err/type/value" #[.cell nonSliceValue, intV 7, .cell dictU8Single, intV 8], rng1)
     else if shape = 7 then
-      (mkCase "fuzz/err/nan-key" #[.slice valueA, .int .nan, .cell dictU8Single, intV 8], rng1)
+      (mkCase "fuzz/err/key-nonzero-zero-width" #[.slice valueA, intV 1, .null, intV 0], rng1)
     else if shape = 8 then
       (mkCase "fuzz/err/neg-key" #[.slice valueA, intV (-1), .null, intV 8], rng1)
     else if shape = 9 then
@@ -218,7 +218,7 @@ private def genDictUAddFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 11 then
       (mkCase "fuzz/err/n-neg" #[.slice valueA, intV 7, .null, intV (-1)], rng1)
     else if shape = 12 then
-      (mkCase "fuzz/err/n-nan" #[.slice valueA, intV 7, .null, .int .nan], rng1)
+      (mkCase "fuzz/err/n-type-cell" #[.slice valueA, intV 7, .null, .cell dictU8Single], rng1)
     else if shape = 13 then
       (mkCodeCase "fuzz/err/decode-f431" #[] rawF431, rng1)
     else if shape = 14 then
@@ -340,6 +340,7 @@ def suite : InstrSuite where
         expectErr "unit/runtime/type-value" (runDictUAddDirect #[.cell nonSliceValue, intV 7, .cell dictU8Single, intV 8]) .typeChk
         expectErr "unit/runtime/range-n-negative" (runDictUAddDirect #[.slice valueA, intV 7, .null, intV (-1)]) .rangeChk
         expectErr "unit/runtime/range-n-too-large" (runDictUAddDirect #[.slice valueA, intV 7, .null, intV 1024]) .rangeChk
+        expectErr "unit/runtime/range-n-nan" (runDictUAddDirect #[.slice valueA, intV 7, .null, .int .nan]) .rangeChk
         expectErr "unit/runtime/range-key-negative" (runDictUAddDirect #[.slice valueA, intV (-1), .null, intV 8]) .rangeChk
         expectErr "unit/runtime/range-key-too-large" (runDictUAddDirect #[.slice valueA, intV 256, .null, intV 8]) .rangeChk
         expectErr "unit/runtime/range-key-nan" (runDictUAddDirect #[.slice valueA, .int .nan, .null, intV 8]) .rangeChk },
@@ -368,10 +369,9 @@ def suite : InstrSuite where
     mkCase "oracle/err/type/value" #[.cell nonSliceValue, intV 7, .cell dictU8Single, intV 8], -- [B4]
     mkCase "oracle/err/range/n-negative" #[.slice valueA, intV 7, .null, intV (-1)], -- [B2]
     mkCase "oracle/err/range/n-too-large" #[.slice valueA, intV 7, .null, intV 1024], -- [B2]
-    mkCase "oracle/err/range/n-nan" #[.slice valueA, intV 7, .null, .int .nan], -- [B2]
+    mkCase "oracle/err/range/n-type-cell" #[.slice valueA, intV 7, .null, .cell dictU8Single], -- [B2]
     mkCase "oracle/err/range/key-negative" #[.slice valueA, intV (-1), .null, intV 8], -- [B3]
     mkCase "oracle/err/range/key-too-large" #[.slice valueA, intV 256, .null, intV 8], -- [B3]
-    mkCase "oracle/err/range/key-nan" #[.slice valueA, .int .nan, .null, intV 8], -- [B3]
     mkCase "oracle/err/range/key-nonzero-zero-width" #[.slice valueA, intV 1, .null, intV 0], -- [B3]
     mkCase "oracle/err/malformed-root" #[.slice valueA, intV 0, .cell malformedDict, intV 8], -- [B6]
     mkCodeCase "oracle/decode/f431" #[] rawF431, -- [B8]

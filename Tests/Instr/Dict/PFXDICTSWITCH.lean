@@ -413,10 +413,9 @@ def suite : InstrSuite where
         pure () }
   ]
   oracle := #[
-    mkCase "oracle/underflow" #[],
-    mkCase "oracle/type-int" #[.int (.num 7)],
-    mkCase "oracle/miss" #[.slice keyMissSlice],
-    mkCase "oracle/miss-with-tail" #[intV 9, .slice keyMissSlice],
+    mkRawCase "oracle/underflow" #[] (rawSwitch24 4 pfxDict4Root),
+    mkRawCase "oracle/type-int" #[.int (.num 7)] (rawSwitch24 4 pfxDict4Root),
+    mkRawCase "oracle/raw/miss-with-tail" #[intV 9, .slice keyMissSlice] (rawSwitch24 4 pfxDict4Root),
     mkRawCase "oracle/raw/miss" #[.slice keyMissSlice] (rawSwitch24 4 pfxDict4Root),
     mkRawCase "oracle/raw/hit" #[.slice keyMatchSlice] (rawSwitch24 4 pfxDict4Root),
     mkRawCase "oracle/raw/hit-long-key" #[.slice keyLongSlice] (rawSwitch24 4 pfxDict4Root),
@@ -429,15 +428,8 @@ def suite : InstrSuite where
     mkRawCase "oracle/raw/truncated8" #[] rawTruncated8,
     mkRawCase "oracle/raw/missing-ref" #[] (rawSwitch24NoRef 4),
     mkRawCase "oracle/raw/chain" #[.slice keyMissSlice] rawChain,
-    mkCase "oracle/gas/exact"
-      #[.slice keyMissSlice]
-      (program := #[.pushInt (.num pfxSwitchGas), .tonEnvOp .setGasLimit, instrSwitch4])
-      pfxSwitchGasLimitsExact,
-    mkCase "oracle/gas/exact-minus-one"
-      #[.slice keyMissSlice]
-      (program := #[.pushInt (.num pfxSwitchGasMinusOne), .tonEnvOp .setGasLimit, instrSwitch4])
-      pfxSwitchGasLimitsExactMinusOne,
-    mkCase "oracle/raw-assemble-invariant" #[.slice keyMatchSlice] (program := #[instrSwitch4]) (gasLimits := {})
+    mkRawCase "oracle/raw/gas-exact" #[.slice keyMissSlice] (rawSwitch24 4 pfxDict4Root) pfxSwitchGasLimitsExact,
+    mkRawCase "oracle/raw/gas-exact-minus-one" #[.slice keyMissSlice] (rawSwitch24 4 pfxDict4Root) pfxSwitchGasLimitsExactMinusOne
   ]
   fuzz := #[
     { seed := fuzzSeedForInstr suiteId

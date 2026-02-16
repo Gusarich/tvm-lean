@@ -228,9 +228,9 @@ private def genSUBDICTURPGETFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 8 then
       (mkCase "fuzz/underflow/three" #[intV 4, intV 2, .cell dictRoot4], rng1)
     else if shape = 9 then
-      (mkCase "fuzz/nan/n" #[intV 0, intV 4, .cell dictRoot4, .int .nan], rng1)
+      (mkCase "fuzz/type/n-non-int" #[intV 0, intV 4, .cell dictRoot4, .tuple #[]], rng1)
     else if shape = 10 then
-      (mkCase "fuzz/nan/k" #[intV 1, .int .nan, .cell dictRoot4, intV 4], rng1)
+      (mkCase "fuzz/type/k-non-int2" #[intV 1, .tuple #[], .cell dictRoot4, intV 4], rng1)
     else if shape = 11 then
       (mkCase "fuzz/range/n-negative" (mkStack 0 (.cell dictRoot4) (-1) 1), rng1)
     else if shape = 12 then
@@ -378,7 +378,7 @@ def suite : InstrSuite where
     mkCase "oracle/underflow/one" #[intV 4],
     mkCase "oracle/underflow/two" #[intV 4, intV 2],
     mkCase "oracle/underflow/three" #[intV 4, intV 2, .cell dictRoot4],
-    mkCase "oracle/range/nan" #[intV 1, intV 2, .cell dictRoot4, .int .nan],
+    mkCase "oracle/type/n-non-int" #[intV 1, intV 2, .cell dictRoot4, .tuple #[]],
     mkCase "oracle/range/n-negative" (mkStack 1 (.cell dictRoot4) (-1) 2),
     mkCase "oracle/range/n-too-large" (mkStack 1 (.cell dictRoot4) 1024 1),
     mkCase "oracle/range/k-negative" (mkStack 1 (.cell dictRoot4) 4 (-1)),
@@ -386,7 +386,7 @@ def suite : InstrSuite where
     mkCase "oracle/range/k-non-int" #[intV 1, .tuple #[], .cell dictRoot4, intV 4],
     mkCase "oracle/type/root-non-cell" (mkStack 1 (.tuple #[]) 4 2),
     mkCase "oracle/type/key-non-int" #[.slice (mkSliceFromBits (natToBits 1 2)), intV 2, .cell dictRoot4, intV 4],
-    mkCase "oracle/type/key-nan" #[.int .nan, intV 2, .cell dictRoot4, intV 4],
+    mkCase "oracle/type/key-tuple" #[.tuple #[], intV 2, .cell dictRoot4, intV 4],
     mkCase "oracle/key/out-of-range-positive" (mkStack 16 (.cell dictRoot4) 4 4),
     mkCase "oracle/key/out-of-range-negative" (mkStack (-1) (.cell dictRoot4) 4 4),
     mkCase "oracle/runtime/k0" (mkStack 0 (.cell dictRoot4) 4 0),

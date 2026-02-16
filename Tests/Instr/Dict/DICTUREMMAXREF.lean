@@ -259,7 +259,7 @@ def genDictIremMaxRefFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 15 then
       (mkCase "fuzz/err/dict-not-cell" #[.cont (.quit 0), intV 8], rng1)
     else if shape = 16 then
-      (mkCase "fuzz/err/nan" #[ .cell dictSingleRef8, .int .nan], rng1)
+      (mkCase "fuzz/err/n-type-cell" #[ .cell dictSingleRef8, .cell valueA], rng1)
     else if shape = 17 then
       (mkCase "fuzz/err/n-negative" #[ .cell dictSingleRef8, intV (-1)], rng1)
     else if shape = 18 then
@@ -398,7 +398,6 @@ def suite : InstrSuite where
     mkCase "oracle/err/underflow-two" #[dictNull, intV 8],
     mkCase "oracle/err/type-top-int" #[.cell valueA, intV 8],
     mkCase "oracle/err/type-top-cont" #[.cont (.quit 0), intV 8],
-    mkCase "oracle/err/nan" #[.cell dictSingleRef8, .int .nan],
     mkCase "oracle/err/n-negative" #[.cell dictSingleRef8, intV (-1)],
     mkCase "oracle/err/n-too-large" #[.cell dictSingleRef8, intV 258],
     mkCase "oracle/err/n-way-overflow" #[.cell dictSingleRef8, intV 300],

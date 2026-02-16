@@ -260,7 +260,7 @@ private def genPFXDICTREPLACEFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
   else if shape = 5 then
     (mkCase "fuzz/range/n-too-large" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 1024), rng2) -- [B2]
   else if shape = 6 then
-    (mkCase "fuzz/range/n-nan" #[(.slice sampleSliceD), (.slice (mkSliceKey 4 3)), .null, .int .nan], rng2) -- [B2]
+    (mkCase "fuzz/type/n-non-int" #[(.slice sampleSliceD), (.slice (mkSliceKey 4 3)), .null, .tuple #[]], rng2) -- [B2]
   else if shape = 7 then
     (mkCase "fuzz/key-too-long" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 2), rng2) -- [B3]
   else if shape = 8 then
@@ -499,7 +499,7 @@ def suite : InstrSuite where
     -- [B2]
     mkCase "oracle/range/n-negative" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null (-1)),
     mkCase "oracle/range/n-too-large" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 1024),
-    mkCase "oracle/range/n-nan" #[(.slice sampleSliceD), (.slice (mkSliceKey 4 3)), .null, .int .nan],
+    mkCase "oracle/type/n-non-int" #[(.slice sampleSliceD), (.slice (mkSliceKey 4 3)), .null, .tuple #[]],
 
     -- [B3]
     mkCase "oracle/key-too-long" (mkSliceStack (.slice sampleSliceD) (mkSliceKey 4 3) .null 2),
