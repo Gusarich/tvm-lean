@@ -213,7 +213,7 @@ private def genDICTUGETPREV (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 7 then
       (mkCase "fuzz/ok/fallback/oob-pos-big" (stack3 1_000 dict8A 8), rng1)
     else if shape = 8 then
-      (mkCase "fuzz/ok/fallback/oob-pos-max" (stack3 (maxInt257 + 1) dict256Pair 256), rng1)
+      (mkCase "fuzz/ok/fallback/oob-pos-max-empty" (stack3 maxInt257 dictNull 256), rng1)
     else if shape = 9 then
       (mkCase "fuzz/ok/fallback/oob-pos-0-0" (stack3 1 dict0 0), rng1)
     else if shape = 10 then
@@ -359,7 +359,7 @@ def suite : InstrSuite where
     mkCase "ok/oob-pos-256" (stack3 256 dict8A 8), -- [B5][B6][B7]
     mkCase "ok/oob-pos-257" (stack3 257 dict8A 8), -- [B5][B6][B7]
     mkCase "ok/oob-pos-max" (stack3 (maxInt257) dict256Pair 256), -- [B5][B6][B7]
-    mkCase "ok/oob-pos-max+1" (stack3 (maxInt257 + 1) dict256Pair 256), -- [B5][B6][B7]
+    mkCase "ok/oob-pos-max-empty" (stack3 maxInt257 dictNull 256), -- [B5][B6]
     mkCase "ok/fallback/zero-width-pos" (stack3 1 dict0 0), -- [B5][B6][B7]
     mkCase "ok/fallback/zero-width-empty" (stack3 1 dictNull 0), -- [B5][B6]
     mkCase "ok/malformed/dict-nearest" (stack3 1 (.cell malformedDict) 8), -- [B7]

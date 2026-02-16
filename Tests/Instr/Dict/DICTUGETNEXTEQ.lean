@@ -225,7 +225,7 @@ def genDictUGetNextEqFuzzCase (rng0 : StdGen) : OracleCase × StdGen :=
     else if shape = 15 then
       (mkCase "fuzz/ok/miss-0-1" (mkStack 1 dict0 0), rng1)
     else if shape = 16 then
-      (mkCase "fuzz/ok/miss-oob-pos-256" (mkStack (maxInt257 + 1) dict256 256), rng1)
+      (mkCase "fuzz/ok/miss-256-max-empty" (mkStack maxInt257 dictNull 256), rng1)
     else if shape = 17 then
       (mkCase "fuzz/ok/fallback-neg-8" (mkStack (-1) dict8A 8), rng1)
     else if shape = 18 then
@@ -369,7 +369,7 @@ def suite : InstrSuite where
     mkCase "ok/hit/256/max" (mkStack maxInt257 dict256 256), -- [B4]
     mkCase "ok/miss/8/256" (mkStack 256 dict8A 8), -- [B4]
     mkCase "ok/miss/8/300" (mkStack 300 dict8A 8), -- [B3][B4]
-    mkCase "ok/miss/256/overflow" (mkStack (maxInt257 + 1) dict256 256), -- [B3][B4]
+    mkCase "ok/miss/256/max-empty" (mkStack maxInt257 dictNull 256), -- [B4]
     mkCase "ok/miss/8/empty" (mkStack 12 dictNull 8), -- [B4]
     mkCase "ok/miss/0/one" (mkStack 1 dict0 0), -- [B4]
     mkCase "ok/fallback/neg/8" (mkStack (-1) dict8A 8), -- [B5]

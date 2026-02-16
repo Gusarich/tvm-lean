@@ -32,7 +32,7 @@ BRANCH ANALYSIS (derived from Lean + C++ source):
      - others -> `.typeChk`.
    - `key` is popped as int (since intKey=true):
      - non-int key -> `.typeChk`;
-     - `.nan` key -> `.rangeChk`;
+     - `.nan` key -> `.intOv` (finite-int parse in by-ref delete mode);
      - `dictKeyBits?` outside signed range for `(key, n)` -> `.rangeChk`.
 
 4. [B4] Runtime success paths:
@@ -344,9 +344,9 @@ def suite : InstrSuite where
     { name := "unit/runtime/range/key-low"
       run := do
         expectErr "runtime/range-key-low" (runDictIdelGetRefDirect #[.cell intSignedRoot4, intV (-9), intV 4]) .rangeChk },
-    { name := "unit/runtime/range/key-nan"
+    { name := "unit/runtime/intov/key-nan"
       run := do
-        expectErr "runtime/range-key-nan" (runDictIdelGetRefDirect #[.cell intSignedRoot4, .int .nan, intV 4]) .rangeChk },
+        expectErr "runtime/intov-key-nan" (runDictIdelGetRefDirect #[.cell intSignedRoot4, .int .nan, intV 4]) .intOv },
     { name := "unit/runtime/dicterr/payload-with-bits"
       run := do
         expectErr "runtime/dicterr/payload-with-bits"

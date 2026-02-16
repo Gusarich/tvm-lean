@@ -29,8 +29,8 @@ BRANCH ANALYSIS (derived from reading Lean + C++ source):
      - valid range: `0..1023`
      - `.rangeChk` for `n<0`, `.nan`, or `n>1023`.
    - `dict := popMaybeCell`: accepts `.null` and `.cell`; other types throw `.typeChk`.
-   - integer `key` is parsed with `popInt`; non-int throws `.typeChk`.
-   - `dictKeyBits? idx n true` handles unsigned range checks; invalid key yields `.rangeChk`.
+   - integer `key` is parsed in finite-int mode; non-int throws `.typeChk`, `.nan` throws `.intOv`.
+   - `dictKeyBits? idx n true` handles unsigned range checks; out-of-range key yields `.rangeChk`.
 
 4. [B4] Key-mapping and delete success/miss behavior:
    - On key conversion success, the branch executes `dictDeleteWithCells`.
@@ -349,10 +349,10 @@ def suite : InstrSuite where
         expectErr "unit/runtime/range-key-too-large"
           (runDictUDelGetRefDirect (mkIntCaseStack (.cell dictUDelGetRefRoot4Single5) 16 4)) .rangeChk
     },
-    { name := "unit/runtime/range/key-nan"
+    { name := "unit/runtime/intov/key-nan"
       run := do
-        expectErr "unit/runtime/range-key-nan"
-          (runDictUDelGetRefDirect #[.int .nan, .cell dictUDelGetRefRoot4Single5, intV 4]) .rangeChk
+        expectErr "unit/runtime/intov-key-nan"
+          (runDictUDelGetRefDirect #[.int .nan, .cell dictUDelGetRefRoot4Single5, intV 4]) .intOv
     },
     { name := "unit/runtime/dict-err/payload-bits"
       run := do

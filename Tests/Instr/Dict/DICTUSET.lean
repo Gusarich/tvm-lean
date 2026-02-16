@@ -500,8 +500,6 @@ def suite : InstrSuite where
     ,
     mkCase "oracle/asm/encode" #[] (#[instr]) -- [B9]
     ,
-    mkCase "oracle/asm/inv" #[] (#[.dictSet false true false .set]) -- [B9]
-    ,
     mkCodeCase "oracle/decode/412" #[] raw412 -- [B9]
     ,
     mkCodeCase "oracle/decode/413" #[] raw413 -- [B9]

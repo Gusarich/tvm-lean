@@ -290,14 +290,6 @@ private def oracleCaseFuzzComparable (c : OracleCase) : Bool :=
     && stackOracleCliCompatible c.initStack
     && c.initC7.isEmpty
 
-private def isSkippableFuzzOracleError (msg : String) : Bool :=
-  msg.startsWith "assembleCp0 failed:"
-    || msg.startsWith "cannot encode NaN in oracle stack token stream"
-    || msg.startsWith "only full-cell slices are supported in oracle stack token stream"
-    || msg.startsWith "non-empty tuples are not yet supported in oracle stack token stream"
-    || msg.startsWith "only quit(0) continuations are supported in oracle stack token stream"
-    || !((msg.splitOn "times:integer expected").tail.isEmpty)
-
 private def intValueIndices (stack : Array Value) : Array Nat := Id.run do
   let mut out : Array Nat := #[]
   for i in [0:stack.size] do
@@ -462,12 +454,6 @@ def runFuzzSpec (spec : FuzzSpec) (oraclePool : Array OracleCase := #[]) : IO Fu
     if !oracleCaseFuzzComparable oracleCase then
       continue
     let out ← runOracleCase oracleCase
-    if !out.ok then
-      match out.error? with
-      | some msg =>
-          if isSkippableFuzzOracleError msg then
-            continue
-      | none => pure ()
     i := i + 1
     if !out.ok then
       let artifact? ← dumpFailureArtifact spec.seed i oracleCase out
