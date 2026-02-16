@@ -1356,8 +1356,109 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       encodeDebugInstr op
   | .arithExt op =>
       encodeArithExtInstr op
-  | .dictExt _ =>
-      throw .invOpcode
+  | .dictExt op =>
+      match op with
+      | .lddicts preload =>
+          return natToBits (if preload then 0xf403 else 0xf402) 16
+      | .mutGet intKey unsigned byRef mode =>
+          -- DICT*{SET,REPLACE,ADD,DEL}GET{REF?}: 0xf41a..0xf41f / 0xf42a..0xf42f / 0xf43a..0xf43f / 0xf462..0xf467.
+          let base : Nat :=
+            match mode with
+            | .set => 0xf41a
+            | .replace => 0xf42a
+            | .add => 0xf43a
+            | .del => 0xf462
+          let w16 : Nat :=
+            if !intKey then
+              if unsigned then 0 else base + (if byRef then 1 else 0)
+            else
+              let kind : Nat := if unsigned then 4 else 2
+              base + kind + (if byRef then 1 else 0)
+          if w16 = 0 then
+            throw .invOpcode
+          return natToBits w16 16
+      | .mutGetB intKey unsigned mode =>
+          -- DICT*{SET,REPLACE,ADD}GETB (builder): 0xf445..0xf447 / 0xf44d..0xf44f / 0xf455..0xf457.
+          let base : Nat :=
+            match mode with
+            | .set => 0xf445
+            | .replace => 0xf44d
+            | .add => 0xf455
+          let w16 : Nat :=
+            if !intKey then
+              if unsigned then 0 else base
+            else
+              base + (if unsigned then 2 else 1)
+          if w16 = 0 then
+            throw .invOpcode
+          return natToBits w16 16
+      | .del intKey unsigned =>
+          -- DICT{I,U}?DEL: 0xf459..0xf45b.
+          let base : Nat := 0xf459
+          let w16 : Nat :=
+            if !intKey then
+              if unsigned then 0 else base
+            else
+              base + (if unsigned then 2 else 1)
+          if w16 = 0 then
+            throw .invOpcode
+          return natToBits w16 16
+      | .getOptRef intKey unsigned =>
+          -- DICT{I,U}?GETOPTREF: 0xf469..0xf46b.
+          let base : Nat := 0xf469
+          let w16 : Nat :=
+            if !intKey then
+              if unsigned then 0 else base
+            else
+              base + (if unsigned then 2 else 1)
+          if w16 = 0 then
+            throw .invOpcode
+          return natToBits w16 16
+      | .setGetOptRef intKey unsigned =>
+          -- DICT{I,U}?SETGETOPTREF: 0xf46d..0xf46f.
+          let base : Nat := 0xf46d
+          let w16 : Nat :=
+            if !intKey then
+              if unsigned then 0 else base
+            else
+              base + (if unsigned then 2 else 1)
+          if w16 = 0 then
+            throw .invOpcode
+          return natToBits w16 16
+      | .subdictGet intKey unsigned rp =>
+          -- SUBDICT*GET / SUBDICT*RPGET: 0xf4b1..0xf4b3 / 0xf4b5..0xf4b7.
+          let base : Nat := if rp then 0xf4b5 else 0xf4b1
+          let w16 : Nat :=
+            if !intKey then
+              if unsigned then 0 else base
+            else
+              base + (if unsigned then 2 else 1)
+          if w16 = 0 then
+            throw .invOpcode
+          return natToBits w16 16
+      | .pfxSet mode =>
+          -- PFXDICT{SET,REPLACE,ADD}: 0xf470..0xf472.
+          let w16 : Nat :=
+            match mode with
+            | .set => 0xf470
+            | .replace => 0xf471
+            | .add => 0xf472
+          return natToBits w16 16
+      | .pfxDel =>
+          -- PFXDICTDEL: 0xf473.
+          return natToBits 0xf473 16
+      | .pfxGet kind =>
+          -- PFXDICTGET{Q, ,JMP,EXEC}: 0xf4a8..0xf4ab.
+          let w16 : Nat :=
+            match kind with
+            | .getQ => 0xf4a8
+            | .get => 0xf4a9
+            | .getJmp => 0xf4aa
+            | .getExec => 0xf4ab
+          return natToBits w16 16
+      | .pfxSwitch _ _ =>
+          -- PFXDICTSWITCH has an inline dict ref; use OracleCase.codeCell? for oracle tests.
+          throw .invOpcode
   | .blkdrop2 x y =>
       if x ≤ 15 ∧ y ≤ 15 then
         let args : Nat := (x <<< 4) + y
@@ -1607,14 +1708,19 @@ def encodeCp0 (i : Instr) : Except Excno BitString := do
       return natToBits w16 16
   | .dictSetB intKey unsigned mode =>
       -- DICT{I,U}?SETB (builder value): 0xf441..0xf443.
-      -- MVP: only SETB is supported by the cp0 encoding/decoding in this repo.
-      if mode != .set then
-        throw .invOpcode
+      -- DICT*ADDB (builder): 0xf451..0xf453.
+      let base : Nat :=
+        match mode with
+        | .set => 0xf441
+        | .add => 0xf451
+        | .replace => 0
       let w16 : Nat :=
-        if !intKey then
-          if unsigned then 0 else 0xf441
+        if base = 0 then
+          0
+        else if !intKey then
+          if unsigned then 0 else base
         else
-          if unsigned then 0xf443 else 0xf442
+          base + (if unsigned then 2 else 1)
       if w16 = 0 then
         throw .invOpcode
       return natToBits w16 16

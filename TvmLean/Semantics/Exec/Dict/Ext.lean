@@ -289,13 +289,17 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           let keyBits? : Option BitString ←
             if mode == .del then
               if intKey then
-                let idxVal ← VM.popInt
-                match idxVal with
-                | .nan => throw .rangeChk
-                | .num idx =>
-                    match dictKeyBits? idx n unsigned with
-                    | some bs => pure (some bs)
-                    | none => throw .rangeChk
+                let idx ←
+                  if byRef then
+                    VM.popIntFinite
+                  else
+                    let idxVal ← VM.popInt
+                    match idxVal with
+                    | .nan => throw .rangeChk
+                    | .num idx => pure idx
+                match dictKeyBits? idx n unsigned with
+                | some bs => pure (some bs)
+                | none => throw .rangeChk
               else
                 let keySlice ← VM.popSlice
                 if keySlice.haveBits n then
@@ -729,15 +733,17 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
 
       | .pfxSwitch dictCell keyLen =>
           let cs0 ← VM.popSlice
+          -- Precharge root load; keep it out of `loaded` to avoid double-charging.
           VM.registerCellLoad dictCell
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
           match DictExt.pfxLookupPrefixWithCells (some dictCell) keyBits keyBits.size keyLen with
           | .error e => throw e
-          | .ok (none, _pos, loaded) =>
+          | .ok (none, _pos, loaded0) =>
+              let loaded := DictExt.loadedWithoutRoot (some dictCell) loaded0
               DictExt.registerLoaded loaded
               VM.push (.slice cs0)
           | .ok (some valueSlice, pfxLen, loaded0) =>
-              let loaded := loaded0
+              let loaded := DictExt.loadedWithoutRoot (some dictCell) loaded0
               DictExt.registerLoaded loaded
               let (pfxSlice, cs1) ←
                 match DictExt.slicePrefix cs0 pfxLen 0 with

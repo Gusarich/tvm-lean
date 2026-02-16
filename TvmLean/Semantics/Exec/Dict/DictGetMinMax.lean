@@ -75,7 +75,7 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
           for c in loaded1 do
             VM.registerCellLoad c
           if created > 0 then
-            modify fun st => st.consumeGas (cellCreateGasPrice * Int.ofNat created)
+            VM.consumeGas (cellCreateGasPrice * Int.ofNat created)
 
           if remove then
             match dictOut? with
@@ -99,7 +99,7 @@ def execInstrDictDictGetMinMax (i : Instr) (next : VM Unit) : VM Unit := do
                 Int.ofNat (bitsToNat keyBits)
             VM.pushIntQuiet (.num keyOut) false
           else
-            modify fun st => st.consumeGas cellCreateGasPrice
+            VM.consumeGas cellCreateGasPrice
             let keyCell : Cell := Cell.mkOrdinary keyBits #[]
             VM.push (.slice (Slice.ofCell keyCell))
 

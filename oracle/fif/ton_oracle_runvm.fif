@@ -2,7 +2,7 @@
 //
 // Usage:
 //   /Users/daniil/Coding/ton/build/crypto/fift -I/Users/daniil/Coding/ton/crypto/fift/lib -s oracle/fif/ton_oracle_runvm.fif \
-//     <code_boc_hex> [stack_args...]
+//     <code_boc_hex> [GAS <gas_limit>] [LIB <lib_collection_boc_hex>] [stack_args...]
 //
 // `code_boc_hex` is a hex-encoded BOC of a *code cell* (no 0x prefix).
 //
@@ -37,11 +37,24 @@ variable argi
 // If omitted, libraries are cleared (empty).
 null vmlibs !
 2 argi !
-$# 2 >= {
-  2 $() "LIB" $= {
-    $# 3 < { abort"missing LIB argument: expected <lib_collection_boc_hex> at $3" } if
-    3 $() x>B B>boc vmlibs !
-    4 argi !
+
+// Optionally set runvmx gas limit (defaults to 1_000_000 in the included lib).
+$# argi @ >= {
+  argi @ $() "GAS" $= {
+    $# argi @ 1+ < { abort"missing GAS argument: expected <gas_limit> after GAS" } if
+    argi @ 1+ $() parse-int oracle_gas_limit !
+    argi @ 2 + argi !
+  } { } cond
+} { } cond
+
+// Optionally set VM library collections for XLOAD{Q}.
+// Usage extension:
+//   <code_boc_hex> [GAS <gas_limit>] LIB <lib_collection_boc_hex> [stack_args...]
+$# argi @ >= {
+  argi @ $() "LIB" $= {
+    $# argi @ 1+ < { abort"missing LIB argument: expected <lib_collection_boc_hex> after LIB" } if
+    argi @ 1+ $() x>B B>boc vmlibs !
+    argi @ 2 + argi !
   } { } cond
 } { } cond
 
