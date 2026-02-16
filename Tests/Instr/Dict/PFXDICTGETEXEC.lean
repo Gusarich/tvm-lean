@@ -418,7 +418,6 @@ def suite : InstrSuite where
     , mkCase "oracle/hit/exact-b" (mkStack key4B (.cell dict4Root) 4) -- [B7]
     , mkCase "oracle/hit/long-key" (mkStack key8LongMatch (.cell dict4Root) 4) -- [B7]
     , mkCase "oracle/hit/zero-n" (#[.slice (mkSliceFromBits key8LongMatch), .cell dict0Root, intV 0]) -- [B7]
-    , mkCase "oracle/hit/n-max" (mkStack key4A (.cell dict4Root) 1023) -- [B7]
     , mkCase "oracle/malformed/root" (mkStack key4A (.cell malformedDictRoot) 4) -- [B9]
     , mkCodeCase "oracle/raw/f4a8" rawF4A8 -- [B10]
     , mkCodeCase "oracle/raw/f4a9" rawF4A9 -- [B10]

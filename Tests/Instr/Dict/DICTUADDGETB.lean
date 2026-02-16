@@ -279,19 +279,19 @@ private def createBitsSlice4 : Nat :=
 private def createBitsSliceMiss32 : Nat :=
   createdBitsForAdd none (natToBits 0xD 4)
 
-private def createBitsSigned4 : Nat :=
-  createdBitsForAdd none (dictKeyBits! "create-signed4" 4 false 5)
+private def createBitsSigned4MissExisting : Nat :=
+  createdBitsForAdd (some dictSigned4) (dictKeyBits! "create-signed4-miss-existing" 4 false 6)
 
-private def createBitsUnsigned4 : Nat :=
-  createdBitsForAdd none (dictKeyBits! "create-unsigned4" 4 true 5)
+private def createBitsUnsigned8MissExisting : Nat :=
+  createdBitsForAdd (some dictUnsigned8) (dictKeyBits! "create-unsigned8-miss-existing" 8 true 7)
 
 private def dictAddGetBExactGas : Int := computeExactGasBudget instrSlice
 private def dictAddGetBMissSliceGas : Int :=
   dictAddGetBExactGas + (Int.ofNat createBitsSlice4) * cellCreateGasPrice
 private def dictAddGetBMissSignedGas : Int :=
-  dictAddGetBExactGas + (Int.ofNat createBitsSigned4) * cellCreateGasPrice
+  dictAddGetBExactGas + (Int.ofNat createBitsSigned4MissExisting) * cellCreateGasPrice
 private def dictAddGetBMissUnsignedGas : Int :=
-  dictAddGetBExactGas + (Int.ofNat createBitsUnsigned4) * cellCreateGasPrice
+  dictAddGetBExactGas + (Int.ofNat createBitsUnsigned8MissExisting) * cellCreateGasPrice
 private def dictAddGetBMissSliceGasMinusOne : Int :=
   if dictAddGetBMissSliceGas > 0 then dictAddGetBMissSliceGas - 1 else 0
 private def dictAddGetBMissSignedGasMinusOne : Int :=

@@ -71,7 +71,8 @@ private def fallbackSentinel : Int := 123_901
 private def maxUInt256 : Int := Int.ofNat ((1 <<< 256) - 1)
 
 private def maxKeyBits (root : Cell) (n : Nat) : Option BitString :=
-  match dictMinMaxWithCells (some root) n false true with
+  -- DICTUREMMIN uses unsigned integer keys (`invertFirst = false`).
+  match dictMinMaxWithCells (some root) n false false with
   | .ok (some (_, keyBits), _) => some keyBits
   | _ => none
 

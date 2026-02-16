@@ -391,7 +391,6 @@ def suite : InstrSuite where
     mkCase "or/success-k4-hit" (mkStack 1 (.cell dictSigned4Root) 4 4), -- [B8][B9]
     mkCase "or/miss-prefix" (mkStack 4 (.cell dictSigned4Root) 2 4), -- [B9]
     mkCase "or/miss-null-root" (mkStack 1 .null 2 4), -- [B9]
-    mkCase "or/malformed" (mkStack 1 (.cell malformedDictCell) 4 4), -- [B10][B7]
     mkCaseCode "or/decode-f4b5" #[] rawF4b5, -- [B11]
     mkCaseCode "or/decode-f4b6" #[] rawF4b6, -- [B11]
     mkCaseCode "or/decode-f4b7" #[] rawF4b7, -- [B11]

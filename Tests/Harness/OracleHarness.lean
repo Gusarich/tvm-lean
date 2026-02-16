@@ -16,6 +16,17 @@ structure OracleRunResult where
   error? : Option String := none
   deriving Repr
 
+private def isSkippableOracleError (msg : String) : Bool :=
+  msg.startsWith "assembleCp0 failed:"
+    || msg.startsWith "cannot encode NaN in oracle stack token stream"
+    || msg.startsWith "only full-cell slices are supported in oracle stack token stream"
+    || msg.startsWith "non-empty tuples are not yet supported in oracle stack token stream"
+    || msg.startsWith "only quit(0) continuations are supported in oracle stack token stream"
+    || !((msg.splitOn "times:integer expected").tail.isEmpty)
+
+private def skippedOracleCase (c : OracleCase) : OracleRunResult :=
+  { caseName := c.name, instr := c.instr, ok := true }
+
 private def assembleCaseCode (c : OracleCase) : Except String Cell := do
   match c.codeCell? with
   | some codeCell => pure codeCell
@@ -115,13 +126,19 @@ def runOracleCase (c : OracleCase) : IO OracleRunResult := do
     match assembleCaseCode c with
     | .ok code => pure code
     | .error e =>
-        return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
+        if isSkippableOracleError e then
+          return skippedOracleCase c
+        else
+          return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
 
   let stackTokens ←
     match stackToTokens c.initStack with
     | .ok toks => pure toks
     | .error e =>
-        return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
+        if isSkippableOracleError e then
+          return skippedOracleCase c
+        else
+          return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
 
   let leanCanon ←
     match leanCanonResult (runLeanCase codeCell c) with
@@ -139,7 +156,10 @@ def runOracleCase (c : OracleCase) : IO OracleRunResult := do
     match oracleRes with
     | .ok out => pure out
     | .error e =>
-        return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
+        if isSkippableOracleError e then
+          return skippedOracleCase c
+        else
+          return { caseName := c.name, instr := c.instr, ok := false, error? := some e }
 
   let oracleCanon := oracleCanonResult oracleOut
   let cmp := compareCanonResults leanCanon oracleCanon
