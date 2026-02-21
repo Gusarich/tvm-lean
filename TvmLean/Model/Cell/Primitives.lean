@@ -1062,6 +1062,7 @@ partial def dictExtractPrefixSubdictWithCells (root : Option Cell) (keyBits : Na
         let loaded := loaded.push cell
         let remaining : Nat := keyBits - m
         let lbl ← parseDictLabel cell remaining
+        let rem0 ← dictValidateNodeExt lbl remaining
         let labelBits : BitString := dictLabelBits lbl
         let l : Nat := Nat.min (prefixLen - m) lbl.len
         let prefixPart : BitString := pfx.extract m (m + l)
@@ -1072,6 +1073,8 @@ partial def dictExtractPrefixSubdictWithCells (root : Option Cell) (keyBits : Na
           let m1 : Nat := m + lbl.len
           if m1 ≥ prefixLen then
             throw .fatal
+          if rem0 = 0 then
+            throw .dictErr
           if !lbl.remainder.haveRefs 2 then
             throw .dictErr
           let swBit : Bool := pfx[m1]!
@@ -1098,5 +1101,45 @@ partial def dictExtractPrefixSubdictWithCells (root : Option Cell) (keyBits : Na
             return (some b1.finalize, true, 1, loaded)
 
       go rootCell 0 #[]
+
+partial def dictExtractPrefixSubdictVisitedCells (root : Option Cell) (keyBits : Nat)
+    (pfx : BitString) (prefixLen : Nat) : Array Cell :=
+  match root with
+  | none => #[]
+  | some rootCell =>
+      if prefixLen = 0 then
+        #[]
+      else if prefixLen > keyBits then
+        #[]
+      else
+        let rec go (cell : Cell) (m : Nat) : Array Cell :=
+          let here : Array Cell := #[cell]
+          let remaining : Nat := keyBits - m
+          match parseDictLabel cell remaining with
+          | .error _ => here
+          | .ok lbl =>
+              match dictValidateNodeExt lbl remaining with
+              | .error _ => here
+              | .ok rem0 =>
+                  let labelBits : BitString := dictLabelBits lbl
+                  let l : Nat := Nat.min (prefixLen - m) lbl.len
+                  let prefixPart : BitString := pfx.extract m (m + l)
+                  if bitsCommonPrefixLen labelBits prefixPart < l then
+                    here
+                  else if m + lbl.len < prefixLen then
+                    let m1 : Nat := m + lbl.len
+                    if m1 ≥ prefixLen then
+                      here
+                    else if rem0 = 0 then
+                      here
+                    else if !lbl.remainder.haveRefs 2 then
+                      here
+                    else
+                      let swBit : Bool := pfx[m1]!
+                      let child := lbl.remainder.cell.refs[if swBit then 1 else 0]!
+                      here ++ go child (m1 + 1)
+                  else
+                    here
+        go rootCell 0
 
 end TvmLean

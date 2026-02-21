@@ -357,20 +357,7 @@ def VmState.runTrace (host : Host) (fuel : Nat) (st : VmState) (maxTrace : Nat :
         res := .halt (Excno.fatal.toInt) st'
     | .halt _ _ => pure ()
 
-    -- Mirror the C++ commit wrapper shape; precise commit checks come later.
-    let res' :=
-      match res with
-      | .continue st' => .halt (Excno.fatal.toInt) st'
-      | .halt exitCode st' =>
-          if exitCode = -1 ∨ exitCode = -2 then
-            let (ok, st'') := st'.tryCommit
-            if ok then
-              .halt exitCode st''
-            else
-              let stFail := { st'' with stack := #[.int (.num 0)] }
-              .halt (~~~ Excno.cellOv.toInt) stFail
-          else
-            .halt exitCode st'
+    let res' := VmState.finalizeRunResult res
 
     let traceOut :=
       if wrapped && trace.size > 0 then

@@ -42,600 +42,7 @@ def bitsToIntSignedTwos (bs : BitString) : Int :=
 
 set_option maxHeartbeats 1000000 in
 set_option maxRecDepth 2048 in
-def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
-  -- PUSHINT (tinyint4): 4-bit prefix 0x7, 4-bit immediate.
-  let p4 ← s.peekBitsAsNat 4
-  if p4 = 0x7 then
-    let (b8, s') ← s.takeBitsAsNat 8
-    let imm4 : Nat := b8 &&& 0xf
-    let x : Int := Int.ofNat ((imm4 + 5) &&& 0xf) - 5
-    return (.pushInt (.num x), 8, s')
-
-  -- PUSHCONT (tiny, 4-bit prefix 0x9): 4-bit prefix + 4-bit len (bytes), then that many bytes of inline code.
-  if p4 = 0x9 then
-    let (b8, s8) ← s.takeBitsAsNat 8
-    let lenBytes : Nat := b8 &&& 0xf
-    let dataBits : Nat := lenBytes * 8
-    if !s8.haveBits dataBits then
-      throw .invOpcode
-    let codeBits := s8.readBits dataBits
-    let rest := s8.advanceBits dataBits
-    let codeCell : Cell := Cell.mkOrdinary codeBits #[]
-    return (.pushCont (Slice.ofCell codeCell), 8, rest)
-
-  -- Exception opcodes: THROW / THROWIF / THROWIFNOT short/long.
-  -- Short: 10-bit prefix (0xf200 / 0xf240 / 0xf280 >> 6) + 6-bit excno.
-  if s.haveBits 10 then
-    let p10 := bitsToNat (s.readBits 10)
-    if p10 = (0xf200 >>> 6) ∨ p10 = (0xf240 >>> 6) ∨ p10 = (0xf280 >>> 6) then
-      let (_, s10) ← s.takeBitsAsNat 10
-      let (exc, s16) ← s10.takeBitsAsNat 6
-      let e : Int := Int.ofNat exc
-      if p10 = (0xf200 >>> 6) then
-        return (.throw e, 16, s16)
-      else if p10 = (0xf240 >>> 6) then
-        return (.throwIf e, 16, s16)
-      else
-        return (.throwIfNot e, 16, s16)
-  -- Long: 13-bit prefix (0xf2c0 / 0xf2d0 / 0xf2e0 >> 3) + 11-bit excno.
-  if s.haveBits 13 then
-    let p13 := bitsToNat (s.readBits 13)
-    if p13 = (0xf2c0 >>> 3) ∨ p13 = (0xf2d0 >>> 3) ∨ p13 = (0xf2e0 >>> 3) then
-      let (_, s13) ← s.takeBitsAsNat 13
-      let (exc, s24) ← s13.takeBitsAsNat 11
-      let e : Int := Int.ofNat exc
-      if p13 = (0xf2c0 >>> 3) then
-        return (.throw e, 24, s24)
-      else if p13 = (0xf2d0 >>> 3) then
-        return (.throwIf e, 24, s24)
-      else
-        return (.throwIfNot e, 24, s24)
-
-    -- THROWARG / THROWARGIF / THROWARGIFNOT: 13-bit prefix (0xf2c8 / 0xf2d8 / 0xf2e8 >> 3) + 11-bit excno.
-    if p13 = (0xf2c8 >>> 3) ∨ p13 = (0xf2d8 >>> 3) ∨ p13 = (0xf2e8 >>> 3) then
-      let (_, s13) ← s.takeBitsAsNat 13
-      let (exc, s24) ← s13.takeBitsAsNat 11
-      let e : Int := Int.ofNat exc
-      if p13 = (0xf2c8 >>> 3) then
-        return (.throwArg e, 24, s24)
-      else if p13 = (0xf2d8 >>> 3) then
-        return (.throwArgIf e, 24, s24)
-      else
-        return (.throwArgIfNot e, 24, s24)
-
-    -- SDBEGINS{Q} (const): 13-bit prefix (0xd728 >> 3) + 8-bit args + inline bits (args*8+3).
-    if p13 = (0xd728 >>> 3) then
-      if !s.haveBits 21 then
-        throw .invOpcode
-      let (_, s13) ← s.takeBitsAsNat 13
-      let (args8, s21) ← s13.takeBitsAsNat 8
-      let quiet : Bool := (args8 &&& 0x80) = 0x80
-      let dataBits : Nat := (args8 &&& 0x7f) * 8 + 3
-      if !s21.haveBits dataBits then
-        throw .invOpcode
-      let raw := s21.readBits dataBits
-      let rest := s21.advanceBits dataBits
-      let bits := bitsStripTrailingMarker raw
-      let cell : Cell := Cell.mkOrdinary bits #[]
-      return (.sdBeginsConst quiet (Slice.ofCell cell), 21, rest)
-
-  -- DICTPUSHCONST (24-bit, +1 ref): 0xf4a4..0xf4a7 + 10-bit key size.
-  if s.haveBits 24 then
-    let w24 := bitsToNat (s.readBits 24)
-
-    -- PREVMCBLOCKS / PREVKEYBLOCK / PREVMCBLOCKS_100 (24-bit): 0xf83400..0xf83402.
-    if w24 = 0xf83400 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.tonEnvOp .prevMcBlocks, 24, s24)
-    if w24 = 0xf83401 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.tonEnvOp .prevKeyBlock, 24, s24)
-    if w24 = 0xf83402 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.tonEnvOp .prevMcBlocks100, 24, s24)
-
-    -- BLS_* (24-bit): 0xf93000..0xf93031.
-    if w24 >>> 8 = 0xf930 then
-      let op : Nat := w24 &&& 0xff
-      let (_, s24) ← s.takeBitsAsNat 24
-      match op with
-      | 0x00 => return (.cryptoOp (.ext .blsVerify), 24, s24)
-      | 0x01 => return (.cryptoOp (.ext .blsAggregate), 24, s24)
-      | 0x02 => return (.cryptoOp (.ext .blsFastAggregateVerify), 24, s24)
-      | 0x03 => return (.cryptoOp (.ext .blsAggregateVerify), 24, s24)
-      | 0x10 => return (.cryptoOp (.ext .blsG1Add), 24, s24)
-      | 0x11 => return (.cryptoOp (.ext .blsG1Sub), 24, s24)
-      | 0x12 => return (.cryptoOp (.ext .blsG1Neg), 24, s24)
-      | 0x13 => return (.cryptoOp (.ext .blsG1Mul), 24, s24)
-      | 0x14 => return (.cryptoOp (.ext .blsG1MultiExp), 24, s24)
-      | 0x15 => return (.cryptoOp (.ext .blsG1Zero), 24, s24)
-      | 0x16 => return (.cryptoOp (.ext .blsMapToG1), 24, s24)
-      | 0x17 => return (.cryptoOp (.ext .blsG1InGroup), 24, s24)
-      | 0x18 => return (.cryptoOp (.ext .blsG1IsZero), 24, s24)
-      | 0x20 => return (.cryptoOp (.ext .blsG2Add), 24, s24)
-      | 0x21 => return (.cryptoOp (.ext .blsG2Sub), 24, s24)
-      | 0x22 => return (.cryptoOp (.ext .blsG2Neg), 24, s24)
-      | 0x23 => return (.cryptoOp (.ext .blsG2Mul), 24, s24)
-      | 0x24 => return (.cryptoOp (.ext .blsG2MultiExp), 24, s24)
-      | 0x25 => return (.cryptoOp (.ext .blsG2Zero), 24, s24)
-      | 0x26 => return (.cryptoOp (.ext .blsMapToG2), 24, s24)
-      | 0x27 => return (.cryptoOp (.ext .blsG2InGroup), 24, s24)
-      | 0x28 => return (.cryptoOp (.ext .blsG2IsZero), 24, s24)
-      | 0x30 => return (.cryptoOp (.ext .blsPairing), 24, s24)
-      | 0x31 => return (.cryptoOp (.ext .blsPushR), 24, s24)
-      | _ => throw .invOpcode
-
-    -- BCHKBITS / BCHKBITSQ (24-bit): 16-bit opcode 0xcf38/0xcf3c + 8-bit arg (bits-1).
-    let p16 := w24 >>> 8
-    if p16 = 0xcf38 ∨ p16 = 0xcf3c then
-      let bits : Nat := (w24 &&& 0xff) + 1
-      let quiet : Bool := p16 = 0xcf3c
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.cellOp (.bchkBitsImm bits quiet), 24, s24)
-
-    -- GETPARAMLONG / INMSGPARAMS (24-bit): 0xf88100..0xf881ff.
-    if w24 >>> 8 = 0xf881 then
-      let idx : Nat := w24 &&& 0xff
-      -- C++ uses two fixed ranges with an exclusive upper bound; 0xff is reserved/invalid.
-      if idx = 0xff then
-        throw .invOpcode
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.tonEnvOp (.getParam idx), 24, s24)
-    if 0xf4a400 ≤ w24 ∧ w24 < 0xf4a800 then
-      if !s.haveRefs 1 then
-        throw .invOpcode
-      -- Layout (pfx_bits=24):
-      --   advance 13; take 1 bit (maybe), take 1 ref; take 10-bit n.
-      let (_, s13) ← s.takeBitsAsNat 13
-      let (_, s14) ← s13.takeBitsAsNat 1
-      let (dictCell, sRef) ← s14.takeRefInv
-      let (n, s24) ← sRef.takeBitsAsNat 10
-      return (.dictPushConst dictCell n, 24, s24)
-
-    -- PFXDICTSWITCH (24-bit, +1 ref): 14-bit prefix 0x3d2b + 10-bit key_len, then 1 ref (dict).
-    if w24 >>> 10 = 0x3d2b then
-      if !s.haveRefs 1 then
-        throw .invOpcode
-      let keyLen : Nat := w24 &&& 0x3ff
-      let (_, s24) ← s.takeBitsAsNat 24
-      let (dictCell, rest) ← s24.takeRefInv
-      return (.dictExt (.pfxSwitch dictCell keyLen), 24, rest)
-
-    -- PREPAREDICT <idx> (24-bit): 10-bit prefix (0xf180 >> 6) + 14-bit args.
-    -- Matches C++ `exec_preparedict` (contops.cpp).
-    let p10 := w24 >>> 14
-    if p10 = (0xf180 >>> 6) then
-      let idx : Nat := w24 &&& 0x3fff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.prepareDict idx, 24, s24)
-
-    -- CALLDICT_LONG / JMPDICT (24-bit): 10-bit prefix (0x3c4/0x3c5) + 14-bit args.
-    if p10 = 0x3c4 then
-      let idx : Nat := w24 &&& 0x3fff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.callDict idx, 24, s24)
-    if p10 = 0x3c5 then
-      let idx : Nat := w24 &&& 0x3fff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt (.jmpDict idx), 24, s24)
-
-    -- SETCONTCTRMANY (24-bit): 16-bit opcode 0xede3 + 8-bit arg (mask).
-    let p16 := w24 >>> 8
-    if p16 = 0xede3 then
-      let mask : Nat := w24 &&& 0xff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt (.setContCtrMany mask), 24, s24)
-
-    -- RUNVM (24-bit): 12-bit prefix (0xdb4) + 12-bit mode.
-    if w24 >>> 12 = 0xdb4 then
-      let mode : Nat := w24 &&& 0xfff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt (.runvm mode), 24, s24)
-
-    -- HASHEXT (24-bit): 14-bit prefix (0xf904 >> 2) + 10-bit args (hash_id8 + rev + append).
-    -- Matches C++ `exec_hash_ext` / `dump_hash_ext` (TON version >= 4).
-    let p14 := w24 >>> 10
-    if p14 = (0xf904 >>> 2) then
-      let args10 : Nat := w24 &&& 0x3ff
-      let rev : Bool := ((args10 >>> 8) &&& 1) = 1
-      let append : Bool := ((args10 >>> 9) &&& 1) = 1
-      let hashId : Nat := args10 &&& 0xff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.cryptoOp (.hashExt hashId append rev), 24, s24)
-
-    -- {P}LDSLICE{Q} <bits> (24-bit): 14-bit prefix (0xd71c >> 2) + 10-bit args (flags2 + bits8).
-    -- Matches C++ `exec_load_slice_fixed2`.
-    if p14 = (0xd71c >>> 2) then
-      let args10 : Nat := w24 &&& 0x3ff
-      let flags2 : Nat := args10 >>> 8
-      let bits : Nat := (args10 &&& 0xff) + 1
-      let prefetch : Bool := (flags2 &&& 1) = 1
-      let quiet : Bool := (flags2 &&& 2) = 2
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.loadSliceFixed prefetch quiet bits, 24, s24)
-
-    -- QLSHIFT / QRSHIFT (24-bit): 16-bit opcode 0xb7aa/0xb7ab + 8-bit arg.
-    if p16 = 0xb7aa then
-      let bits : Nat := (w24 &&& 0xff) + 1
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.lshiftConst true bits, 24, s24)
-    if p16 = 0xb7ab then
-      let bits : Nat := (w24 &&& 0xff) + 1
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.rshiftConst true bits, 24, s24)
-    if w24 = 0xb7b600 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt .qfitsx, 24, s24)
-    if w24 = 0xb7b601 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt .qufitsx, 24, s24)
-    if w24 = 0xb7b602 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt .qbitsize, 24, s24)
-    if w24 = 0xb7b603 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.ubitsize true, 24, s24)
-    if w24 = 0xb7b608 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.contExt .qmin, 24, s24)
-    if w24 = 0xb7b609 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.qmax, 24, s24)
-    if w24 = 0xb7b60b then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.abs true, 24, s24)
-    if w24 = 0xb7b60a then
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.qminmax, 24, s24)
-
-    -- QADDINT / QMULINT (24-bit): 0xb7a6/0xb7a7 + imm8.
-    if p16 = 0xb7a6 then
-      let imm8 : Nat := w24 &&& 0xff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.arithExt (.qaddInt (natToIntSignedTwos imm8 8)), 24, s24)
-    if p16 = 0xb7a7 then
-      let imm8 : Nat := w24 &&& 0xff
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.arithExt (.qmulInt (natToIntSignedTwos imm8 8)), 24, s24)
-
-    -- QEQINT / QLESSINT / QGTINT / QNEQINT (24-bit): 0xb7c0..0xb7c3 + imm8.
-    if 0xb7c0 ≤ p16 ∧ p16 ≤ 0xb7c3 then
-      let imm8 : Nat := w24 &&& 0xff
-      let n : Int := natToIntSignedTwos imm8 8
-      let (_, s24) ← s.takeBitsAsNat 24
-      match p16 with
-      | 0xb7c0 => return (.arithExt (.qeqInt n), 24, s24)
-      | 0xb7c1 => return (.qlessInt n, 24, s24)
-      | 0xb7c2 => return (.arithExt (.qgtInt n), 24, s24)
-      | _ => return (.arithExt (.qneqInt n), 24, s24)
-
-    -- QFITS / QUFITS (24-bit): 0xb7b4/0xb7b5 + width8 (delta=1).
-    if p16 = 0xb7b4 ∨ p16 = 0xb7b5 then
-      let bits : Nat := (w24 &&& 0xff) + 1
-      let unsigned : Bool := p16 = 0xb7b5
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.arithExt (.fitsConst unsigned true bits), 24, s24)
-
-    -- QDIV/MOD family (24-bit): 20-bit prefix 0xb7a90 + 4-bit args.
-    let p20 := w24 >>> 4
-    if p20 = 0xb7a90 then
-      let args4 : Nat := w24 &&& 0xf
-      let roundEnc : Nat := args4 &&& 0x3
-      let dEnc : Nat := (args4 >>> 2) &&& 0x3
-      if roundEnc = 3 then
-        throw .invOpcode
-      let roundMode : Int := Int.ofNat roundEnc - 1
-      let (d, add) : (Nat × Bool) :=
-        if dEnc = 0 then
-          (3, true)
-        else
-          (dEnc, false)
-      if d = 0 ∨ roundMode = 2 then
-        throw .invOpcode
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.divMod d roundMode add true, 24, s24)
-
-    -- QMUL{DIV,MOD,DIVMOD} family (24-bit): 20-bit prefix 0xb7a98 + 4-bit args.
-    if p20 = 0xb7a98 then
-      let args4 : Nat := w24 &&& 0xf
-      let roundEnc : Nat := args4 &&& 0x3
-      let dEnc : Nat := (args4 >>> 2) &&& 0x3
-      if roundEnc = 3 then
-        throw .invOpcode
-      let roundMode : Int := Int.ofNat roundEnc - 1
-      let (d, add) : (Nat × Bool) :=
-        if dEnc = 0 then
-          (3, true)
-        else
-          (dEnc, false)
-      if d = 0 ∨ roundMode = 2 then
-        throw .invOpcode
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.mulDivMod d roundMode add true, 24, s24)
-
-    -- RIST255_Q* (24-bit): 0xb7f921..0xb7f925.
-    if w24 >>> 8 = 0xb7f9 then
-      let (_, s24) ← s.takeBitsAsNat 24
-      match w24 &&& 0xff with
-      | 0x21 => return (.cryptoOp (.ext .rist255Qvalidate), 24, s24)
-      | 0x22 => return (.cryptoOp (.ext .rist255Qadd), 24, s24)
-      | 0x23 => return (.cryptoOp (.ext .rist255Qsub), 24, s24)
-      | 0x24 => return (.cryptoOp (.ext .rist255Qmul), 24, s24)
-      | 0x25 => return (.cryptoOp (.ext .rist255QmulBase), 24, s24)
-      | _ => throw .invOpcode
-
-    -- Q-shrmod/shldivmod families (24-bit): 0xb7 + 16-bit opcode in the 0xa9** range.
-    if w24 >>> 16 = 0xb7 then
-      let op16 : Nat := w24 &&& 0xffff
-      let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
-
-      let decodeShrMod (start d : Nat) (mul add : Bool) : Option Instr :=
-        if start ≤ op16 ∧ op16 ≤ start + 2 then
-          let ofs : Nat := op16 - start
-          some (.arithExt (.shrMod mul add d (roundOfs ofs) true none))
-        else
-          none
-
-      let decodeShlDivMod (start d : Nat) (addMode : Bool) : Option Instr :=
-        if start ≤ op16 ∧ op16 ≤ start + 2 then
-          let ofs : Nat := op16 - start
-          some (.arithExt (.shlDivMod d (roundOfs ofs) addMode true none))
-        else
-          none
-
-      let candidates : List (Option Instr) :=
-        [ decodeShrMod 0xa920 3 false true
-        , decodeShrMod 0xa924 1 false false
-        , decodeShrMod 0xa928 2 false false
-        , decodeShrMod 0xa92c 3 false false
-        , decodeShrMod 0xa9a0 3 true true
-        , decodeShrMod 0xa9a4 1 true false
-        , decodeShrMod 0xa9a8 2 true false
-        , decodeShrMod 0xa9ac 3 true false
-        , decodeShlDivMod 0xa9c0 3 true
-        , decodeShlDivMod 0xa9c4 1 false
-        , decodeShlDivMod 0xa9c8 2 false
-        , decodeShlDivMod 0xa9cc 3 false
-        ]
-      let instr? : Option Instr := candidates.findSome? (fun x => x)
-
-      match instr? with
-      | some instr =>
-          let (_, s24) ← s.takeBitsAsNat 24
-          return (instr, 24, s24)
-      | none =>
-          pure ()
-
-    -- {RSHIFT,MODPOW2,RSHIFTMOD}# and related pow2 shift/divmod ops (24-bit): 16-bit opcode + arg8 (delta=1).
-    if (0xa930 ≤ p16 ∧ p16 ≤ 0xa93e) ∨ (0xa9b0 ≤ p16 ∧ p16 ≤ 0xa9b2) ∨ (0xa9d0 ≤ p16 ∧ p16 ≤ 0xa9de) then
-      let z : Nat := (w24 &&& 0xff) + 1
-      let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
-      let (_, s24) ← s.takeBitsAsNat 24
-      if 0xa930 ≤ p16 ∧ p16 ≤ 0xa932 then
-        let ofs : Nat := p16 - 0xa930
-        return (.arithExt (.shrMod false true 3 (roundOfs ofs) false (some z)), 24, s24)
-      if 0xa934 ≤ p16 ∧ p16 ≤ 0xa936 then
-        let ofs : Nat := p16 - 0xa934
-        return (.arithExt (.shrMod false false 1 (roundOfs ofs) false (some z)), 24, s24)
-      if 0xa938 ≤ p16 ∧ p16 ≤ 0xa93a then
-        let ofs : Nat := p16 - 0xa938
-        return (.arithExt (.shrMod false false 2 (roundOfs ofs) false (some z)), 24, s24)
-      if 0xa93c ≤ p16 ∧ p16 ≤ 0xa93e then
-        let ofs : Nat := p16 - 0xa93c
-        return (.arithExt (.shrMod false false 3 (roundOfs ofs) false (some z)), 24, s24)
-      if 0xa9b0 ≤ p16 ∧ p16 ≤ 0xa9b2 then
-        let ofs : Nat := p16 - 0xa9b0
-        return (.arithExt (.shrMod true true 3 (roundOfs ofs) false (some z)), 24, s24)
-      if 0xa9d0 ≤ p16 ∧ p16 ≤ 0xa9d2 then
-        let ofs : Nat := p16 - 0xa9d0
-        return (.arithExt (.shlDivMod 3 (roundOfs ofs) true false (some z)), 24, s24)
-      if 0xa9d4 ≤ p16 ∧ p16 ≤ 0xa9d6 then
-        let ofs : Nat := p16 - 0xa9d4
-        return (.arithExt (.shlDivMod 1 (roundOfs ofs) false false (some z)), 24, s24)
-      if 0xa9d8 ≤ p16 ∧ p16 ≤ 0xa9da then
-        let ofs : Nat := p16 - 0xa9d8
-        return (.arithExt (.shlDivMod 2 (roundOfs ofs) false false (some z)), 24, s24)
-      if 0xa9dc ≤ p16 ∧ p16 ≤ 0xa9de then
-        let ofs : Nat := p16 - 0xa9dc
-        return (.arithExt (.shlDivMod 3 (roundOfs ofs) false false (some z)), 24, s24)
-      throw .invOpcode
-
-    -- Integer load from slice: 13-bit prefix (0xd708 >> 3) + 11-bit args.
-    -- Matches C++ `exec_load_int_fixed2`.
-    let p13 := w24 >>> 11
-    if p13 = (0xd708 >>> 3) then
-      let args11 : Nat := w24 &&& 0x7ff
-      let flags3 : Nat := args11 >>> 8
-      let bits : Nat := (args11 &&& 0xff) + 1
-      let unsigned : Bool := (flags3 &&& 1) = 1
-      let prefetch : Bool := (flags3 &&& 2) = 2
-      let quiet : Bool := (flags3 &&& 4) = 4
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.loadInt unsigned prefetch quiet bits, 24, s24)
-
-    -- ST{I,U}{R}{Q} <bits> (24-bit): 13-bit prefix (0xcf08 >> 3) + 11-bit args (flags3 + bits8).
-    -- Matches C++ `exec_store_int_fixed`.
-    if p13 = (0xcf08 >>> 3) then
-      let args11 : Nat := w24 &&& 0x7ff
-      let flags3 : Nat := args11 >>> 8
-      let bits : Nat := (args11 &&& 0xff) + 1
-      let unsigned : Bool := (flags3 &&& 1) = 1
-      let rev : Bool := (flags3 &&& 2) = 2
-      let quiet : Bool := (flags3 &&& 4) = 4
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.stIntFixed unsigned rev quiet bits, 24, s24)
-
-    -- XC2PU: 12-bit prefix 0x541 + 12-bit args (x,y,z nibbles).
-    let p12 := w24 >>> 12
-    if p12 = 0x540 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.xchg3 x y z, 24, s24)
-    if p12 = 0x541 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.xc2pu x y z, 24, s24)
-    if p12 = 0x542 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.xcpuxc x y z, 24, s24)
-    if p12 = 0x543 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.xcpu2 x y z, 24, s24)
-    if p12 = 0x544 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.puxc2 x y z, 24, s24)
-    if p12 = 0x545 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.puxcpu x y z, 24, s24)
-    if p12 = 0x546 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.pu2xc x y z, 24, s24)
-    if p12 = 0x547 then
-      let args12 : Nat := w24 &&& 0xfff
-      let x : Nat := (args12 >>> 8) &&& 0xf
-      let y : Nat := (args12 >>> 4) &&& 0xf
-      let z : Nat := args12 &&& 0xf
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.push3 x y z, 24, s24)
-
-    -- MUL{RSHIFT,MODPOW2,RSHIFTMOD}# (24-bit): 12-bit prefix 0xa9b + 12-bit args (cfg4 + z8).
-    if p12 = 0xa9b then
-      let args12 : Nat := w24 &&& 0xfff
-      let cfg4 : Nat := args12 >>> 8
-      let z : Nat := (args12 &&& 0xff) + 1
-      let roundMode : Int := Int.ofNat (cfg4 &&& 0x3) - 1
-      let d : Nat := (cfg4 >>> 2) &&& 0x3
-      if d = 0 ∨ roundMode = 2 then
-        throw .invOpcode
-      let (_, s24) ← s.takeBitsAsNat 24
-      return (.mulShrModConst d roundMode z, 24, s24)
-
-  -- PUSHCONT (general, 7-bit prefix 0x47): 7-bit prefix + 9-bit args + inline bits + inline refs.
-  if s.haveBits 16 then
-    let w16 := bitsToNat (s.readBits 16)
-    let p7 := w16 >>> 9
-    if p7 = 0x47 then
-      let args9 : Nat := w16 &&& 0x1ff
-      let refs : Nat := (args9 >>> 7) &&& 0x3
-      let lenBytes : Nat := args9 &&& 0x7f
-      let dataBits : Nat := lenBytes * 8
-      if !s.haveBits (16 + dataBits) then
-        throw .invOpcode
-      if !s.haveRefs refs then
-        throw .invOpcode
-      let (_, s16) ← s.takeBitsAsNat 16
-      let codeBits := s16.readBits dataBits
-      let mut rest := s16.advanceBits dataBits
-      let mut contRefs : Array Cell := #[]
-      for _ in [0:refs] do
-        let (c, rest') ← rest.takeRefInv
-        contRefs := contRefs.push c
-        rest := rest'
-      let codeCell : Cell := Cell.mkOrdinary codeBits contRefs
-      return (.pushCont (Slice.ofCell codeCell), 16, rest)
-
-  -- PUSHSLICE r2 (18-bit prefix): 0x8d + 3-bit refs (0..4) + 7-bit len, then inline bits/refs.
-  -- Matches C++ `exec_push_slice_r2`.
-  if s.haveBits 18 then
-    let w18 := bitsToNat (s.readBits 18)
-    if w18 >>> 10 = 0x8d then
-      let refs : Nat := (w18 >>> 7) &&& 0x7
-      if refs > 4 then
-        throw .invOpcode
-      let len7 : Nat := w18 &&& 0x7f
-      let dataBits : Nat := len7 * 8 + 6
-      if !s.haveBits (18 + dataBits) then
-        throw .invOpcode
-      if !s.haveRefs refs then
-        throw .invOpcode
-      let (_, s18) ← s.takeBitsAsNat 18
-      let raw := s18.readBits dataBits
-      let mut rest := s18.advanceBits dataBits
-      let mut refCells : Array Cell := #[]
-      for _ in [0:refs] do
-        let (c, rest') ← rest.takeRefInv
-        refCells := refCells.push c
-        rest := rest'
-      let bits := bitsStripTrailingMarker raw
-      let cell : Cell := Cell.mkOrdinary bits refCells
-      return (.pushSliceConst (Slice.ofCell cell), 18, rest)
-
-  -- PUSHSLICE_REFS (15-bit prefix): 0x8c + r:2 + bits:5, then (r+1) refs and (8*bits+1) inline bits.
-  -- Matches C++ `exec_push_slice_r`.
-  if s.haveBits 15 then
-    let w15 := bitsToNat (s.readBits 15)
-    if w15 >>> 7 = 0x8c then
-      let r : Nat := (w15 >>> 5) &&& 0x3
-      let bits5 : Nat := w15 &&& 0x1f
-      let refs : Nat := r + 1
-      let dataBits : Nat := bits5 * 8 + 1
-      if !s.haveBits (15 + dataBits) then
-        throw .invOpcode
-      if !s.haveRefs refs then
-        throw .invOpcode
-      let (_, s15) ← s.takeBitsAsNat 15
-      let raw := s15.readBits dataBits
-      let mut rest := s15.advanceBits dataBits
-      let mut refCells : Array Cell := #[]
-      for _ in [0:refs] do
-        let (c, rest') ← rest.takeRefInv
-        refCells := refCells.push c
-        rest := rest'
-      let bits := bitsStripTrailingMarker raw
-      let cell : Cell := Cell.mkOrdinary bits refCells
-      return (.pushSliceConst (Slice.ofCell cell), 15, rest)
-
-  -- PUSHINT (8/16/long)
-  -- STSLICECONST (inline constant slice): 9-bit prefix 0xcf80>>7 + 5-bit args, then inline slice bits/refs.
-  if s.haveBits 14 then
-    let w14 := bitsToNat (s.readBits 14)
-    if w14 >>> 5 = (0xcf80 >>> 7) then
-      let args5 : Nat := w14 &&& 0x1f
-      let refs : Nat := (args5 >>> 3) &&& 0x3
-      let dataBits : Nat := (args5 &&& 0x7) * 8 + 2
-      if !s.haveBits (14 + dataBits) then
-        throw .invOpcode
-      if !s.haveRefs refs then
-        throw .invOpcode
-      let (_, s14) ← s.takeBitsAsNat 14
-      let raw := s14.readBits dataBits
-      let mut rest := s14.advanceBits dataBits
-      let mut rs : Array Cell := #[]
-      for _ in [0:refs] do
-        let (c, rest') ← rest.takeRefInv
-        rs := rs.push c
-        rest := rest'
-      let bits := bitsStripTrailingMarker raw
-      let cell : Cell := Cell.mkOrdinary bits rs
-      return (.stSliceConst (Slice.ofCell cell), 14, rest)
-
-  let b8 ← s.peekBitsAsNat 8
+def decodeCp0WithBits_b8 (s : Slice) (b8 : Nat) : Except Excno (Instr × Nat × Slice) := do
   -- PUSHREF / PUSHREFSLICE: 0x88/0x89 (8) + 1 ref.
   if b8 = 0x88 then
     if !s.haveRefs 1 then
@@ -698,6 +105,48 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
   -- 16-bit control register ops: PUSH c<i>, POP c<i>.
   if s.haveBits 16 then
     let w16 := bitsToNat (s.readBits 16)
+    -- SHR/MOD pow2 family (16-bit): 0xa920..0xa92e / 0xa9a0..0xa9ae / 0xa9c0..0xa9ce.
+    let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+    if (0xa920 ≤ w16 ∧ w16 ≤ 0xa92e) ∨ (0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9ae) ∨ (0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9ce) then
+      let (_, s16) ← s.takeBitsAsNat 16
+      if 0xa920 ≤ w16 ∧ w16 ≤ 0xa922 then
+        let ofs : Nat := w16 - 0xa920
+        return (.arithExt (.shrMod false true 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa924 ≤ w16 ∧ w16 ≤ 0xa926 then
+        let ofs : Nat := w16 - 0xa924
+        return (.arithExt (.shrMod false false 1 (roundOfs ofs) false none), 16, s16)
+      if 0xa928 ≤ w16 ∧ w16 ≤ 0xa92a then
+        let ofs : Nat := w16 - 0xa928
+        return (.arithExt (.shrMod false false 2 (roundOfs ofs) false none), 16, s16)
+      if 0xa92c ≤ w16 ∧ w16 ≤ 0xa92e then
+        let ofs : Nat := w16 - 0xa92c
+        return (.arithExt (.shrMod false false 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9a2 then
+        let ofs : Nat := w16 - 0xa9a0
+        return (.arithExt (.shrMod true true 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa9a4 ≤ w16 ∧ w16 ≤ 0xa9a6 then
+        let ofs : Nat := w16 - 0xa9a4
+        return (.arithExt (.shrMod true false 1 (roundOfs ofs) false none), 16, s16)
+      if 0xa9a8 ≤ w16 ∧ w16 ≤ 0xa9aa then
+        let ofs : Nat := w16 - 0xa9a8
+        return (.arithExt (.shrMod true false 2 (roundOfs ofs) false none), 16, s16)
+      if 0xa9ac ≤ w16 ∧ w16 ≤ 0xa9ae then
+        let ofs : Nat := w16 - 0xa9ac
+        return (.arithExt (.shrMod true false 3 (roundOfs ofs) false none), 16, s16)
+      if 0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9c2 then
+        let ofs : Nat := w16 - 0xa9c0
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) true false none), 16, s16)
+      if 0xa9c4 ≤ w16 ∧ w16 ≤ 0xa9c6 then
+        let ofs : Nat := w16 - 0xa9c4
+        return (.arithExt (.shlDivMod 1 (roundOfs ofs) false false none), 16, s16)
+      if 0xa9c8 ≤ w16 ∧ w16 ≤ 0xa9ca then
+        let ofs : Nat := w16 - 0xa9c8
+        return (.arithExt (.shlDivMod 2 (roundOfs ofs) false false none), 16, s16)
+      if 0xa9cc ≤ w16 ∧ w16 ≤ 0xa9ce then
+        let ofs : Nat := w16 - 0xa9cc
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) false false none), 16, s16)
+      throw .invOpcode
+
     -- PLDUZ: 13-bit prefix (0x1ae2) + 3-bit arg.
     if w16 >>> 3 = 0x1ae2 then
       let c : Nat := w16 &&& 0x7
@@ -1152,48 +601,6 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         throw .invOpcode
       let (_, s16) ← s.takeBitsAsNat 16
       return (.mulDivMod d roundMode add false, 16, s16)
-
-    -- SHR/MOD pow2 family (16-bit): 0xa920..0xa92e / 0xa9a0..0xa9ae / 0xa9c0..0xa9ce.
-    let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
-    if (0xa920 ≤ w16 ∧ w16 ≤ 0xa92e) ∨ (0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9ae) ∨ (0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9ce) then
-      let (_, s16) ← s.takeBitsAsNat 16
-      if 0xa920 ≤ w16 ∧ w16 ≤ 0xa922 then
-        let ofs : Nat := w16 - 0xa920
-        return (.arithExt (.shrMod false true 3 (roundOfs ofs) false none), 16, s16)
-      if 0xa924 ≤ w16 ∧ w16 ≤ 0xa926 then
-        let ofs : Nat := w16 - 0xa924
-        return (.arithExt (.shrMod false false 1 (roundOfs ofs) false none), 16, s16)
-      if 0xa928 ≤ w16 ∧ w16 ≤ 0xa92a then
-        let ofs : Nat := w16 - 0xa928
-        return (.arithExt (.shrMod false false 2 (roundOfs ofs) false none), 16, s16)
-      if 0xa92c ≤ w16 ∧ w16 ≤ 0xa92e then
-        let ofs : Nat := w16 - 0xa92c
-        return (.arithExt (.shrMod false false 3 (roundOfs ofs) false none), 16, s16)
-      if 0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9a2 then
-        let ofs : Nat := w16 - 0xa9a0
-        return (.arithExt (.shrMod true true 3 (roundOfs ofs) false none), 16, s16)
-      if 0xa9a4 ≤ w16 ∧ w16 ≤ 0xa9a6 then
-        let ofs : Nat := w16 - 0xa9a4
-        return (.arithExt (.shrMod true false 1 (roundOfs ofs) false none), 16, s16)
-      if 0xa9a8 ≤ w16 ∧ w16 ≤ 0xa9aa then
-        let ofs : Nat := w16 - 0xa9a8
-        return (.arithExt (.shrMod true false 2 (roundOfs ofs) false none), 16, s16)
-      if 0xa9ac ≤ w16 ∧ w16 ≤ 0xa9ae then
-        let ofs : Nat := w16 - 0xa9ac
-        return (.arithExt (.shrMod true false 3 (roundOfs ofs) false none), 16, s16)
-      if 0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9c2 then
-        let ofs : Nat := w16 - 0xa9c0
-        return (.arithExt (.shlDivMod 3 (roundOfs ofs) true false none), 16, s16)
-      if 0xa9c4 ≤ w16 ∧ w16 ≤ 0xa9c6 then
-        let ofs : Nat := w16 - 0xa9c4
-        return (.arithExt (.shlDivMod 1 (roundOfs ofs) false false none), 16, s16)
-      if 0xa9c8 ≤ w16 ∧ w16 ≤ 0xa9ca then
-        let ofs : Nat := w16 - 0xa9c8
-        return (.arithExt (.shlDivMod 2 (roundOfs ofs) false false none), 16, s16)
-      if 0xa9cc ≤ w16 ∧ w16 ≤ 0xa9ce then
-        let ofs : Nat := w16 - 0xa9cc
-        return (.arithExt (.shlDivMod 3 (roundOfs ofs) false false none), 16, s16)
-      throw .invOpcode
 
     -- STREF_ALT: 0xcf10 (same semantics as STREF).
     if w16 = 0xcf10 then
@@ -2536,6 +1943,914 @@ def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
         return (.debugOp (.debug2 imm), 16, rest)
 
   throw .invOpcode
+
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 2048 in
+theorem decodeCp0WithBits_b8_a928 (s : Slice)
+    (hhave16 : s.haveBits 16 = true)
+    (hw16 : bitsToNat (s.readBits 16) = 0xa928) :
+    decodeCp0WithBits_b8 s 0xa9 =
+      .ok (.arithExt (.shrMod false false 2 (-1) false none), 16, s.advanceBits 16) := by
+  unfold decodeCp0WithBits_b8
+  rw [hhave16]
+  simp [hw16, Slice.takeBitsAsNat, hhave16]
+  rfl
+
+abbrev DecodeStageResult := Except Excno (Option (Instr × Nat × Slice))
+
+def decodeCp0_a9_fixed16 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 16 then
+    return none
+  let w16 := bitsToNat (s.readBits 16)
+  if (0xa920 ≤ w16 ∧ w16 ≤ 0xa92e) ∨ (0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9ae) ∨ (0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9ce) then
+    return some (← decodeCp0WithBits_b8 s 0xa9)
+  return none
+
+def decodeCp0_q_a9_24 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 24 then
+    return none
+  let w24 := bitsToNat (s.readBits 24)
+  if w24 >>> 16 ≠ 0xb7 then
+    return none
+  let op16 : Nat := w24 &&& 0xffff
+  let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+
+  let decodeShrMod (start d : Nat) (mul add : Bool) : Option Instr :=
+    if start ≤ op16 ∧ op16 ≤ start + 2 then
+      let ofs : Nat := op16 - start
+      some (.arithExt (.shrMod mul add d (roundOfs ofs) true none))
+    else
+      none
+
+  let decodeShlDivMod (start d : Nat) (addMode : Bool) : Option Instr :=
+    if start ≤ op16 ∧ op16 ≤ start + 2 then
+      let ofs : Nat := op16 - start
+      some (.arithExt (.shlDivMod d (roundOfs ofs) addMode true none))
+    else
+      none
+
+  let candidates : List (Option Instr) :=
+    [ decodeShrMod 0xa920 3 false true
+    , decodeShrMod 0xa924 1 false false
+    , decodeShrMod 0xa928 2 false false
+    , decodeShrMod 0xa92c 3 false false
+    , decodeShrMod 0xa9a0 3 true true
+    , decodeShrMod 0xa9a4 1 true false
+    , decodeShrMod 0xa9a8 2 true false
+    , decodeShrMod 0xa9ac 3 true false
+    , decodeShlDivMod 0xa9c0 3 true
+    , decodeShlDivMod 0xa9c4 1 false
+    , decodeShlDivMod 0xa9c8 2 false
+    , decodeShlDivMod 0xa9cc 3 false
+    ]
+  let instr? : Option Instr := candidates.findSome? (fun x => x)
+  match instr? with
+  | some instr =>
+      let (_, s24) ← s.takeBitsAsNat 24
+      return some (instr, 24, s24)
+  | none =>
+      return none
+
+def decodeCp0_decode4 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 4 then
+    return none
+  let p4 ← s.peekBitsAsNat 4
+  if p4 = 0x7 then
+    let (b8, s') ← s.takeBitsAsNat 8
+    let imm4 : Nat := b8 &&& 0xf
+    let x : Int := Int.ofNat ((imm4 + 5) &&& 0xf) - 5
+    return some (.pushInt (.num x), 8, s')
+  if p4 = 0x9 then
+    let (b8, s8) ← s.takeBitsAsNat 8
+    let lenBytes : Nat := b8 &&& 0xf
+    let dataBits : Nat := lenBytes * 8
+    if !s8.haveBits dataBits then
+      throw .invOpcode
+    let codeBits := s8.readBits dataBits
+    let rest := s8.advanceBits dataBits
+    let codeCell : Cell := Cell.mkOrdinary codeBits #[]
+    return some (.pushCont (Slice.ofCell codeCell), 8, rest)
+  return none
+
+def decodeCp0_decode10 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 10 then
+    return none
+  let p10 := bitsToNat (s.readBits 10)
+  if p10 = (0xf200 >>> 6) ∨ p10 = (0xf240 >>> 6) ∨ p10 = (0xf280 >>> 6) then
+    let (_, s10) ← s.takeBitsAsNat 10
+    let (exc, s16) ← s10.takeBitsAsNat 6
+    let e : Int := Int.ofNat exc
+    if p10 = (0xf200 >>> 6) then
+      return some (.throw e, 16, s16)
+    else if p10 = (0xf240 >>> 6) then
+      return some (.throwIf e, 16, s16)
+    else
+      return some (.throwIfNot e, 16, s16)
+  return none
+
+def decodeCp0_decode13 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 13 then
+    return none
+  let p13 := bitsToNat (s.readBits 13)
+  if p13 = (0xf2c0 >>> 3) ∨ p13 = (0xf2d0 >>> 3) ∨ p13 = (0xf2e0 >>> 3) then
+    let (_, s13) ← s.takeBitsAsNat 13
+    let (exc, s24) ← s13.takeBitsAsNat 11
+    let e : Int := Int.ofNat exc
+    if p13 = (0xf2c0 >>> 3) then
+      return some (.throw e, 24, s24)
+    else if p13 = (0xf2d0 >>> 3) then
+      return some (.throwIf e, 24, s24)
+    else
+      return some (.throwIfNot e, 24, s24)
+  if p13 = (0xf2c8 >>> 3) ∨ p13 = (0xf2d8 >>> 3) ∨ p13 = (0xf2e8 >>> 3) then
+    let (_, s13) ← s.takeBitsAsNat 13
+    let (exc, s24) ← s13.takeBitsAsNat 11
+    let e : Int := Int.ofNat exc
+    if p13 = (0xf2c8 >>> 3) then
+      return some (.throwArg e, 24, s24)
+    else if p13 = (0xf2d8 >>> 3) then
+      return some (.throwArgIf e, 24, s24)
+    else
+      return some (.throwArgIfNot e, 24, s24)
+  if p13 = (0xd728 >>> 3) then
+    if !s.haveBits 21 then
+      throw .invOpcode
+    let (_, s13) ← s.takeBitsAsNat 13
+    let (args8, s21) ← s13.takeBitsAsNat 8
+    let quiet : Bool := (args8 &&& 0x80) = 0x80
+    let dataBits : Nat := (args8 &&& 0x7f) * 8 + 3
+    if !s21.haveBits dataBits then
+      throw .invOpcode
+    let raw := s21.readBits dataBits
+    let rest := s21.advanceBits dataBits
+    let bits := bitsStripTrailingMarker raw
+    let cell : Cell := Cell.mkOrdinary bits #[]
+    return some (.sdBeginsConst quiet (Slice.ofCell cell), 21, rest)
+  return none
+
+def decodeCp0_decode14 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 14 then
+    return none
+  let w14 := bitsToNat (s.readBits 14)
+  if w14 >>> 5 = (0xcf80 >>> 7) then
+    let args5 : Nat := w14 &&& 0x1f
+    let refs : Nat := (args5 >>> 3) &&& 0x3
+    let dataBits : Nat := (args5 &&& 0x7) * 8 + 2
+    if !s.haveBits (14 + dataBits) then
+      throw .invOpcode
+    if !s.haveRefs refs then
+      throw .invOpcode
+    let (_, s14) ← s.takeBitsAsNat 14
+    let raw := s14.readBits dataBits
+    let mut rest := s14.advanceBits dataBits
+    let mut rs : Array Cell := #[]
+    for _ in [0:refs] do
+      let (c, rest') ← rest.takeRefInv
+      rs := rs.push c
+      rest := rest'
+    let bits := bitsStripTrailingMarker raw
+    let cell : Cell := Cell.mkOrdinary bits rs
+    return some (.stSliceConst (Slice.ofCell cell), 14, rest)
+  return none
+
+def decodeCp0_decode15 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 15 then
+    return none
+  let w15 := bitsToNat (s.readBits 15)
+  if w15 >>> 7 = 0x8c then
+    let r : Nat := (w15 >>> 5) &&& 0x3
+    let bits5 : Nat := w15 &&& 0x1f
+    let refs : Nat := r + 1
+    let dataBits : Nat := bits5 * 8 + 1
+    if !s.haveBits (15 + dataBits) then
+      throw .invOpcode
+    if !s.haveRefs refs then
+      throw .invOpcode
+    let (_, s15) ← s.takeBitsAsNat 15
+    let raw := s15.readBits dataBits
+    let mut rest := s15.advanceBits dataBits
+    let mut refCells : Array Cell := #[]
+    for _ in [0:refs] do
+      let (c, rest') ← rest.takeRefInv
+      refCells := refCells.push c
+      rest := rest'
+    let bits := bitsStripTrailingMarker raw
+    let cell : Cell := Cell.mkOrdinary bits refCells
+    return some (.pushSliceConst (Slice.ofCell cell), 15, rest)
+  return none
+
+def decodeCp0_decode16 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 16 then
+    return none
+  let w16 := bitsToNat (s.readBits 16)
+  let p7 := w16 >>> 9
+  if p7 = 0x47 then
+    let args9 : Nat := w16 &&& 0x1ff
+    let refs : Nat := (args9 >>> 7) &&& 0x3
+    let lenBytes : Nat := args9 &&& 0x7f
+    let dataBits : Nat := lenBytes * 8
+    if !s.haveBits (16 + dataBits) then
+      throw .invOpcode
+    if !s.haveRefs refs then
+      throw .invOpcode
+    let (_, s16) ← s.takeBitsAsNat 16
+    let codeBits := s16.readBits dataBits
+    let mut rest := s16.advanceBits dataBits
+    let mut contRefs : Array Cell := #[]
+    for _ in [0:refs] do
+      let (c, rest') ← rest.takeRefInv
+      contRefs := contRefs.push c
+      rest := rest'
+    let codeCell : Cell := Cell.mkOrdinary codeBits contRefs
+    return some (.pushCont (Slice.ofCell codeCell), 16, rest)
+  return none
+
+def decodeCp0_decode18 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 18 then
+    return none
+  let w18 := bitsToNat (s.readBits 18)
+  if w18 >>> 10 = 0x8d then
+    let refs : Nat := (w18 >>> 7) &&& 0x7
+    if refs > 4 then
+      throw .invOpcode
+    let len7 : Nat := w18 &&& 0x7f
+    let dataBits : Nat := len7 * 8 + 6
+    if !s.haveBits (18 + dataBits) then
+      throw .invOpcode
+    if !s.haveRefs refs then
+      throw .invOpcode
+    let (_, s18) ← s.takeBitsAsNat 18
+    let raw := s18.readBits dataBits
+    let mut rest := s18.advanceBits dataBits
+    let mut refCells : Array Cell := #[]
+    for _ in [0:refs] do
+      let (c, rest') ← rest.takeRefInv
+      refCells := refCells.push c
+      rest := rest'
+    let bits := bitsStripTrailingMarker raw
+    let cell : Cell := Cell.mkOrdinary bits refCells
+    return some (.pushSliceConst (Slice.ofCell cell), 18, rest)
+  return none
+
+def decodeCp0_decode24 (s : Slice) : DecodeStageResult := do
+  decodeCp0_q_a9_24 s
+
+def decodeCp0_decode48 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 48 then
+    return none
+  let w16 := bitsToNat (s.readBits 16)
+  if w16 = 0xfc00 then
+    let (_, s16) ← s.takeBitsAsNat 16
+    let (id, rest) ← s16.takeBitsAsNat 32
+    return some (.debugOp (.extCall id), 48, rest)
+  return none
+
+def decodeCp0_decode8 (s : Slice) : DecodeStageResult := do
+  if !s.haveBits 8 then
+    return none
+  let b8 ← s.peekBitsAsNat 8
+  match decodeCp0WithBits_b8 s b8 with
+  | .ok decoded =>
+      return some decoded
+  | .error .invOpcode =>
+      return none
+  | .error e =>
+      throw e
+
+def decodeCp0TryStages (s : Slice) (stages : List (Slice → DecodeStageResult)) : DecodeStageResult := do
+  match stages with
+  | [] =>
+      return none
+  | stage :: rest =>
+      match (← stage s) with
+      | some decoded =>
+          return some decoded
+      | none =>
+          decodeCp0TryStages s rest
+
+set_option maxHeartbeats 1000000 in
+set_option maxRecDepth 2048 in
+def decodeCp0WithBitsLegacy (s : Slice) : Except Excno (Instr × Nat × Slice) := do
+  -- Disambiguate fixed-width 0xa9** arithmetic ops early.
+  -- These encodings are 16-bit only and do not overlap with the 24-bit families below.
+  if s.haveBits 16 then
+    let w16 := bitsToNat (s.readBits 16)
+    if (0xa920 ≤ w16 ∧ w16 ≤ 0xa92e) ∨ (0xa9a0 ≤ w16 ∧ w16 ≤ 0xa9ae) ∨ (0xa9c0 ≤ w16 ∧ w16 ≤ 0xa9ce) then
+      return (← decodeCp0WithBits_b8 s 0xa9)
+
+  -- PUSHINT (tinyint4): 4-bit prefix 0x7, 4-bit immediate.
+  let p4 ← s.peekBitsAsNat 4
+  if p4 = 0x7 then
+    let (b8, s') ← s.takeBitsAsNat 8
+    let imm4 : Nat := b8 &&& 0xf
+    let x : Int := Int.ofNat ((imm4 + 5) &&& 0xf) - 5
+    return (.pushInt (.num x), 8, s')
+
+  -- PUSHCONT (tiny, 4-bit prefix 0x9): 4-bit prefix + 4-bit len (bytes), then that many bytes of inline code.
+  if p4 = 0x9 then
+    let (b8, s8) ← s.takeBitsAsNat 8
+    let lenBytes : Nat := b8 &&& 0xf
+    let dataBits : Nat := lenBytes * 8
+    if !s8.haveBits dataBits then
+      throw .invOpcode
+    let codeBits := s8.readBits dataBits
+    let rest := s8.advanceBits dataBits
+    let codeCell : Cell := Cell.mkOrdinary codeBits #[]
+    return (.pushCont (Slice.ofCell codeCell), 8, rest)
+
+  -- Exception opcodes: THROW / THROWIF / THROWIFNOT short/long.
+  -- Short: 10-bit prefix (0xf200 / 0xf240 / 0xf280 >> 6) + 6-bit excno.
+  if s.haveBits 10 then
+    let p10 := bitsToNat (s.readBits 10)
+    if p10 = (0xf200 >>> 6) ∨ p10 = (0xf240 >>> 6) ∨ p10 = (0xf280 >>> 6) then
+      let (_, s10) ← s.takeBitsAsNat 10
+      let (exc, s16) ← s10.takeBitsAsNat 6
+      let e : Int := Int.ofNat exc
+      if p10 = (0xf200 >>> 6) then
+        return (.throw e, 16, s16)
+      else if p10 = (0xf240 >>> 6) then
+        return (.throwIf e, 16, s16)
+      else
+        return (.throwIfNot e, 16, s16)
+  -- Long: 13-bit prefix (0xf2c0 / 0xf2d0 / 0xf2e0 >> 3) + 11-bit excno.
+  if s.haveBits 13 then
+    let p13 := bitsToNat (s.readBits 13)
+    if p13 = (0xf2c0 >>> 3) ∨ p13 = (0xf2d0 >>> 3) ∨ p13 = (0xf2e0 >>> 3) then
+      let (_, s13) ← s.takeBitsAsNat 13
+      let (exc, s24) ← s13.takeBitsAsNat 11
+      let e : Int := Int.ofNat exc
+      if p13 = (0xf2c0 >>> 3) then
+        return (.throw e, 24, s24)
+      else if p13 = (0xf2d0 >>> 3) then
+        return (.throwIf e, 24, s24)
+      else
+        return (.throwIfNot e, 24, s24)
+
+    -- THROWARG / THROWARGIF / THROWARGIFNOT: 13-bit prefix (0xf2c8 / 0xf2d8 / 0xf2e8 >> 3) + 11-bit excno.
+    if p13 = (0xf2c8 >>> 3) ∨ p13 = (0xf2d8 >>> 3) ∨ p13 = (0xf2e8 >>> 3) then
+      let (_, s13) ← s.takeBitsAsNat 13
+      let (exc, s24) ← s13.takeBitsAsNat 11
+      let e : Int := Int.ofNat exc
+      if p13 = (0xf2c8 >>> 3) then
+        return (.throwArg e, 24, s24)
+      else if p13 = (0xf2d8 >>> 3) then
+        return (.throwArgIf e, 24, s24)
+      else
+        return (.throwArgIfNot e, 24, s24)
+
+    -- SDBEGINS{Q} (const): 13-bit prefix (0xd728 >> 3) + 8-bit args + inline bits (args*8+3).
+    if p13 = (0xd728 >>> 3) then
+      if !s.haveBits 21 then
+        throw .invOpcode
+      let (_, s13) ← s.takeBitsAsNat 13
+      let (args8, s21) ← s13.takeBitsAsNat 8
+      let quiet : Bool := (args8 &&& 0x80) = 0x80
+      let dataBits : Nat := (args8 &&& 0x7f) * 8 + 3
+      if !s21.haveBits dataBits then
+        throw .invOpcode
+      let raw := s21.readBits dataBits
+      let rest := s21.advanceBits dataBits
+      let bits := bitsStripTrailingMarker raw
+      let cell : Cell := Cell.mkOrdinary bits #[]
+      return (.sdBeginsConst quiet (Slice.ofCell cell), 21, rest)
+
+  -- DICTPUSHCONST (24-bit, +1 ref): 0xf4a4..0xf4a7 + 10-bit key size.
+  if s.haveBits 24 then
+    let w24 := bitsToNat (s.readBits 24)
+
+    -- PREVMCBLOCKS / PREVKEYBLOCK / PREVMCBLOCKS_100 (24-bit): 0xf83400..0xf83402.
+    if w24 = 0xf83400 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp .prevMcBlocks, 24, s24)
+    if w24 = 0xf83401 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp .prevKeyBlock, 24, s24)
+    if w24 = 0xf83402 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp .prevMcBlocks100, 24, s24)
+
+    -- BLS_* (24-bit): 0xf93000..0xf93031.
+    if w24 >>> 8 = 0xf930 then
+      let op : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      match op with
+      | 0x00 => return (.cryptoOp (.ext .blsVerify), 24, s24)
+      | 0x01 => return (.cryptoOp (.ext .blsAggregate), 24, s24)
+      | 0x02 => return (.cryptoOp (.ext .blsFastAggregateVerify), 24, s24)
+      | 0x03 => return (.cryptoOp (.ext .blsAggregateVerify), 24, s24)
+      | 0x10 => return (.cryptoOp (.ext .blsG1Add), 24, s24)
+      | 0x11 => return (.cryptoOp (.ext .blsG1Sub), 24, s24)
+      | 0x12 => return (.cryptoOp (.ext .blsG1Neg), 24, s24)
+      | 0x13 => return (.cryptoOp (.ext .blsG1Mul), 24, s24)
+      | 0x14 => return (.cryptoOp (.ext .blsG1MultiExp), 24, s24)
+      | 0x15 => return (.cryptoOp (.ext .blsG1Zero), 24, s24)
+      | 0x16 => return (.cryptoOp (.ext .blsMapToG1), 24, s24)
+      | 0x17 => return (.cryptoOp (.ext .blsG1InGroup), 24, s24)
+      | 0x18 => return (.cryptoOp (.ext .blsG1IsZero), 24, s24)
+      | 0x20 => return (.cryptoOp (.ext .blsG2Add), 24, s24)
+      | 0x21 => return (.cryptoOp (.ext .blsG2Sub), 24, s24)
+      | 0x22 => return (.cryptoOp (.ext .blsG2Neg), 24, s24)
+      | 0x23 => return (.cryptoOp (.ext .blsG2Mul), 24, s24)
+      | 0x24 => return (.cryptoOp (.ext .blsG2MultiExp), 24, s24)
+      | 0x25 => return (.cryptoOp (.ext .blsG2Zero), 24, s24)
+      | 0x26 => return (.cryptoOp (.ext .blsMapToG2), 24, s24)
+      | 0x27 => return (.cryptoOp (.ext .blsG2InGroup), 24, s24)
+      | 0x28 => return (.cryptoOp (.ext .blsG2IsZero), 24, s24)
+      | 0x30 => return (.cryptoOp (.ext .blsPairing), 24, s24)
+      | 0x31 => return (.cryptoOp (.ext .blsPushR), 24, s24)
+      | _ => throw .invOpcode
+
+    -- BCHKBITS / BCHKBITSQ (24-bit): 16-bit opcode 0xcf38/0xcf3c + 8-bit arg (bits-1).
+    let p16 := w24 >>> 8
+    if p16 = 0xcf38 ∨ p16 = 0xcf3c then
+      let bits : Nat := (w24 &&& 0xff) + 1
+      let quiet : Bool := p16 = 0xcf3c
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.cellOp (.bchkBitsImm bits quiet), 24, s24)
+
+    -- GETPARAMLONG / INMSGPARAMS (24-bit): 0xf88100..0xf881ff.
+    if w24 >>> 8 = 0xf881 then
+      let idx : Nat := w24 &&& 0xff
+      -- C++ uses two fixed ranges with an exclusive upper bound; 0xff is reserved/invalid.
+      if idx = 0xff then
+        throw .invOpcode
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.tonEnvOp (.getParam idx), 24, s24)
+    if 0xf4a400 ≤ w24 ∧ w24 < 0xf4a800 then
+      if !s.haveRefs 1 then
+        throw .invOpcode
+      -- Layout (pfx_bits=24):
+      --   advance 13; take 1 bit (maybe), take 1 ref; take 10-bit n.
+      let (_, s13) ← s.takeBitsAsNat 13
+      let (_, s14) ← s13.takeBitsAsNat 1
+      let (dictCell, sRef) ← s14.takeRefInv
+      let (n, s24) ← sRef.takeBitsAsNat 10
+      return (.dictPushConst dictCell n, 24, s24)
+
+    -- PFXDICTSWITCH (24-bit, +1 ref): 14-bit prefix 0x3d2b + 10-bit key_len, then 1 ref (dict).
+    if w24 >>> 10 = 0x3d2b then
+      if !s.haveRefs 1 then
+        throw .invOpcode
+      let keyLen : Nat := w24 &&& 0x3ff
+      let (_, s24) ← s.takeBitsAsNat 24
+      let (dictCell, rest) ← s24.takeRefInv
+      return (.dictExt (.pfxSwitch dictCell keyLen), 24, rest)
+
+    -- PREPAREDICT <idx> (24-bit): 10-bit prefix (0xf180 >> 6) + 14-bit args.
+    -- Matches C++ `exec_preparedict` (contops.cpp).
+    let p10 := w24 >>> 14
+    if p10 = (0xf180 >>> 6) then
+      let idx : Nat := w24 &&& 0x3fff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.prepareDict idx, 24, s24)
+
+    -- CALLDICT_LONG / JMPDICT (24-bit): 10-bit prefix (0x3c4/0x3c5) + 14-bit args.
+    if p10 = 0x3c4 then
+      let idx : Nat := w24 &&& 0x3fff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.callDict idx, 24, s24)
+    if p10 = 0x3c5 then
+      let idx : Nat := w24 &&& 0x3fff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt (.jmpDict idx), 24, s24)
+
+    -- SETCONTCTRMANY (24-bit): 16-bit opcode 0xede3 + 8-bit arg (mask).
+    let p16 := w24 >>> 8
+    if p16 = 0xede3 then
+      let mask : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt (.setContCtrMany mask), 24, s24)
+
+    -- RUNVM (24-bit): 12-bit prefix (0xdb4) + 12-bit mode.
+    if w24 >>> 12 = 0xdb4 then
+      let mode : Nat := w24 &&& 0xfff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt (.runvm mode), 24, s24)
+
+    -- HASHEXT (24-bit): 14-bit prefix (0xf904 >> 2) + 10-bit args (hash_id8 + rev + append).
+    -- Matches C++ `exec_hash_ext` / `dump_hash_ext` (TON version >= 4).
+    let p14 := w24 >>> 10
+    if p14 = (0xf904 >>> 2) then
+      let args10 : Nat := w24 &&& 0x3ff
+      let rev : Bool := ((args10 >>> 8) &&& 1) = 1
+      let append : Bool := ((args10 >>> 9) &&& 1) = 1
+      let hashId : Nat := args10 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.cryptoOp (.hashExt hashId append rev), 24, s24)
+
+    -- {P}LDSLICE{Q} <bits> (24-bit): 14-bit prefix (0xd71c >> 2) + 10-bit args (flags2 + bits8).
+    -- Matches C++ `exec_load_slice_fixed2`.
+    if p14 = (0xd71c >>> 2) then
+      let args10 : Nat := w24 &&& 0x3ff
+      let flags2 : Nat := args10 >>> 8
+      let bits : Nat := (args10 &&& 0xff) + 1
+      let prefetch : Bool := (flags2 &&& 1) = 1
+      let quiet : Bool := (flags2 &&& 2) = 2
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.loadSliceFixed prefetch quiet bits, 24, s24)
+
+    -- QLSHIFT / QRSHIFT (24-bit): 16-bit opcode 0xb7aa/0xb7ab + 8-bit arg.
+    if p16 = 0xb7aa then
+      let bits : Nat := (w24 &&& 0xff) + 1
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.lshiftConst true bits, 24, s24)
+    if p16 = 0xb7ab then
+      let bits : Nat := (w24 &&& 0xff) + 1
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.rshiftConst true bits, 24, s24)
+    if w24 = 0xb7b600 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qfitsx, 24, s24)
+    if w24 = 0xb7b601 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qufitsx, 24, s24)
+    if w24 = 0xb7b602 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qbitsize, 24, s24)
+    if w24 = 0xb7b603 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.ubitsize true, 24, s24)
+    if w24 = 0xb7b608 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.contExt .qmin, 24, s24)
+    if w24 = 0xb7b609 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.qmax, 24, s24)
+    if w24 = 0xb7b60b then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.abs true, 24, s24)
+    if w24 = 0xb7b60a then
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.qminmax, 24, s24)
+
+    -- QADDINT / QMULINT (24-bit): 0xb7a6/0xb7a7 + imm8.
+    if p16 = 0xb7a6 then
+      let imm8 : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.arithExt (.qaddInt (natToIntSignedTwos imm8 8)), 24, s24)
+    if p16 = 0xb7a7 then
+      let imm8 : Nat := w24 &&& 0xff
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.arithExt (.qmulInt (natToIntSignedTwos imm8 8)), 24, s24)
+
+    -- QEQINT / QLESSINT / QGTINT / QNEQINT (24-bit): 0xb7c0..0xb7c3 + imm8.
+    if 0xb7c0 ≤ p16 ∧ p16 ≤ 0xb7c3 then
+      let imm8 : Nat := w24 &&& 0xff
+      let n : Int := natToIntSignedTwos imm8 8
+      let (_, s24) ← s.takeBitsAsNat 24
+      match p16 with
+      | 0xb7c0 => return (.arithExt (.qeqInt n), 24, s24)
+      | 0xb7c1 => return (.qlessInt n, 24, s24)
+      | 0xb7c2 => return (.arithExt (.qgtInt n), 24, s24)
+      | _ => return (.arithExt (.qneqInt n), 24, s24)
+
+    -- QFITS / QUFITS (24-bit): 0xb7b4/0xb7b5 + width8 (delta=1).
+    if p16 = 0xb7b4 ∨ p16 = 0xb7b5 then
+      let bits : Nat := (w24 &&& 0xff) + 1
+      let unsigned : Bool := p16 = 0xb7b5
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.arithExt (.fitsConst unsigned true bits), 24, s24)
+
+    -- QDIV/MOD family (24-bit): 20-bit prefix 0xb7a90 + 4-bit args.
+    let p20 := w24 >>> 4
+    if p20 = 0xb7a90 then
+      let args4 : Nat := w24 &&& 0xf
+      let roundEnc : Nat := args4 &&& 0x3
+      let dEnc : Nat := (args4 >>> 2) &&& 0x3
+      if roundEnc = 3 then
+        throw .invOpcode
+      let roundMode : Int := Int.ofNat roundEnc - 1
+      let (d, add) : (Nat × Bool) :=
+        if dEnc = 0 then
+          (3, true)
+        else
+          (dEnc, false)
+      if d = 0 ∨ roundMode = 2 then
+        throw .invOpcode
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.divMod d roundMode add true, 24, s24)
+
+    -- QMUL{DIV,MOD,DIVMOD} family (24-bit): 20-bit prefix 0xb7a98 + 4-bit args.
+    if p20 = 0xb7a98 then
+      let args4 : Nat := w24 &&& 0xf
+      let roundEnc : Nat := args4 &&& 0x3
+      let dEnc : Nat := (args4 >>> 2) &&& 0x3
+      if roundEnc = 3 then
+        throw .invOpcode
+      let roundMode : Int := Int.ofNat roundEnc - 1
+      let (d, add) : (Nat × Bool) :=
+        if dEnc = 0 then
+          (3, true)
+        else
+          (dEnc, false)
+      if d = 0 ∨ roundMode = 2 then
+        throw .invOpcode
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.mulDivMod d roundMode add true, 24, s24)
+
+    -- RIST255_Q* (24-bit): 0xb7f921..0xb7f925.
+    if w24 >>> 8 = 0xb7f9 then
+      let (_, s24) ← s.takeBitsAsNat 24
+      match w24 &&& 0xff with
+      | 0x21 => return (.cryptoOp (.ext .rist255Qvalidate), 24, s24)
+      | 0x22 => return (.cryptoOp (.ext .rist255Qadd), 24, s24)
+      | 0x23 => return (.cryptoOp (.ext .rist255Qsub), 24, s24)
+      | 0x24 => return (.cryptoOp (.ext .rist255Qmul), 24, s24)
+      | 0x25 => return (.cryptoOp (.ext .rist255QmulBase), 24, s24)
+      | _ => throw .invOpcode
+
+    -- Q-shrmod/shldivmod families (24-bit): 0xb7 + 16-bit opcode in the 0xa9** range.
+    if w24 >>> 16 = 0xb7 then
+      let op16 : Nat := w24 &&& 0xffff
+      let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+
+      let decodeShrMod (start d : Nat) (mul add : Bool) : Option Instr :=
+        if start ≤ op16 ∧ op16 ≤ start + 2 then
+          let ofs : Nat := op16 - start
+          some (.arithExt (.shrMod mul add d (roundOfs ofs) true none))
+        else
+          none
+
+      let decodeShlDivMod (start d : Nat) (addMode : Bool) : Option Instr :=
+        if start ≤ op16 ∧ op16 ≤ start + 2 then
+          let ofs : Nat := op16 - start
+          some (.arithExt (.shlDivMod d (roundOfs ofs) addMode true none))
+        else
+          none
+
+      let candidates : List (Option Instr) :=
+        [ decodeShrMod 0xa920 3 false true
+        , decodeShrMod 0xa924 1 false false
+        , decodeShrMod 0xa928 2 false false
+        , decodeShrMod 0xa92c 3 false false
+        , decodeShrMod 0xa9a0 3 true true
+        , decodeShrMod 0xa9a4 1 true false
+        , decodeShrMod 0xa9a8 2 true false
+        , decodeShrMod 0xa9ac 3 true false
+        , decodeShlDivMod 0xa9c0 3 true
+        , decodeShlDivMod 0xa9c4 1 false
+        , decodeShlDivMod 0xa9c8 2 false
+        , decodeShlDivMod 0xa9cc 3 false
+        ]
+      let instr? : Option Instr := candidates.findSome? (fun x => x)
+
+      match instr? with
+      | some instr =>
+          let (_, s24) ← s.takeBitsAsNat 24
+          return (instr, 24, s24)
+      | none =>
+          pure ()
+
+    -- {RSHIFT,MODPOW2,RSHIFTMOD}# and related pow2 shift/divmod ops (24-bit): 16-bit opcode + arg8 (delta=1).
+    if (0xa930 ≤ p16 ∧ p16 ≤ 0xa93e) ∨ (0xa9b0 ≤ p16 ∧ p16 ≤ 0xa9b2) ∨ (0xa9d0 ≤ p16 ∧ p16 ≤ 0xa9de) then
+      let z : Nat := (w24 &&& 0xff) + 1
+      let roundOfs (ofs : Nat) : Int := Int.ofNat ofs - 1
+      let (_, s24) ← s.takeBitsAsNat 24
+      if 0xa930 ≤ p16 ∧ p16 ≤ 0xa932 then
+        let ofs : Nat := p16 - 0xa930
+        return (.arithExt (.shrMod false true 3 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa934 ≤ p16 ∧ p16 ≤ 0xa936 then
+        let ofs : Nat := p16 - 0xa934
+        return (.arithExt (.shrMod false false 1 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa938 ≤ p16 ∧ p16 ≤ 0xa93a then
+        let ofs : Nat := p16 - 0xa938
+        return (.arithExt (.shrMod false false 2 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa93c ≤ p16 ∧ p16 ≤ 0xa93e then
+        let ofs : Nat := p16 - 0xa93c
+        return (.arithExt (.shrMod false false 3 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa9b0 ≤ p16 ∧ p16 ≤ 0xa9b2 then
+        let ofs : Nat := p16 - 0xa9b0
+        return (.arithExt (.shrMod true true 3 (roundOfs ofs) false (some z)), 24, s24)
+      if 0xa9d0 ≤ p16 ∧ p16 ≤ 0xa9d2 then
+        let ofs : Nat := p16 - 0xa9d0
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) true false (some z)), 24, s24)
+      if 0xa9d4 ≤ p16 ∧ p16 ≤ 0xa9d6 then
+        let ofs : Nat := p16 - 0xa9d4
+        return (.arithExt (.shlDivMod 1 (roundOfs ofs) false false (some z)), 24, s24)
+      if 0xa9d8 ≤ p16 ∧ p16 ≤ 0xa9da then
+        let ofs : Nat := p16 - 0xa9d8
+        return (.arithExt (.shlDivMod 2 (roundOfs ofs) false false (some z)), 24, s24)
+      if 0xa9dc ≤ p16 ∧ p16 ≤ 0xa9de then
+        let ofs : Nat := p16 - 0xa9dc
+        return (.arithExt (.shlDivMod 3 (roundOfs ofs) false false (some z)), 24, s24)
+      throw .invOpcode
+
+    -- Integer load from slice: 13-bit prefix (0xd708 >> 3) + 11-bit args.
+    -- Matches C++ `exec_load_int_fixed2`.
+    let p13 := w24 >>> 11
+    if p13 = (0xd708 >>> 3) then
+      let args11 : Nat := w24 &&& 0x7ff
+      let flags3 : Nat := args11 >>> 8
+      let bits : Nat := (args11 &&& 0xff) + 1
+      let unsigned : Bool := (flags3 &&& 1) = 1
+      let prefetch : Bool := (flags3 &&& 2) = 2
+      let quiet : Bool := (flags3 &&& 4) = 4
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.loadInt unsigned prefetch quiet bits, 24, s24)
+
+    -- ST{I,U}{R}{Q} <bits> (24-bit): 13-bit prefix (0xcf08 >> 3) + 11-bit args (flags3 + bits8).
+    -- Matches C++ `exec_store_int_fixed`.
+    if p13 = (0xcf08 >>> 3) then
+      let args11 : Nat := w24 &&& 0x7ff
+      let flags3 : Nat := args11 >>> 8
+      let bits : Nat := (args11 &&& 0xff) + 1
+      let unsigned : Bool := (flags3 &&& 1) = 1
+      let rev : Bool := (flags3 &&& 2) = 2
+      let quiet : Bool := (flags3 &&& 4) = 4
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.stIntFixed unsigned rev quiet bits, 24, s24)
+
+    -- XC2PU: 12-bit prefix 0x541 + 12-bit args (x,y,z nibbles).
+    let p12 := w24 >>> 12
+    if p12 = 0x540 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.xchg3 x y z, 24, s24)
+    if p12 = 0x541 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.xc2pu x y z, 24, s24)
+    if p12 = 0x542 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.xcpuxc x y z, 24, s24)
+    if p12 = 0x543 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.xcpu2 x y z, 24, s24)
+    if p12 = 0x544 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.puxc2 x y z, 24, s24)
+    if p12 = 0x545 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.puxcpu x y z, 24, s24)
+    if p12 = 0x546 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.pu2xc x y z, 24, s24)
+    if p12 = 0x547 then
+      let args12 : Nat := w24 &&& 0xfff
+      let x : Nat := (args12 >>> 8) &&& 0xf
+      let y : Nat := (args12 >>> 4) &&& 0xf
+      let z : Nat := args12 &&& 0xf
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.push3 x y z, 24, s24)
+
+    -- MUL{RSHIFT,MODPOW2,RSHIFTMOD}# (24-bit): 12-bit prefix 0xa9b + 12-bit args (cfg4 + z8).
+    if p12 = 0xa9b then
+      let args12 : Nat := w24 &&& 0xfff
+      let cfg4 : Nat := args12 >>> 8
+      let z : Nat := (args12 &&& 0xff) + 1
+      let roundMode : Int := Int.ofNat (cfg4 &&& 0x3) - 1
+      let d : Nat := (cfg4 >>> 2) &&& 0x3
+      if d = 0 ∨ roundMode = 2 then
+        throw .invOpcode
+      let (_, s24) ← s.takeBitsAsNat 24
+      return (.mulShrModConst d roundMode z, 24, s24)
+
+  -- PUSHCONT (general, 7-bit prefix 0x47): 7-bit prefix + 9-bit args + inline bits + inline refs.
+  if s.haveBits 16 then
+    let w16 := bitsToNat (s.readBits 16)
+    let p7 := w16 >>> 9
+    if p7 = 0x47 then
+      let args9 : Nat := w16 &&& 0x1ff
+      let refs : Nat := (args9 >>> 7) &&& 0x3
+      let lenBytes : Nat := args9 &&& 0x7f
+      let dataBits : Nat := lenBytes * 8
+      if !s.haveBits (16 + dataBits) then
+        throw .invOpcode
+      if !s.haveRefs refs then
+        throw .invOpcode
+      let (_, s16) ← s.takeBitsAsNat 16
+      let codeBits := s16.readBits dataBits
+      let mut rest := s16.advanceBits dataBits
+      let mut contRefs : Array Cell := #[]
+      for _ in [0:refs] do
+        let (c, rest') ← rest.takeRefInv
+        contRefs := contRefs.push c
+        rest := rest'
+      let codeCell : Cell := Cell.mkOrdinary codeBits contRefs
+      return (.pushCont (Slice.ofCell codeCell), 16, rest)
+
+  -- PUSHSLICE r2 (18-bit prefix): 0x8d + 3-bit refs (0..4) + 7-bit len, then inline bits/refs.
+  -- Matches C++ `exec_push_slice_r2`.
+  if s.haveBits 18 then
+    let w18 := bitsToNat (s.readBits 18)
+    if w18 >>> 10 = 0x8d then
+      let refs : Nat := (w18 >>> 7) &&& 0x7
+      if refs > 4 then
+        throw .invOpcode
+      let len7 : Nat := w18 &&& 0x7f
+      let dataBits : Nat := len7 * 8 + 6
+      if !s.haveBits (18 + dataBits) then
+        throw .invOpcode
+      if !s.haveRefs refs then
+        throw .invOpcode
+      let (_, s18) ← s.takeBitsAsNat 18
+      let raw := s18.readBits dataBits
+      let mut rest := s18.advanceBits dataBits
+      let mut refCells : Array Cell := #[]
+      for _ in [0:refs] do
+        let (c, rest') ← rest.takeRefInv
+        refCells := refCells.push c
+        rest := rest'
+      let bits := bitsStripTrailingMarker raw
+      let cell : Cell := Cell.mkOrdinary bits refCells
+      return (.pushSliceConst (Slice.ofCell cell), 18, rest)
+
+  -- PUSHSLICE_REFS (15-bit prefix): 0x8c + r:2 + bits:5, then (r+1) refs and (8*bits+1) inline bits.
+  -- Matches C++ `exec_push_slice_r`.
+  if s.haveBits 15 then
+    let w15 := bitsToNat (s.readBits 15)
+    if w15 >>> 7 = 0x8c then
+      let r : Nat := (w15 >>> 5) &&& 0x3
+      let bits5 : Nat := w15 &&& 0x1f
+      let refs : Nat := r + 1
+      let dataBits : Nat := bits5 * 8 + 1
+      if !s.haveBits (15 + dataBits) then
+        throw .invOpcode
+      if !s.haveRefs refs then
+        throw .invOpcode
+      let (_, s15) ← s.takeBitsAsNat 15
+      let raw := s15.readBits dataBits
+      let mut rest := s15.advanceBits dataBits
+      let mut refCells : Array Cell := #[]
+      for _ in [0:refs] do
+        let (c, rest') ← rest.takeRefInv
+        refCells := refCells.push c
+        rest := rest'
+      let bits := bitsStripTrailingMarker raw
+      let cell : Cell := Cell.mkOrdinary bits refCells
+      return (.pushSliceConst (Slice.ofCell cell), 15, rest)
+
+  -- PUSHINT (8/16/long)
+  -- STSLICECONST (inline constant slice): 9-bit prefix 0xcf80>>7 + 5-bit args, then inline slice bits/refs.
+  if s.haveBits 14 then
+    let w14 := bitsToNat (s.readBits 14)
+    if w14 >>> 5 = (0xcf80 >>> 7) then
+      let args5 : Nat := w14 &&& 0x1f
+      let refs : Nat := (args5 >>> 3) &&& 0x3
+      let dataBits : Nat := (args5 &&& 0x7) * 8 + 2
+      if !s.haveBits (14 + dataBits) then
+        throw .invOpcode
+      if !s.haveRefs refs then
+        throw .invOpcode
+      let (_, s14) ← s.takeBitsAsNat 14
+      let raw := s14.readBits dataBits
+      let mut rest := s14.advanceBits dataBits
+      let mut rs : Array Cell := #[]
+      for _ in [0:refs] do
+        let (c, rest') ← rest.takeRefInv
+        rs := rs.push c
+        rest := rest'
+      let bits := bitsStripTrailingMarker raw
+      let cell : Cell := Cell.mkOrdinary bits rs
+      return (.stSliceConst (Slice.ofCell cell), 14, rest)
+
+  let b8 ← s.peekBitsAsNat 8
+  decodeCp0WithBits_b8 s b8
+
+def decodeCp0WithBits (s : Slice) : Except Excno (Instr × Nat × Slice) := do
+  match (← decodeCp0TryStages s
+    [ decodeCp0_a9_fixed16
+    , decodeCp0_decode4
+    , decodeCp0_decode10
+    , decodeCp0_decode13
+    , decodeCp0_decode24
+    , decodeCp0_decode16
+    , decodeCp0_decode18
+    , decodeCp0_decode15
+    , decodeCp0_decode14
+    , decodeCp0_decode48
+    , decodeCp0_decode8
+    ]) with
+  | some decoded =>
+      return decoded
+  | none =>
+      decodeCp0WithBitsLegacy s
 
 def decodeCp0 (s : Slice) : Except Excno (Instr × Slice) := do
   let (i, _, rest) ← decodeCp0WithBits s

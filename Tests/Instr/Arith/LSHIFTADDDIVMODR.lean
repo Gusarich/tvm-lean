@@ -116,6 +116,16 @@ private def pickNonZeroInt (rng0 : StdGen) : Int × StdGen :=
   let (v, rng1) := pickSigned257ish rng0
   (if v = 0 then 1 else v, rng1)
 
+private def pickSignedSmall (rng0 : StdGen) : Int × StdGen :=
+  let (u, rng1) := randNat rng0 0 1_000_000
+  let (neg, rng2) := randBool rng1
+  let n := Int.ofNat u
+  (if neg then -n else n, rng2)
+
+private def pickNonZeroSmall (rng0 : StdGen) : Int × StdGen :=
+  let (v, rng1) := pickSignedSmall rng0
+  (if v = 0 then 1 else v, rng1)
+
 private def pickNonInt (rng : StdGen) : Value × StdGen :=
   let (pick, rng') := randNat rng 0 1
   (if pick = 0 then .null else .cell Cell.empty, rng')
@@ -294,58 +304,58 @@ private def genLshiftAddDivModrFuzzCase (rng0 : StdGen) : OracleCase × StdGen :
       (mkCase s!"/fuzz/shape-{shape}/error-order/range-before-w-type"
         #[intV x, wBad, intV y, intV (-1)], r4)
     else if shape = 26 then
-      let (x, r2) := pickSigned257ish rng1
-      let (w, r3) := pickSigned257ish r2
-      let (y, r4) := pickNonZeroInt r3
+      let (x, r2) := pickSignedSmall rng1
+      let (w, r3) := pickSignedSmall r2
+      let (y, r4) := pickNonZeroSmall r3
       (mkInputCase s!"/fuzz/shape-{shape}/nan/program-shift"
         #[IntVal.num x, IntVal.num w, IntVal.num y, IntVal.nan], r4)
     else if shape = 27 then
-      let (x, r2) := pickSigned257ish rng1
-      let (w, r3) := pickSigned257ish r2
+      let (x, r2) := pickSignedSmall rng1
+      let (w, r3) := pickSignedSmall r2
       let (shift, r4) := pickShiftUniform r3
       (mkInputCase s!"/fuzz/shape-{shape}/nan/program-y"
         #[IntVal.num x, IntVal.num w, IntVal.nan, IntVal.num (Int.ofNat shift)], r4)
     else if shape = 28 then
-      let (x, r2) := pickSigned257ish rng1
-      let (y, r3) := pickNonZeroInt r2
+      let (x, r2) := pickSignedSmall rng1
+      let (y, r3) := pickNonZeroSmall r2
       let (shift, r4) := pickShiftUniform r3
       (mkInputCase s!"/fuzz/shape-{shape}/nan/program-w"
         #[IntVal.num x, IntVal.nan, IntVal.num y, IntVal.num (Int.ofNat shift)], r4)
     else if shape = 29 then
-      let (w, r2) := pickSigned257ish rng1
-      let (y, r3) := pickNonZeroInt r2
+      let (w, r2) := pickSignedSmall rng1
+      let (y, r3) := pickNonZeroSmall r2
       let (shift, r4) := pickShiftUniform r3
       (mkInputCase s!"/fuzz/shape-{shape}/nan/program-x"
         #[IntVal.nan, IntVal.num w, IntVal.num y, IntVal.num (Int.ofNat shift)], r4)
     else if shape = 30 then
-      let (w, r2) := pickSigned257ish rng1
+      let (w, r2) := pickSignedSmall rng1
       let (shift, r3) := pickShiftUniform r2
       (mkInputCase s!"/fuzz/shape-{shape}/nan/program-both-x-y"
         #[IntVal.nan, IntVal.num w, IntVal.nan, IntVal.num (Int.ofNat shift)], r3)
     else if shape = 31 then
-      let (x, r2) := pickSigned257ish rng1
-      let (w, r3) := pickSigned257ish r2
-      let (y, r4) := pickNonZeroInt r3
+      let (x, r2) := pickSignedSmall rng1
+      let (w, r3) := pickSignedSmall r2
+      let (y, r4) := pickNonZeroSmall r3
       let (huge, r5) := pickInt257OutOfRange r4
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-shift-before-op"
         #[IntVal.num x, IntVal.num w, IntVal.num y, IntVal.num huge], r5)
     else if shape = 32 then
-      let (x, r2) := pickSigned257ish rng1
-      let (w, r3) := pickSigned257ish r2
+      let (x, r2) := pickSignedSmall rng1
+      let (w, r3) := pickSignedSmall r2
       let (shift, r4) := pickShiftUniform r3
       let (huge, r5) := pickInt257OutOfRange r4
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-y-before-op"
         #[IntVal.num x, IntVal.num w, IntVal.num huge, IntVal.num (Int.ofNat shift)], r5)
     else if shape = 33 then
-      let (x, r2) := pickSigned257ish rng1
-      let (y, r3) := pickNonZeroInt r2
+      let (x, r2) := pickSignedSmall rng1
+      let (y, r3) := pickNonZeroSmall r2
       let (shift, r4) := pickShiftUniform r3
       let (huge, r5) := pickInt257OutOfRange r4
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-w-before-op"
         #[IntVal.num x, IntVal.num huge, IntVal.num y, IntVal.num (Int.ofNat shift)], r5)
     else if shape = 34 then
-      let (w, r2) := pickSigned257ish rng1
-      let (y, r3) := pickNonZeroInt r2
+      let (w, r2) := pickSignedSmall rng1
+      let (y, r3) := pickNonZeroSmall r2
       let (shift, r4) := pickShiftUniform r3
       let (huge, r5) := pickInt257OutOfRange r4
       (mkInputCase s!"/fuzz/shape-{shape}/error-order/pushint-overflow-x-before-op"

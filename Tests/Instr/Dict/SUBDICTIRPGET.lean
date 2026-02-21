@@ -341,7 +341,7 @@ def suite : InstrSuite where
         expectOkStack "k2-miss" (runSubdictIRPGET (mkStack (-2) (.cell dictSigned4Root) 2 4)) expectedMiss },
     { name := "unit/semantics/malformed" -- [B10][B7]
       run := do
-        expectErr "malformed" (runSubdictIRPGET (mkStack 1 (.cell malformedDictCell) 4 4)) .dictErr },
+        expectErr "malformed" (runSubdictIRPGET (mkStack 1 (.cell malformedDictCell) 4 4)) .cellUnd },
     { name := "unit/assembler" -- [B10]
       run := do
         match assembleCp0 [instr] with

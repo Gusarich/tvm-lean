@@ -91,152 +91,104 @@ def cp0InvOpcodeGasBits (code : Slice) : Nat :=
       -- without per-bit cost in this case).
       0
 
-def VmState.step (host : Host) (st : VmState) : StepResult :=
-  match st.cc with
-  | .quit n =>
-      .halt (~~~ n) st
-  | .excQuit =>
-      let action : VM Int := do
-        -- Match `pop_smallint_range(0xffff)` behavior closely enough for MVP.
-        let v ← VM.popInt
-        match v with
-        | .nan => throw .rangeChk
-        | .num n =>
-            if n < 0 ∨ n > 0xffff then
-              throw .rangeChk
-            else
-              return n
-      let (res, st') := (action.run st)
-      let n : Int :=
-        match res with
-        | .ok n => n
-        | .error e => e.toInt
-      .halt (~~~ n) st'
-  | .whileCond cond body after =>
-      let action : VM Unit := do
-        if (← VM.popBool) then
-          -- Match C++ `WhileCont::jump[_w]`: install while-body continuation in c0 only if `body` has no c0.
-          if body.hasC0 then
-            modify fun st => { st with cc := body }
-          else
-            modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
+/-!
+`VmState.step` is used in proofs via `simp`/`dsimp` quite a lot.
+
+Keeping the whole implementation as one giant `match st.cc with ...` forces the
+elaborator/simplifier to carry a very large term around even when only one branch
+is relevant.  Split the continuation cases into small helper definitions so
+unfolding `VmState.step` doesn't immediately expose all branches' bodies.
+-/
+
+def VmState.stepQuit (st : VmState) (n : Int) : StepResult :=
+  .halt (~~~ n) st
+
+def VmState.stepExcQuit (st : VmState) : StepResult :=
+  let action : VM Int := do
+    -- Match `pop_smallint_range(0xffff)` behavior closely enough for MVP.
+    let v ← VM.popInt
+    match v with
+    | .nan => throw .rangeChk
+    | .num n =>
+        if n < 0 ∨ n > 0xffff then
+          throw .rangeChk
         else
-          let st ← get
-          let afterNeedsMoreArgs : Bool :=
-            match after with
-            | .ordinary _ _ _ cdata
-            | .envelope _ _ cdata =>
-                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
-            | _ =>
-                false
-          if afterNeedsMoreArgs then
-            throw .stkUnd
-          else
-            match after with
-            | .ordinary code saved cregs cdata =>
-                modify fun st =>
-                  { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-            | _ =>
-                modify fun st => { st with cc := after }
-      let (res, st') := (action.run st)
-      match res with
-      | .ok _ =>
-          .continue st'
-      | .error e =>
-          let stExc := st'.throwException e.toInt
-          let stExcGas := stExc.consumeGas exceptionGasPrice
-          if decide (stExcGas.gas.gasRemaining < 0) then
-            stExcGas.outOfGasHalt
-          else
-            .continue stExcGas
-  | .whileBody cond body after =>
-      -- Match C++ `WhileCont::jump[_w]`: install while-cond continuation in c0 only if `cond` has no c0.
-      if cond.hasC0 then
-        .continue { st with cc := cond }
+          return n
+  let (res, st') := (action.run st)
+  let n : Int :=
+    match res with
+    | .ok n => n
+    | .error e => e.toInt
+  .halt (~~~ n) st'
+
+def VmState.stepWhileCond (st : VmState) (cond body after : Continuation) : StepResult :=
+  let action : VM Unit := do
+    if (← VM.popBool) then
+      -- Match C++ `WhileCont::jump[_w]`: install while-body continuation in c0 only if `body` has no c0.
+      if body.hasC0 then
+        modify fun st => { st with cc := body }
       else
-        .continue { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
-  | .untilBody body after =>
-      let action : VM Unit := do
-        if (← VM.popBool) then
-          let st ← get
-          let afterNeedsMoreArgs : Bool :=
-            match after with
-            | .ordinary _ _ _ cdata
-            | .envelope _ _ cdata =>
-                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
-            | _ =>
-                false
-          if afterNeedsMoreArgs then
-            throw .stkUnd
-          else
-            match after with
-            | .ordinary code saved cregs cdata =>
-                modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-            | _ =>
-                modify fun st => { st with cc := after }
-        else
-          -- C++ `UntilCont::jump`: if `body` doesn't have `c0`, re-install this until continuation into `c0`
-          -- because `RET` swaps `c0 := quit0` when returning to `c0`.
-          let st ← get
-          let bodyNeedsMoreArgs : Bool :=
-            match body with
-            | .ordinary _ _ _ cdata
-            | .envelope _ _ cdata =>
-                decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
-            | _ =>
-                false
-          if body.hasC0 then
-            if bodyNeedsMoreArgs then
-              throw .stkUnd
-            else
-              modify fun st => { st with cc := body }
-          else
-            -- Match C++ order in `UntilCont::jump`: install `c0` first, then jump to body
-            -- (which may throw `stk_und` in `adjust_jump_cont`).
-            modify fun st => { st with regs := { st.regs with c0 := .untilBody body after } }
-            if bodyNeedsMoreArgs then
-              throw .stkUnd
-            else
-              modify fun st => { st with cc := body }
-      let (res, st') := (action.run st)
-      match res with
-      | .ok _ =>
-          .continue st'
-      | .error e =>
-          let stExc := st'.throwException e.toInt
-          let stExcGas := stExc.consumeGas exceptionGasPrice
-          if decide (stExcGas.gas.gasRemaining < 0) then
-            stExcGas.outOfGasHalt
-          else
-            .continue stExcGas
-  | .repeatBody body after count =>
-      if count = 0 then
-        let afterNeedsMoreArgs : Bool :=
-          match after with
-          | .ordinary _ _ _ cdata
-          | .envelope _ _ cdata =>
-              decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
-          | _ =>
-              false
-        if afterNeedsMoreArgs then
-          let stExc := st.throwException Excno.stkUnd.toInt
-          let stExcGas := stExc.consumeGas exceptionGasPrice
-          if decide (stExcGas.gas.gasRemaining < 0) then
-            stExcGas.outOfGasHalt
-          else
-            .continue stExcGas
-        else
-          match after with
-          | .ordinary code saved cregs cdata =>
-              .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
-          | _ =>
-              .continue { st with cc := after }
-      else if body.hasC0 then
-        .continue { st with cc := body }
+        modify fun st => { st with regs := { st.regs with c0 := .whileBody cond body after }, cc := body }
+    else
+      let st ← get
+      let afterNeedsMoreArgs : Bool :=
+        match after with
+        | .ordinary _ _ _ cdata
+        | .envelope _ _ cdata =>
+            decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+        | _ =>
+            false
+      if afterNeedsMoreArgs then
+        throw .stkUnd
       else
-        let count' := count - 1
-        .continue { st with regs := { st.regs with c0 := .repeatBody body after count' }, cc := body }
-  | .againBody body =>
+        match after with
+        | .ordinary code saved cregs cdata =>
+            modify fun st =>
+              { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+        | _ =>
+            modify fun st => { st with cc := after }
+  let (res, st') := (action.run st)
+  match res with
+  | .ok _ =>
+      .continue st'
+  | .error e =>
+      let stExc := st'.throwException e.toInt
+      let stExcGas := stExc.consumeGas exceptionGasPrice
+      if decide (stExcGas.gas.gasRemaining < 0) then
+        stExcGas.outOfGasHalt
+      else
+        .continue stExcGas
+
+def VmState.stepWhileBody (st : VmState) (cond body after : Continuation) : StepResult :=
+  -- Match C++ `WhileCont::jump[_w]`: install while-cond continuation in c0 only if `cond` has no c0.
+  if cond.hasC0 then
+    .continue { st with cc := cond }
+  else
+    .continue { st with regs := { st.regs with c0 := .whileCond cond body after }, cc := cond }
+
+def VmState.stepUntilBody (st : VmState) (body after : Continuation) : StepResult :=
+  let action : VM Unit := do
+    if (← VM.popBool) then
+      let st ← get
+      let afterNeedsMoreArgs : Bool :=
+        match after with
+        | .ordinary _ _ _ cdata
+        | .envelope _ _ cdata =>
+            decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+        | _ =>
+            false
+      if afterNeedsMoreArgs then
+        throw .stkUnd
+      else
+        match after with
+        | .ordinary code saved cregs cdata =>
+            modify fun st => { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+        | _ =>
+            modify fun st => { st with cc := after }
+    else
+      -- C++ `UntilCont::jump`: if `body` doesn't have `c0`, re-install this until continuation into `c0`
+      -- because `RET` swaps `c0 := quit0` when returning to `c0`.
+      let st ← get
       let bodyNeedsMoreArgs : Bool :=
         match body with
         | .ordinary _ _ _ cdata
@@ -246,124 +198,221 @@ def VmState.step (host : Host) (st : VmState) : StepResult :=
             false
       if body.hasC0 then
         if bodyNeedsMoreArgs then
-          let stExc := st.throwException Excno.stkUnd.toInt
-          let stExcGas := stExc.consumeGas exceptionGasPrice
-          if decide (stExcGas.gas.gasRemaining < 0) then
-            stExcGas.outOfGasHalt
-          else
-            .continue stExcGas
+          throw .stkUnd
         else
-          .continue { st with cc := body }
+          modify fun st => { st with cc := body }
       else
-        -- Match C++ `AgainCont::jump[_w]`: install loop continuation in `c0` first,
-        -- then apply jump-time `nargs` checks (`adjust_jump_cont`).
-        let stLoop := { st with regs := { st.regs with c0 := .againBody body } }
+        -- Match C++ order in `UntilCont::jump`: install `c0` first, then jump to body
+        -- (which may throw `stk_und` in `adjust_jump_cont`).
+        modify fun st => { st with regs := { st.regs with c0 := .untilBody body after } }
         if bodyNeedsMoreArgs then
-          let stExc := stLoop.throwException Excno.stkUnd.toInt
+          throw .stkUnd
+        else
+          modify fun st => { st with cc := body }
+  let (res, st') := (action.run st)
+  match res with
+  | .ok _ =>
+      .continue st'
+  | .error e =>
+      let stExc := st'.throwException e.toInt
+      let stExcGas := stExc.consumeGas exceptionGasPrice
+      if decide (stExcGas.gas.gasRemaining < 0) then
+        stExcGas.outOfGasHalt
+      else
+        .continue stExcGas
+
+def VmState.stepRepeatBody (st : VmState) (body after : Continuation) (count : Nat) : StepResult :=
+  if count = 0 then
+    let afterNeedsMoreArgs : Bool :=
+      match after with
+      | .ordinary _ _ _ cdata
+      | .envelope _ _ cdata =>
+          decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+      | _ =>
+          false
+    if afterNeedsMoreArgs then
+      let stExc := st.throwException Excno.stkUnd.toInt
+      let stExcGas := stExc.consumeGas exceptionGasPrice
+      if decide (stExcGas.gas.gasRemaining < 0) then
+        stExcGas.outOfGasHalt
+      else
+        .continue stExcGas
+    else
+      match after with
+      | .ordinary code saved cregs cdata =>
+          .continue { st with regs := { st.regs with c0 := saved }, cc := .ordinary code (.quit 0) cregs cdata }
+      | _ =>
+          .continue { st with cc := after }
+  else if body.hasC0 then
+    .continue { st with cc := body }
+  else
+    let count' := count - 1
+    .continue { st with regs := { st.regs with c0 := .repeatBody body after count' }, cc := body }
+
+def VmState.stepAgainBody (st : VmState) (body : Continuation) : StepResult :=
+  let bodyNeedsMoreArgs : Bool :=
+    match body with
+    | .ordinary _ _ _ cdata
+    | .envelope _ _ cdata =>
+        decide (0 ≤ cdata.nargs) && cdata.nargs.toNat > st.stack.size
+    | _ =>
+        false
+  if body.hasC0 then
+    if bodyNeedsMoreArgs then
+      let stExc := st.throwException Excno.stkUnd.toInt
+      let stExcGas := stExc.consumeGas exceptionGasPrice
+      if decide (stExcGas.gas.gasRemaining < 0) then
+        stExcGas.outOfGasHalt
+      else
+        .continue stExcGas
+    else
+      .continue { st with cc := body }
+  else
+    -- Match C++ `AgainCont::jump[_w]`: install loop continuation in `c0` first,
+    -- then apply jump-time `nargs` checks (`adjust_jump_cont`).
+    let stLoop := { st with regs := { st.regs with c0 := .againBody body } }
+    if bodyNeedsMoreArgs then
+      let stExc := stLoop.throwException Excno.stkUnd.toInt
+      let stExcGas := stExc.consumeGas exceptionGasPrice
+      if decide (stExcGas.gas.gasRemaining < 0) then
+        stExcGas.outOfGasHalt
+      else
+        .continue stExcGas
+    else
+      .continue { stLoop with cc := body }
+
+def VmState.stepEnvelope (st : VmState) (ext : Continuation) (cregs : OrdCregs) (cdata : OrdCdata) : StepResult :=
+  -- Mirrors C++ `ArgContExt::jump`: apply saved control regs, closure stack and nargs, then jump to `ext`.
+  let st := st.applyCregsCdata cregs cdata
+  .continue { st with cc := ext }
+
+def VmState.stepOrdinaryImplicit (st : VmState) (code : Slice) : StepResult :=
+  if code.refsRemaining == 0 then
+    -- Implicit RET.
+    let st0 := st.consumeGas implicitRetGasPrice
+    if decide (st0.gas.gasRemaining < 0) then
+      st0.outOfGasHalt
+    else
+      let (res, st1) := (VM.ret).run st0
+      match res with
+      | .ok _ =>
+          .continue st1
+      | .error e =>
+          let stExc := st1.throwException e.toInt
           let stExcGas := stExc.consumeGas exceptionGasPrice
           if decide (stExcGas.gas.gasRemaining < 0) then
             stExcGas.outOfGasHalt
           else
             .continue stExcGas
+  else
+    -- Implicit JMPREF to the first reference.
+    let st0 := st.consumeGas implicitJmpRefGasPrice
+    if decide (st0.gas.gasRemaining < 0) then
+      st0.outOfGasHalt
+    else
+      if code.refPos < code.cell.refs.size then
+        let refCell := code.cell.refs[code.refPos]!
+        let st1 := st0.registerCellLoad refCell
+        if decide (st1.gas.gasRemaining < 0) then
+          st1.outOfGasHalt
         else
-          .continue { stLoop with cc := body }
-  | .envelope ext cregs cdata =>
-      -- Mirrors C++ `ArgContExt::jump`: apply saved control regs, closure stack and nargs, then jump to `ext`.
-      let st := st.applyCregsCdata cregs cdata
-      .continue { st with cc := ext }
-  | .ordinary code saved cregs cdata =>
-      -- Apply pending continuation control regs (MVP: c0,c1,c2,c3,c4,c5,c7), once.
-      let st2 := st.applyCregsCdata cregs cdata
-      -- Closure stack / nargs are applied once on entry.
-      let cdata' : OrdCdata := { cdata with stack := #[], nargs := -1 }
-      let st : VmState := { st2 with cc := .ordinary code saved OrdCregs.empty cdata' }
-      if code.bitsRemaining == 0 then
-        if code.refsRemaining == 0 then
-          -- Implicit RET.
-          let st0 := st.consumeGas implicitRetGasPrice
-          if decide (st0.gas.gasRemaining < 0) then
-            st0.outOfGasHalt
-          else
-            let (res, st1) := (VM.ret).run st0
-            match res with
-            | .ok _ =>
-                .continue st1
-            | .error e =>
-                let stExc := st1.throwException e.toInt
-                let stExcGas := stExc.consumeGas exceptionGasPrice
-                if decide (stExcGas.gas.gasRemaining < 0) then
-                  stExcGas.outOfGasHalt
-                else
-                  .continue stExcGas
-        else
-          -- Implicit JMPREF to the first reference.
-          let st0 := st.consumeGas implicitJmpRefGasPrice
-          if decide (st0.gas.gasRemaining < 0) then
-            st0.outOfGasHalt
-          else
-            if code.refPos < code.cell.refs.size then
-              let refCell := code.cell.refs[code.refPos]!
-              let st1 := st0.registerCellLoad refCell
-              if decide (st1.gas.gasRemaining < 0) then
-                st1.outOfGasHalt
-              else
-                .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
-            else
-              let stExc := st0.throwException Excno.cellUnd.toInt
-              let stExcGas := stExc.consumeGas exceptionGasPrice
-              if decide (stExcGas.gas.gasRemaining < 0) then
-                stExcGas.outOfGasHalt
-              else
-                .continue stExcGas
+          .continue { st1 with cc := .ordinary (Slice.ofCell refCell) (.quit 0) OrdCregs.empty OrdCdata.empty }
       else
-        let decoded : Except Excno (Instr × Nat × Slice) :=
-          if st.cp = 0 then
-            decodeCp0WithBits code
+        let stExc := st0.throwException Excno.cellUnd.toInt
+        let stExcGas := stExc.consumeGas exceptionGasPrice
+        if decide (stExcGas.gas.gasRemaining < 0) then
+          stExcGas.outOfGasHalt
+        else
+          .continue stExcGas
+
+def VmState.stepOrdinaryInvalid (st : VmState) (code : Slice) (e : Excno) : StepResult :=
+  -- Align with C++ opcode-table behavior: some invalid/too-short opcode paths
+  -- charge one instruction slot before raising `inv_opcode`.
+  let st0 :=
+    if e = .invOpcode ∧ code.bitsRemaining > 0 then
+      let invalBits : Nat := cp0InvOpcodeGasBits code
+      st.consumeGas (gasPerInstr + Int.ofNat invalBits)
+    else
+      st
+  let st0 := st0.throwException e.toInt
+  let st0 := st0.consumeGas exceptionGasPrice
+  if decide (st0.gas.gasRemaining < 0) then
+    st0.outOfGasHalt
+  else
+    .continue st0
+
+def VmState.stepOrdinaryOk (host : Host) (st : VmState) (instr : Instr) (totBits : Nat) (rest : Slice) : StepResult :=
+  let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
+  let stGas := st0.consumeGas (instrGas instr totBits)
+  if decide (stGas.gas.gasRemaining < 0) then
+    stGas.outOfGasHalt
+  else
+    let (res, st1) := (execInstr host instr).run stGas
+    match res with
+    | .ok _ =>
+        if decide (st1.gas.gasRemaining < 0) then
+          -- C++ gas.check() after step → VmNoGas → propagates to run(),
+          -- bypassing throw_exception.  No exception_gas charged.
+          st1.outOfGasHalt
+        else
+          .continue st1
+    | .error e =>
+        if e = .outOfGas then
+          -- VmNoGas thrown mid-instruction (e.g. from consume_gas during
+          -- cell load).  Propagates to run(), no exception_gas charged.
+          st1.outOfGasHalt
+        else
+          -- TVM behavior: convert VM errors into an exception jump to c2.
+          let stExc := st1.throwException e.toInt
+          let stExcGas := stExc.consumeGas exceptionGasPrice
+          if decide (stExcGas.gas.gasRemaining < 0) then
+            stExcGas.outOfGasHalt
           else
-            .error .invOpcode
-        match decoded with
-        | .error e =>
-            -- Align with C++ opcode-table behavior: some invalid/too-short opcode paths
-            -- charge one instruction slot before raising `inv_opcode`.
-            let st0 :=
-              if e = .invOpcode ∧ code.bitsRemaining > 0 then
-                let invalBits : Nat := cp0InvOpcodeGasBits code
-                st.consumeGas (gasPerInstr + Int.ofNat invalBits)
-              else
-                st
-            let st0 := st0.throwException e.toInt
-            let st0 := st0.consumeGas exceptionGasPrice
-            if decide (st0.gas.gasRemaining < 0) then
-              st0.outOfGasHalt
-            else
-              .continue st0
-        | .ok (instr, totBits, rest) =>
-            let st0 := { st with cc := .ordinary rest (.quit 0) OrdCregs.empty OrdCdata.empty }
-            let stGas := st0.consumeGas (instrGas instr totBits)
-            if decide (stGas.gas.gasRemaining < 0) then
-              stGas.outOfGasHalt
-            else
-              let (res, st1) := (execInstr host instr).run stGas
-              match res with
-              | .ok _ =>
-                  if decide (st1.gas.gasRemaining < 0) then
-                    -- C++ gas.check() after step → VmNoGas → propagates to run(),
-                    -- bypassing throw_exception.  No exception_gas charged.
-                    st1.outOfGasHalt
-                  else
-                    .continue st1
-              | .error e =>
-                  if e = .outOfGas then
-                    -- VmNoGas thrown mid-instruction (e.g. from consume_gas during
-                    -- cell load).  Propagates to run(), no exception_gas charged.
-                    st1.outOfGasHalt
-                  else
-                    -- TVM behavior: convert VM errors into an exception jump to c2.
-                    let stExc := st1.throwException e.toInt
-                    let stExcGas := stExc.consumeGas exceptionGasPrice
-                    if decide (stExcGas.gas.gasRemaining < 0) then
-                      stExcGas.outOfGasHalt
-                    else
-                      .continue stExcGas
+            .continue stExcGas
+
+def VmState.stepOrdinaryDecode (host : Host) (st : VmState) (code : Slice) : StepResult :=
+  let decoded : Except Excno (Instr × Nat × Slice) :=
+    if st.cp = 0 then
+      decodeCp0WithBits code
+    else
+      .error .invOpcode
+  match decoded with
+  | .error e =>
+      VmState.stepOrdinaryInvalid st code e
+  | .ok (instr, totBits, rest) =>
+      VmState.stepOrdinaryOk host st instr totBits rest
+
+def VmState.stepOrdinary (host : Host) (st : VmState) (code : Slice) (saved : Continuation) (cregs : OrdCregs)
+    (cdata : OrdCdata) : StepResult :=
+  -- Apply pending continuation control regs (MVP: c0,c1,c2,c3,c4,c5,c7), once.
+  let st2 := st.applyCregsCdata cregs cdata
+  -- Closure stack / nargs are applied once on entry.
+  let cdata' : OrdCdata := { cdata with stack := #[], nargs := -1 }
+  let st : VmState := { st2 with cc := .ordinary code saved OrdCregs.empty cdata' }
+  if code.bitsRemaining == 0 then
+    VmState.stepOrdinaryImplicit st code
+  else
+    VmState.stepOrdinaryDecode host st code
+
+def VmState.step (host : Host) (st : VmState) : StepResult :=
+  match st.cc with
+  | .quit n =>
+      VmState.stepQuit st n
+  | .excQuit =>
+      VmState.stepExcQuit st
+  | .whileCond cond body after =>
+      VmState.stepWhileCond st cond body after
+  | .whileBody cond body after =>
+      VmState.stepWhileBody st cond body after
+  | .untilBody body after =>
+      VmState.stepUntilBody st body after
+  | .repeatBody body after count =>
+      VmState.stepRepeatBody st body after count
+  | .againBody body =>
+      VmState.stepAgainBody st body
+  | .envelope ext cregs cdata =>
+      VmState.stepEnvelope st ext cregs cdata
+  | .ordinary code saved cregs cdata =>
+      VmState.stepOrdinary host st code saved cregs cdata
 
 end TvmLean

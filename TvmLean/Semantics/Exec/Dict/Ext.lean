@@ -90,6 +90,45 @@ private partial def pfxLookupPrefixWithCells (root : Option Cell) (keyBits : Bit
 
       go rootCell n keyLen 0 #[]
 
+private partial def pfxLookupPrefixVisitedCells (root : Option Cell) (keyBits : BitString) (keyLen : Nat) (n : Nat) :
+    Array Cell :=
+  match root with
+  | none => #[]
+  | some rootCell =>
+      let rec go (cell : Cell) (nRem m pos : Nat) (loaded : Array Cell) : Array Cell :=
+        let loaded := loaded.push cell
+        match parseDictLabel cell nRem with
+        | .error _ => loaded
+        | .ok lbl =>
+            let labelBits : BitString := dictLabelBits lbl
+            let keyPart := keyBits.extract pos (pos + Nat.min m lbl.len)
+            let l : Nat := bitsCommonPrefixLen labelBits keyPart
+            if l < lbl.len then
+              loaded
+            else
+              let nRem := nRem - lbl.len
+              let m := m - lbl.len
+              let pos := pos + lbl.len
+              let payload0 : Slice := lbl.remainder.advanceBits lbl.storedBits
+              if !payload0.haveBits 1 then
+                loaded
+              else
+                let ctor : Bool := (payload0.readBits 1)[0]!
+                let payload : Slice := { payload0 with bitPos := payload0.bitPos + 1 }
+                if !ctor then
+                  loaded
+                else if nRem = 0 then
+                  loaded
+                else if payload.bitsRemaining != 0 || payload.refsRemaining != 2 then
+                  loaded
+                else if m = 0 then
+                  loaded
+                else
+                  let swBit : Bool := keyBits[pos]!
+                  let child := payload.cell.refs[if swBit then 1 else 0]!
+                  go child (nRem - 1) (m - 1) (pos + 1) loaded
+      go rootCell n keyLen 0 #[]
+
 private partial def pfxSetGenAuxWithCells (root : Option Cell) (key : BitString) (n : Nat)
     (storeVal : Builder → Except Excno Builder) (mode : DictSetMode) :
     Except Excno (Option Cell × Bool × Nat × Array Cell) := do
@@ -611,17 +650,23 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
               pure (keySlice.readBits k)
             else
               throw .cellUnd
+          let registerSubdictErrorLoads : VM Unit := do
+            let loaded0 := dictExtractPrefixSubdictVisitedCells dictCell? n prefixBits k
+            let loaded :=
+              if k > 0 then
+                DictExt.loadedWithoutRoot dictCell? loaded0
+              else
+                loaded0
+            DictExt.registerLoaded loaded
           if k > 0 then
             DictExt.prechargeRootLoad dictCell?
           match dictExtractPrefixSubdictWithCells dictCell? n prefixBits k rp with
-          -- Most SUBDICT* cases propagate `cell_und`, but signed-int RP extraction
-          -- can surface `dict_err` from C++ `cut_prefix_subdict()` for malformed tries.
           | .error .cellUnd =>
-              if intKey && !unsigned && rp then
-                throw .dictErr
-              else
-                throw .cellUnd
-          | .error e => throw e
+              registerSubdictErrorLoads
+              throw .cellUnd
+          | .error e =>
+              registerSubdictErrorLoads
+              throw e
           | .ok (newRoot?, _changed, created, loaded) =>
               let loaded :=
                 if k > 0 then
@@ -685,8 +730,14 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           let cs0 ← VM.popSlice
           DictExt.prechargeRootLoad dictCell?
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
+          let registerPfxErrorLoads : VM Unit := do
+            let loaded0 := DictExt.pfxLookupPrefixVisitedCells dictCell? keyBits keyBits.size n
+            let loaded := DictExt.loadedWithoutRoot dictCell? loaded0
+            DictExt.registerLoaded loaded
           match DictExt.pfxLookupPrefixWithCells dictCell? keyBits keyBits.size n with
-          | .error e => throw e
+          | .error e =>
+              registerPfxErrorLoads
+              throw e
           | .ok (none, _pos, loaded) =>
               -- Not found / cannot parse.
               let loaded :=
@@ -724,12 +775,12 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
                   DictExt.pushBool true
               | .get =>
                   pure ()
-              | .getJmp | .getExec =>
+              | .getJmp =>
                   let cont : Continuation := .ordinary valueSlice (.quit 0) OrdCregs.empty OrdCdata.empty
-                  modify fun st =>
-                    match kind with
-                    | .getExec => st.callTo cont
-                    | _ => st.jumpTo cont
+                  modify fun st => st.jumpTo cont
+              | .getExec =>
+                  let cont : Continuation := .ordinary valueSlice (.quit 0) OrdCregs.empty OrdCdata.empty
+                  modify fun st => st.callTo cont
 
       | .pfxSwitch dictCell keyLen =>
           let cs0 ← VM.popSlice
@@ -737,7 +788,11 @@ def execInstrDictExt (i : Instr) (next : VM Unit) : VM Unit := do
           VM.registerCellLoad dictCell
           let keyBits : BitString := cs0.readBits cs0.bitsRemaining
           match DictExt.pfxLookupPrefixWithCells (some dictCell) keyBits keyBits.size keyLen with
-          | .error e => throw e
+          | .error e =>
+              let loaded0 := DictExt.pfxLookupPrefixVisitedCells (some dictCell) keyBits keyBits.size keyLen
+              let loaded := DictExt.loadedWithoutRoot (some dictCell) loaded0
+              DictExt.registerLoaded loaded
+              throw e
           | .ok (none, _pos, loaded0) =>
               let loaded := DictExt.loadedWithoutRoot (some dictCell) loaded0
               DictExt.registerLoaded loaded

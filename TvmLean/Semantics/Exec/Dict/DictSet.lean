@@ -58,8 +58,8 @@ def execInstrDictDictSet (i : Instr) (next : VM Unit) : VM Unit := do
             let loaded := dropFirstRootLoad dictCell? loaded
             for c in loaded do
               VM.registerCellLoad c
-            if created > 0 then
-              modify fun st => st.consumeGas (cellCreateGasPrice * Int.ofNat created)
+            for _ in [0:created] do
+              VM.consumeGas cellCreateGasPrice
             match newRoot? with
             | none => VM.push .null
             | some c => VM.push (.cell c)
@@ -87,8 +87,8 @@ def execInstrDictDictSet (i : Instr) (next : VM Unit) : VM Unit := do
             let loaded := dropFirstRootLoad dictCell? loaded
             for c in loaded do
               VM.registerCellLoad c
-            if created > 0 then
-              modify fun st => st.consumeGas (cellCreateGasPrice * Int.ofNat created)
+            for _ in [0:created] do
+              VM.consumeGas cellCreateGasPrice
             match newRoot? with
             | none => VM.push .null
             | some c => VM.push (.cell c)

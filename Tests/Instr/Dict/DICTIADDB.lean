@@ -192,21 +192,22 @@ private def randomKeyInRange (n : Nat) (rng0 : StdGen) : Int × StdGen :=
   else
     let lo := signedRangeMin n
     let hi := signedRangeMax n
+    let clamp (v : Int) := if v < lo then lo else if v > hi then hi else v
     let (mode, rng1) := randNat rng0 0 6
     if mode = 0 then
       (lo, rng1)
     else if mode = 1 then
       (hi, rng1)
     else if mode = 2 then
-      (0, rng1)
+      (clamp 0, rng1)
     else if mode = 3 then
-      (hi / 2, rng1)
+      (clamp (hi / 2), rng1)
     else if mode = 4 then
-      (lo / 2, rng1)
+      (clamp (lo / 2), rng1)
     else if mode = 5 then
-      (1, rng1)
+      (clamp 1, rng1)
     else
-      (-1, rng1)
+      (clamp (-1), rng1)
 
 private def randomKeyOutOfRange (n : Nat) (rng0 : StdGen) : Int × StdGen :=
   if n = 0 then

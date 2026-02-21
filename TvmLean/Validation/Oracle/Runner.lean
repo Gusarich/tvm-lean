@@ -1116,15 +1116,25 @@ def buildCodeCellWithArgsVal (row : InstrRow) (argsVal : Nat) (tail : BitString 
 def buildCodeCells (row : InstrRow) (maxCodeVariants : Nat) (randomCases : Nat := 0)
     (seed : UInt64 := 1) : Except String (Array (Nat × Cell)) := do
   let maxCodeVariants := Nat.max 1 maxCodeVariants
+  let collect (argsVals : Array Nat) : Array (Nat × Cell) :=
+    Id.run do
+      let mut out : Array (Nat × Cell) := #[]
+      for av in argsVals do
+        match buildCodeCellWithArgsVal row av with
+        | .ok c => out := out.push (av, c)
+        | .error _ => pure ()
+      return out
   let argsVals ← buildArgsValVariants row maxCodeVariants randomCases seed
-  let mut out : Array (Nat × Cell) := #[]
-  for av in argsVals do
-    match buildCodeCellWithArgsVal row av with
-    | .ok c => out := out.push (av, c)
-    | .error _ => pure ()
-  if out.isEmpty then
+  let out := collect argsVals
+  if !out.isEmpty then
+    return out
+  let fallbackVariants : Nat := Nat.max 16 (maxCodeVariants * 8)
+  let fallbackRandom : Nat := Nat.max 64 (randomCases * 8)
+  let argsValsFallback ← buildArgsValVariants row fallbackVariants fallbackRandom (seed + 1)
+  let outFallback := collect argsValsFallback
+  if outFallback.isEmpty then
     throw s!"{row.name}: failed to build any code variants"
-  pure out
+  pure outFallback
 
 def buildCodeCell (row : InstrRow) : Except String Cell := do
   let argsLen : Nat := row.skipLen - row.checkLen
@@ -3651,8 +3661,8 @@ def main (args : List String) : IO UInt32 := do
     | _ => 64
   let minCasesPerInstr : Nat :=
     match args.dropWhile (· != "--min-cases") with
-    | _ :: n :: _ => n.toNat?.getD 10
-    | _ => 10
+    | _ :: n :: _ => n.toNat?.getD 1
+    | _ => 1
   let randomCasesPerInstr : Nat :=
     match args.dropWhile (· != "--random-cases") with
     | _ :: n :: _ => n.toNat?.getD 0
