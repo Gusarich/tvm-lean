@@ -206,6 +206,25 @@ macro_rules
         runRaw_succ_continue, runRaw_succ_halt,
         VmState.run_succ_continue, VmState.run_succ_halt, VmState.run_succ_finalized])
 
+syntax "vm_step" term : tactic
+syntax "vm_halt" term : tactic
+
+macro_rules
+  | `(tactic| vm_step $h) =>
+      `(tactic| refine RunScript.next (by exact $h) ?_)
+  | `(tactic| vm_halt $h) =>
+      `(tactic| exact RunScript.halted (by exact $h))
+
+syntax "vm_script" "[" term,* "]" : tactic
+
+macro_rules
+  | `(tactic| vm_script []) =>
+      `(tactic| fail "vm_script requires at least one step lemma")
+  | `(tactic| vm_script [$h]) =>
+      `(tactic| vm_halt $h)
+  | `(tactic| vm_script [$h, $hs,*]) =>
+      `(tactic| (vm_step $h; vm_script [$hs,*]))
+
 theorem stepOrdinaryDecode_cp0_of_decode_ok (host : Host) (st : VmState) (code rest : Slice)
     (instr : Instr) (totBits : Nat)
     (hcp : st.cp = 0)

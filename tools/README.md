@@ -25,6 +25,18 @@ Outputs:
 - `Tests/Instr/<Family>/*.lean` skeletons (for missing instructions)
 - `Tests/All.lean`
 
+## Generate contract proof scaffold
+
+```sh
+python3 tools/gen_contract_scaffold.py MyContract
+```
+
+Outputs:
+
+- `Contracts/MyContract/Program.lean`
+- `Contracts/MyContract/Spec.lean`
+- `Contracts/MyContract/Proof.lean`
+
 ## Generate progress table
 
 ```sh

@@ -30,6 +30,10 @@ lean_lib TvmLeanSemantics where
 lean_lib TvmLean where
   roots := #[`TvmLean]
 
+lean_lib TvmLeanContracts where
+  srcDir := "."
+  roots := #[`Contracts]
+
 lean_lib TvmLeanNative where
   roots := #[`TvmLean.Native]
   needs := #[`@/libtvmlean_crypto]

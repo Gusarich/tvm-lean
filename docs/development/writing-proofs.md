@@ -2,6 +2,22 @@
 
 This guide describes the proof-facing API for `TvmLean/Semantics/Step/*` and the patterns that keep long execution proofs short, stable, and fast to elaborate.
 
+## Proof kit import
+
+Use the proof kit entrypoint when writing contract proofs:
+
+- `import TvmLean.Proof`
+
+It re-exports the main proof helpers:
+
+- `TvmLean/Proof/VM.lean` for VM monad and state-projection lemmas.
+- `TvmLean/Proof/Gas.lean` for gas budget helpers.
+- `TvmLean/Proof/Program.lean` for program runner and decode helpers.
+- `TvmLean/Proof/Run.lean` for run/step scripting bridges.
+- `TvmLean/Proof/Stack.lean` for typed stack views (`TypedVal`, `StackView`).
+- `TvmLean/Proof/InstrSpec.lean` for instruction-family spec bridge lemmas.
+- `TvmLean/Proof/Cell.lean` and `TvmLean/Proof/Dict.lean` for common data-structure lemmas.
+
 ## Which runner to use
 
 - `VmState.runK host fuel st`:
@@ -49,6 +65,7 @@ Avoid `simp [VmState.run]` on large traces. Prefer:
 3. Reuse script/bridge lemmas instead of repeatedly unfolding recursion.
 
 Use `vm_simp` (defined in `Step/Proof.lean`) for the safe subset of runner simplifications.
+Use `vm_step h` / `vm_halt h` to assemble `RunScript` proofs incrementally.
 
 ## Structuring step-eval lemmas
 
@@ -97,3 +114,23 @@ This keeps each lemma local and avoids global unfolding cascades.
   - `lake build TvmLean.Semantics`
 - Model/decode changes:
   - `lake build TvmLean.Model.Instr.Codepage.Cp0`
+
+## Contract scaffold generator
+
+Use `tools/gen_contract_scaffold.py` to create a contract-proof skeleton:
+
+```sh
+tools/gen_contract_scaffold.py MyContract
+```
+
+This creates:
+
+- `Contracts/MyContract/Program.lean`
+- `Contracts/MyContract/Spec.lean`
+- `Contracts/MyContract/Proof.lean`
+
+## Reference contract proofs
+
+- `Contracts/ToyCounter/Proof.lean` shows the instruction-list workflow + bytecode bridge checks.
+- `Contracts/DictCounter/Proof.lean` shows reusable dictionary postcondition lemmas on empty state.
+- `Contracts/FlowGate/Proof.lean` shows a control-flow instruction (`IF`) proved with instruction-spec lemmas.
