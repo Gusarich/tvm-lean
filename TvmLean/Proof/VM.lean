@@ -2,6 +2,56 @@ import TvmLean.Semantics
 
 namespace TvmLean
 
+def VM.runResult {α : Type} (mx : VM α) (st : VmState) : Except Excno α :=
+  (ExceptT.run mx st).1
+
+def VM.runState {α : Type} (mx : VM α) (st : VmState) : VmState :=
+  (ExceptT.run mx st).2
+
+theorem vm_run_eq_pair {α : Type} (mx : VM α) (st : VmState) :
+    ExceptT.run mx st = (VM.runResult mx st, VM.runState mx st) := by
+  rfl
+
+theorem vm_runResult_pure {α : Type} (a : α) (st : VmState) :
+    VM.runResult (pure a : VM α) st = .ok a := by
+  rfl
+
+theorem vm_runState_pure {α : Type} (a : α) (st : VmState) :
+    VM.runState (pure a : VM α) st = st := by
+  rfl
+
+theorem vm_runResult_throw {α : Type} (e : Excno) (st : VmState) :
+    VM.runResult (throw e : VM α) st = .error e := by
+  rfl
+
+theorem vm_runState_throw {α : Type} (e : Excno) (st : VmState) :
+    VM.runState (throw e : VM α) st = st := by
+  rfl
+
+theorem vm_runResult_get (st : VmState) :
+    VM.runResult (get : VM VmState) st = .ok st := by
+  rfl
+
+theorem vm_runState_get (st : VmState) :
+    VM.runState (get : VM VmState) st = st := by
+  rfl
+
+theorem vm_runResult_modify (f : VmState → VmState) (st : VmState) :
+    VM.runResult (modify f : VM Unit) st = .ok () := by
+  rfl
+
+theorem vm_runState_modify (f : VmState → VmState) (st : VmState) :
+    VM.runState (modify f : VM Unit) st = f st := by
+  rfl
+
+theorem vm_runResult_set (st st' : VmState) :
+    VM.runResult (set st' : VM Unit) st = .ok () := by
+  rfl
+
+theorem vm_runState_set (st st' : VmState) :
+    VM.runState (set st' : VM Unit) st = st' := by
+  rfl
+
 @[simp] theorem vm_pure_run {α : Type} (a : α) (st : VmState) :
     ExceptT.run (pure a : VM α) st = (.ok a, st) := by
   rfl
@@ -37,6 +87,28 @@ namespace TvmLean
       | error e =>
           simp [ExceptT.run, StateT.run, h, ExceptT.bindCont, bind, Bind.bind]
           rfl
+
+theorem vm_runResult_bind {α β : Type} (mx : VM α) (f : α → VM β) (st : VmState) :
+    VM.runResult (mx >>= f) st =
+      match VM.runResult mx st with
+      | .ok a => VM.runResult (f a) (VM.runState mx st)
+      | .error e => .error e := by
+  unfold VM.runResult VM.runState
+  rw [vm_bind_run]
+  cases h : ExceptT.run mx st with
+  | mk res st' =>
+      cases res <;> rfl
+
+theorem vm_runState_bind {α β : Type} (mx : VM α) (f : α → VM β) (st : VmState) :
+    VM.runState (mx >>= f) st =
+      match VM.runResult mx st with
+      | .ok a => VM.runState (f a) (VM.runState mx st)
+      | .error _ => VM.runState mx st := by
+  unfold VM.runResult VM.runState
+  rw [vm_bind_run]
+  cases h : ExceptT.run mx st with
+  | mk res st' =>
+      cases res <;> rfl
 
 theorem applyCregsCdata_empty (st : VmState) :
     st.applyCregsCdata OrdCregs.empty OrdCdata.empty = st := by

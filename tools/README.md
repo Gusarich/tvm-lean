@@ -31,11 +31,45 @@ Outputs:
 python3 tools/gen_contract_scaffold.py MyContract
 ```
 
+Profiles/modes:
+
+```sh
+python3 tools/gen_contract_scaffold.py WalletV4 --profile dict
+python3 tools/gen_contract_scaffold.py Router --mode flow
+python3 tools/gen_contract_scaffold.py BatchJob --profile loop
+```
+
+Richer skeleton options:
+
+```sh
+# Add invariant placeholders in Spec/Proof.
+python3 tools/gen_contract_scaffold.py MyContract --with-invariants
+
+# Disable or explicitly enable the Program bytecode bridge.
+python3 tools/gen_contract_scaffold.py MyContract --no-bytecode-bridge
+python3 tools/gen_contract_scaffold.py MyContract --with-bytecode-bridge
+
+# Refresh an existing scaffold in-place (default is no overwrite).
+python3 tools/gen_contract_scaffold.py MyContract --overwrite
+```
+
 Outputs:
 
 - `Contracts/MyContract/Program.lean`
 - `Contracts/MyContract/Spec.lean`
 - `Contracts/MyContract/Proof.lean`
+
+Generated scaffold files include a local validation command block (Lean comments), for example:
+
+```lean
+-- Local validation commands (run from repo root):
+--   lake env lean Contracts/MyContract/Program.lean
+--   lake env lean Contracts/MyContract/Spec.lean
+--   lake env lean Contracts/MyContract/Proof.lean
+```
+
+The generator also runs fast post-generation checks (template markers, whitespace sanity, file existence, and
+write/read consistency for files written in the current run).
 
 ## Generate progress table
 

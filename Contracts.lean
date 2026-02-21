@@ -7,3 +7,12 @@ import Contracts.DictCounter.Proof
 import Contracts.FlowGate.Program
 import Contracts.FlowGate.Spec
 import Contracts.FlowGate.Proof
+import Contracts.MsgParser.Program
+import Contracts.MsgParser.Spec
+import Contracts.MsgParser.Proof
+import Contracts.NonceGuard.Program
+import Contracts.NonceGuard.Spec
+import Contracts.NonceGuard.Proof
+import Contracts.LoopCounter.Program
+import Contracts.LoopCounter.Spec
+import Contracts.LoopCounter.Proof

@@ -99,6 +99,46 @@ theorem runK_inr_to_stepN (host : Host) (fuel : Nat) (st st' : VmState)
         exact StepN.succ (StepContinue.intro hstep) (ih (st := stNext) hnext)
       · simp [VmState.runK, hstep] at hcont
 
+theorem stepN_lift_invariant (host : Host) (Inv : VmState → Prop)
+    (hpres : ∀ {st : VmState} {stNext : VmState},
+      StepContinue host st stNext → Inv st → Inv stNext) :
+    ∀ {n : Nat} {st : VmState} {stNext : VmState},
+      StepN host n st stNext → Inv st → Inv stNext := by
+  intro n st stNext hsteps
+  induction hsteps with
+  | zero st =>
+      intro hInv
+      simpa using hInv
+  | succ hcont _ ih =>
+      intro hInv
+      exact ih (hpres hcont hInv)
+
+theorem runK_inr_lift_invariant (host : Host) (Inv : VmState → Prop)
+    (hpres : ∀ {st : VmState} {stNext : VmState},
+      StepContinue host st stNext → Inv st → Inv stNext)
+    (fuel : Nat) (st st' : VmState)
+    (hcont : VmState.runK host fuel st = Sum.inr st')
+    (hInv : Inv st) :
+    Inv st' := by
+  exact stepN_lift_invariant (host := host) (Inv := Inv) (hpres := hpres)
+    (runK_inr_to_stepN (host := host) (fuel := fuel) (st := st) (st' := st') hcont) hInv
+
+theorem stepHaltN_lift_invariant (host : Host) (Inv : VmState → Prop)
+    (hcont : ∀ {st : VmState} {stNext : VmState},
+      StepContinue host st stNext → Inv st → Inv stNext)
+    (hhalt : ∀ {st : VmState} {halted : Int × VmState},
+      StepHalt host st halted → Inv st → Inv halted.2) :
+    ∀ {n : Nat} {st : VmState} {halted : Int × VmState},
+      StepHaltN host n st halted → Inv st → Inv halted.2 := by
+  intro n st halted hsteps
+  induction hsteps with
+  | base hhaltStep =>
+      intro hInv
+      exact hhalt hhaltStep hInv
+  | succ hcontStep _ ih =>
+      intro hInv
+      exact ih (hcont hcontStep hInv)
+
 theorem runK_inl_to_stepHaltN (host : Host) (fuel : Nat) (st : VmState)
     (exitCode : Int) (st' : VmState)
     (hhalt : VmState.runK host fuel st = Sum.inl (exitCode, st')) :
@@ -120,6 +160,21 @@ theorem runK_inl_to_stepHaltN (host : Host) (fuel : Nat) (st : VmState)
         cases hEq
         refine ⟨1, Nat.succ_le_succ (Nat.zero_le fuel), ?_⟩
         exact StepHaltN.base (StepHalt.intro hstep)
+
+theorem runK_inl_lift_invariant (host : Host) (Inv : VmState → Prop)
+    (hcont : ∀ {st : VmState} {stNext : VmState},
+      StepContinue host st stNext → Inv st → Inv stNext)
+    (hhalt : ∀ {st : VmState} {halted : Int × VmState},
+      StepHalt host st halted → Inv st → Inv halted.2)
+    (fuel : Nat) (st : VmState) (exitCode : Int) (st' : VmState)
+    (hhalted : VmState.runK host fuel st = Sum.inl (exitCode, st'))
+    (hInv : Inv st) :
+    Inv st' := by
+  rcases runK_inl_to_stepHaltN (host := host) (fuel := fuel) (st := st)
+      (exitCode := exitCode) (st' := st') hhalted with
+    ⟨n, _hn, hsteps⟩
+  exact stepHaltN_lift_invariant (host := host) (Inv := Inv)
+    (hcont := hcont) (hhalt := hhalt) hsteps hInv
 
 theorem stepN_deterministic (host : Host) (n : Nat) (st st₁ st₂ : VmState)
     (h₁ : st -[host, n]-> st₁) (h₂ : st -[host, n]-> st₂) :
@@ -208,14 +263,30 @@ macro_rules
 
 syntax "vm_step" term : tactic
 syntax "vm_halt" term : tactic
+syntax "vm_done" : tactic
+syntax "vm_step_assumption" : tactic
+syntax "vm_halt_assumption" : tactic
+syntax "vm_branch" term : tactic
+syntax "vm_branch_assumption" : tactic
 
 macro_rules
   | `(tactic| vm_step $h) =>
       `(tactic| refine RunScript.next (by exact $h) ?_)
   | `(tactic| vm_halt $h) =>
       `(tactic| exact RunScript.halted (by exact $h))
+  | `(tactic| vm_done) =>
+      `(tactic| exact RunScript.done _)
+  | `(tactic| vm_step_assumption) =>
+      `(tactic| refine RunScript.next (by assumption) ?_)
+  | `(tactic| vm_halt_assumption) =>
+      `(tactic| exact RunScript.halted (by assumption))
+  | `(tactic| vm_branch $h) =>
+      `(tactic| first | vm_halt $h | vm_step $h)
+  | `(tactic| vm_branch_assumption) =>
+      `(tactic| first | vm_halt_assumption | vm_step_assumption)
 
 syntax "vm_script" "[" term,* "]" : tactic
+syntax "vm_script_cont" "[" term,* "]" : tactic
 
 macro_rules
   | `(tactic| vm_script []) =>
@@ -224,6 +295,12 @@ macro_rules
       `(tactic| vm_halt $h)
   | `(tactic| vm_script [$h, $hs,*]) =>
       `(tactic| (vm_step $h; vm_script [$hs,*]))
+  | `(tactic| vm_script_cont []) =>
+      `(tactic| vm_done)
+  | `(tactic| vm_script_cont [$h]) =>
+      `(tactic| (vm_step $h; vm_done))
+  | `(tactic| vm_script_cont [$h, $hs,*]) =>
+      `(tactic| (vm_step $h; vm_script_cont [$hs,*]))
 
 theorem stepOrdinaryDecode_cp0_of_decode_ok (host : Host) (st : VmState) (code rest : Slice)
     (instr : Instr) (totBits : Nat)
